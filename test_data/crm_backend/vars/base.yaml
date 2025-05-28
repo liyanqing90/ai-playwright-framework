@@ -6,4 +6,5 @@ prod:
   series_id: 6035
   recommend_name: 热门轿车
   recommend_city: 上海
+  recommend_city_id: 310100
   brand_name: 宝马

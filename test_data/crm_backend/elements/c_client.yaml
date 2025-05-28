@@ -37,6 +37,10 @@ elements:
   recommend_tb_组合名称: //tbody/tr[2]/td[1]
   recommend_tb_城市: //tbody/tr[2]/td[5]
   recommend_tb_状态: (//button[contains(@role,'switch')])[1]
+  recommend_tb_编辑: (//a[contains(text(),'修改')])[1]
+  recommend_编辑_名称: //input[@id='basic_groupName']
+  recommend_编辑_城市: //div[@id='basic_city']/div
+  recommend_编辑_状态: //div[@class='ant-select-selector']
 
   # resource 资源位配置
   resource_标题: //span[@class="ant-input-affix-wrapper"]/input

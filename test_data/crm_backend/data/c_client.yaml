@@ -77,6 +77,34 @@ test_data:
         - action: assert_text
           selector: order_车系
           value: 请选择车系
+  # 推荐试驾
+  test_recommend_search:
+    - description: "搜索推荐试驾"
+      steps:
+        - use_module: click_c
+        - action: click
+          selector: 推荐试驾
+        - action: fill
+          selector: recommend_组合名称
+          value: ${recommend_name}
+        - action: click
+          selector: recommend_城市
+        - action: fill
+          selector: recommend_城市_input
+          value: ${recommend_city}
+        - action: click
+          selector: recommend_城市_value
+        - action: click
+          selector: recommend_状态
+        - action: click
+          selector: recommend_状态_启用
+        - action: monitor_request
+          selector: 查询
+          url_pattern: /api/combinationConfig/getCombinationConfigListPage
+          assert_params:
+            $.combinationName: ${recommend_name}
+            $.cityId: 310100
+            $.status: 0
   test_recommend_name:
     - description: "组合名称"
       steps:
@@ -148,7 +176,7 @@ test_data:
           selector: 推荐试驾
         - action: fill
           selector: recommend_组合名称
-          value: 测试
+          value: ${recommend_name}
         - action: click
           selector: recommend_城市
         - action: fill
@@ -171,6 +199,53 @@ test_data:
         - action: assert_text
           selector: recommend_状态
           value: "请选择"
+  test_recommend_new:
+    - description: "推荐试驾新建"
+      steps:
+        - use_module: click_c
+        - action: click
+          selector: 推荐试驾
+        - action: click
+          selector: 新建
+        - action: assert_text
+          selector: title
+          value: "试驾组合配置"
+  test_recommend_edit:
+    - description: "推荐试驾编辑"
+      steps:
+        - use_module: click_c
+        - action: click
+          selector: 推荐试驾
+        - action: fill
+          selector: recommend_组合名称
+          value: ${recommend_name}
+        - action: click
+          selector: recommend_城市
+        - action: fill
+          selector: recommend_城市_input
+          value: ${recommend_city}
+        - action: click
+          selector: recommend_城市_value
+        - action: click
+          selector: recommend_状态
+        - action: click
+          selector: recommend_状态_启用
+        - action: click
+          selector: 查询
+        - action: click
+          selector: recommend_tb_编辑
+        - action: assert_text
+          selector: title
+          value: "试驾组合配置"
+        - action: assert_value
+          selector: recommend_编辑_名称
+          value: ${recommend_name}
+        - action: assert_text_contains
+          selector: recommend_编辑_城市
+          value: ${recommend_city}
+        - action: assert_text
+          selector: recommend_编辑_状态
+          value: "启用"
 
   test_resource_search_title:
     - description: "搜索资源名称"

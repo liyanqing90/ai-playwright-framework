@@ -67,5 +67,12 @@ test_cases:
     fixtures: [ "login" ]
   - name: test_image_new
     fixtures: [ login ]
-
+  - name: test_recommend_search
+    fixtures: [ "login" ]
+  - name: test_recommend_reset
+    fixtures: [ "login" ]
+  - name: test_recommend_new
+    fixtures: [ "login" ]
+  - name: test_recommend_edit
+    fixtures: [ "login" ]
 
