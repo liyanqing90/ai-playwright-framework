@@ -983,3 +983,76 @@ test_data:
         - action: assert_text
           selector: title
           value: "车系配置"
+
+  test_operation_search:
+      - description: "搜索运营投放配置"
+        steps:
+          - use_module: click_c
+          - action: monitor_response
+            selector: 运营投放配置
+            url_pattern: /api/dict/getDictListByCategoryCode?categoryCode=operationConfig_position&_appid=app_ahoh_admin
+            save_params:
+              $.result[0].dictVal: dictVal
+              $.result[0].dictKey: dictKey
+          - action: assert_text
+            selector: title
+            value: "运营投放配置"
+          - action: click
+            selector: operation_位置
+          - action: click
+            selector: operation_位置_选项
+          - action: monitor_request
+            selector: 查询
+            url_pattern: /api/operation/getOperationList
+            assert_params:
+              $.position: ${dictVal}
+          - action: assert_text
+            selector: operation_tb_位置
+            value: ${dictKey}
+  test_operation_new:
+    - description: "运营投放配置新建"
+      steps:
+        - use_module: click_c
+        - action: click
+          selector: 运营投放配置
+        - action: click
+          selector: operation_新增活动
+        - action: assert_text
+          selector: //div[@class="ant-modal-header"]
+          value: "活动配置"
+  test_operation_reset:
+    - description: "重置运营投放配置"
+      steps:
+        - use_module: click_c
+        - action: click
+          selector: 运营投放配置
+        - action: click
+          selector: operation_位置
+        - action: click
+          selector: operation_位置_选项
+        - action: click
+          selector: 重置
+        - action: assert_text
+          selector: operation_位置
+          value: "请选择位置"
+  test_image_new:
+    - description: "图片处理工具新建"
+      steps:
+        - use_module: click_c
+        - action: click
+          selector: 图片处理工具
+        - action: assert_text
+          selector: title
+          value: "图片处理工具"
+        - action: upload
+          selector: image_storeImage
+          value: files/images/logo.png
+        - action: store_attribute
+          attribute: value
+          selector: image_inputText
+          variable_name: image_url
+        - action: assert_value
+          selector: image_inputText
+          value: ${image_url}
+          
+          

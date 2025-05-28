@@ -221,7 +221,7 @@ class BasePage:
     @handle_page_error(description="上传文件")
     def upload_file(self, selector: str, file_path: str):
         """上传文件"""
-        self._locator(selector).set_input_files(file_path)
+        self.page.set_input_files(selector, file_path)
 
     @handle_page_error(description="输入文本")
     def fill(self, selector: str, value: Any):
@@ -257,7 +257,9 @@ class BasePage:
     def hard_assert_text(self, selector: str, expected: str):
         """硬断言元素文本，失败时会终止测试执行"""
         try:
-            resolved_expected = self.variable_manager.replace_variables_refactored(expected)
+            resolved_expected = self.variable_manager.replace_variables_refactored(
+                expected
+            )
             expect(self._locator(selector).first).to_have_text(resolved_expected)
         except AssertionError as e:
             # 截图

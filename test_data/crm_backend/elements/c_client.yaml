@@ -117,3 +117,14 @@ elements:
   car_config_tb_类别: //tbody/tr[3]/td[6]
   car_config_tb_启用状态: (//button[@role='switch'])[1]
 
+  #运营投放配置
+  operation_位置: (//div[@class='ant-select-selector'])[1]
+  operation_位置_选项: //div[@title='${dictKey}']
+  operation_新增活动: //span[contains(text(),'新增活动')]
+  operation_tb_编辑: (//a[contains(text(),'编辑')])[1]
+  operation_tb_位置: //tbody/tr[2]/td[7]
+
+  #图片处理工具
+  image_storeImage: //input[@id='basic_storeImage']
+  image_inputText: (//input[@id='inputText'])[1]
+  image_copy: //span[@aria-label='copy']
