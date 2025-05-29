@@ -153,8 +153,10 @@ def check_project_duplicates(project_dir: Path) -> bool:
         if case_duplicates:
             has_duplicates = True
             project_has_duplicates = True
+            print(f"\n❌ {project_name} 项目中发现重复的用例名称：")
             logger.info(f"\n{project_name} 项目中发现重复的用例名称：")
             for name, locations in case_duplicates.items():
+                print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
                 logger.info(f'"{name}" 在 {format_duplicate_locations(locations)}')
 
     # 检查data目录
@@ -164,8 +166,10 @@ def check_project_duplicates(project_dir: Path) -> bool:
         if data_duplicates:
             has_duplicates = True
             project_has_duplicates = True
+            print(f"\n❌ {project_name} 项目中发现重复的测试数据名称：")
             logger.info(f"\n{project_name} 项目中发现重复的测试数据名称：")
             for name, locations in data_duplicates.items():
+                print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
                 logger.info(f'"{name}" 在 {format_duplicate_locations(locations)}')
 
     # 检查elements目录
@@ -175,8 +179,10 @@ def check_project_duplicates(project_dir: Path) -> bool:
         if element_duplicates:
             has_duplicates = True
             project_has_duplicates = True
+            print(f"\n❌ {project_name} 项目中发现重复的元素名称：")
             logger.info(f"\n{project_name} 项目中发现重复的元素名称：")
             for name, locations in element_duplicates.items():
+                print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
                 logger.info(f'"{name}" 在 {format_duplicate_locations(locations)}')
 
     return project_has_duplicates
@@ -186,15 +192,24 @@ def main():
     test_data_dir = Path("test_data")
     has_any_duplicates = False
 
+    print(f"开始检查 {test_data_dir} 目录下的重复项...")
+
     # 遍历test_data下的所有项目
+    project_count = 0
     for project_dir in test_data_dir.iterdir():
         if not project_dir.is_dir():
             continue
 
+        project_count += 1
+        print(f"正在检查项目: {project_dir.name}")
+
         if check_project_duplicates(project_dir):
             has_any_duplicates = True
 
+    print(f"共检查了 {project_count} 个项目")
+
     if not has_any_duplicates:
+        print("✅ 所有项目中均未发现重复项")
         logger.info("\n所有项目中均未发现重复项")
 
 

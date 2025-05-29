@@ -9,7 +9,6 @@ elements:
   选中门店: //div[@title='加盟商香港综合测试门店1']
   审批状态搜索: //input[@id='basic_auditStatus']
   驳回: //div[@title='驳回']
-  查询: //span[contains(text(),'查 询')]
 
   活动名称: //td[contains(text(),'门店活动001')]
   提审门店: //td[contains(text(),'加盟商香港综合测试门店1')]
@@ -17,7 +16,6 @@ elements:
   审批状态: (//span[contains(text(),'驳回')])[1]
   暂无数据: //p[@class='ant-empty-description']
 
-  重置: //span[contains(text(),'重 置')]
 
   配置活动名称搜索: //input[@id='basic_title']
   配置提审人搜索: //input[@id='basic_applyUserName']

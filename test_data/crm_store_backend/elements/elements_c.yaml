@@ -1,8 +1,4 @@
 elements:
-  账号密码登录tab: text=账号密码登录
-  账号输入框: //input[@id='phone']
-  密码输入框: //input[@id='password']
-  登录按钮: role=button[name="登 录"]
 
   车系配置: //span[@class='ant-menu-title-content']//div
   新建: (//button[@type='button'])[3]
