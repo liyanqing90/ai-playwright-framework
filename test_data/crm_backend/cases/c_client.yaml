@@ -1,9 +1,17 @@
+# CRM后台客户端测试用例配置文件
+# 包含各个功能模块的测试用例定义
+
 test_cases:
+  # ==================== 车系排序配置 ====================
   - name: test_car_series_search_band
     fixtures: [ "login" ]
   - name: test_car_series_search_series
     fixtures: [ "login" ]
   - name: test_car_series_reset
+    fixtures: [ "login" ]
+
+  # ==================== 推荐试驾 ====================
+  - name: test_recommend_search
     fixtures: [ "login" ]
   - name: test_recommend_name
     fixtures: [ "login" ]
@@ -11,21 +19,29 @@ test_cases:
     fixtures: [ "login" ]
   - name: test_recommend_status
     fixtures: [ "login" ]
+  - name: test_recommend_new
+    fixtures: [ "login" ]
+  - name: test_recommend_edit
+    fixtures: [ "login" ]
   - name: test_recommend_reset
     fixtures: [ "login" ]
+
+  # ==================== 资源位配置 ====================
   - name: test_resource_search_title
     fixtures: [ "login" ]
   - name: test_resource_search_type
     fixtures: [ "login" ]
   - name: test_resource_search_status
     fixtures: [ "login" ]
-  - name: test_resource_reset
-    fixtures: [ "login" ]
   - name: test_resource_new
     fixtures: [ "login" ]
-  - name: test_benefits_search
+  - name: test_resource_edit
     fixtures: [ "login" ]
-  - name: test_benefits_reset
+  - name: test_resource_reset
+    fixtures: [ "login" ]
+
+  # ==================== 优惠权益配置 ====================
+  - name: test_benefits_search
     fixtures: [ "login" ]
   - name: test_benefits_location
     fixtures: [ "login" ]
@@ -35,44 +51,65 @@ test_cases:
     fixtures: [ "login" ]
   - name: test_benefits_new
     fixtures: [ "login" ]
+  - name: test_benefits_reset
+    fixtures: [ "login" ]
+
+  # ==================== 城市权益配置 ====================
   - name: test_city_rights_search
-    fixtures: [ login ]
+    fixtures: [ "login" ]
   - name: test_city_rights_type
-    fixtures: [ login ]
+    fixtures: [ "login" ]
   - name: test_city_rights_city
-    fixtures: [ login ]
+    fixtures: [ "login" ]
   - name: test_city_rights_status
-    fixtures: [ login ]
+    fixtures: [ "login" ]
   - name: test_city_rights_new
-    fixtures: [ login ]
+    fixtures: [ "login" ]
+  - name: test_city_rights_edit
+    fixtures: [ "login" ]
   - name: test_city_rights_reset
-    fixtures: [ login ]
-  - name: test_benefits_search
-    fixtures: [ login ]
+    fixtures: [ "login" ]
+
+  # ==================== 精彩现场 ====================
   - name: test_live_search
-    fixtures: [ login ]
+    fixtures: [ "login" ]
   - name: test_live_source
-    fixtures: [ login ]
+    fixtures: [ "login" ]
   - name: test_live_status
-    fixtures: [ login ]
-  - name: test_live_rest
-    fixtures: [ login ]
+    fixtures: [ "login" ]
   - name: test_live_new
-    fixtures: [ login ]
+    fixtures: [ "login" ]
+  - name: test_live_rest
+    fixtures: [ "login" ]
+
+  # ==================== 运营投放配置 ====================
   - name: test_operation_search
     fixtures: [ "login" ]
   - name: test_operation_new
     fixtures: [ "login" ]
   - name: test_operation_reset
     fixtures: [ "login" ]
-  - name: test_image_new
-    fixtures: [ login ]
-  - name: test_recommend_search
+
+  # ==================== 车系配置 ====================
+  - name: test_car_config_search
     fixtures: [ "login" ]
-  - name: test_recommend_reset
+  - name: test_car_config_location
     fixtures: [ "login" ]
-  - name: test_recommend_new
+  - name: test_car_config_city
     fixtures: [ "login" ]
-  - name: test_recommend_edit
+  - name: test_car_config_brand
+    fixtures: [ "login" ]
+  - name: test_car_config_main
+    fixtures: [ "login" ]
+  - name: test_car_config_type
+    fixtures: [ "login" ]
+  - name: test_car_config_status
+    fixtures: [ "login" ]
+  - name: test_car_config_new
+    fixtures: [ "login" ]
+  - name: test_car_config_reset
     fixtures: [ "login" ]
 
+  # ==================== 图片处理工具 ====================
+  - name: test_image_new
+    fixtures: [ "login" ]

@@ -347,6 +347,9 @@ test_data:
           value: 测试
         - action: click
           selector: resource_类型
+        - action: store_text
+          selector: resource_类型_1
+          variable_name: resource_type
         - action: click
           selector: resource_类型_1
         - action: click
@@ -402,6 +405,52 @@ test_data:
         - action: assert_be_hidden
           selector: 弹框
 
+  test_resource_edit:
+    - description: "资源位配置编辑"
+      steps:
+        - use_module: click_c
+        - action: click
+          selector: 资源位配置
+        - action: fill
+          selector: resource_标题
+          value: 测试
+        - action: click
+          selector: resource_类型
+        - action: store_text
+          selector: resource_类型_1
+          variable_name: resource_type
+        - action: click
+          selector: resource_类型_1
+        - action: click
+          selector: resource_状态
+        - action: click
+          selector: resource_状态_禁用
+        - action: click
+          selector: 查询
+        - action: store_text
+          selector: resource_tb_pvareaid
+          variable_name: resource_pvareaid
+        - action: click
+          selector: resource_tb_编辑
+        - action: assert_text
+          selector: 弹框标题
+          value: "编辑"
+#        - action: assert_text_contains # 没有找到相关定位方式
+#          selector: resource_新建_名称
+#          value: 测试
+        - action: assert_value
+          selector: resource_新建_pvareaid
+          value: ${resource_pvareaid}
+        - action: assert_text
+          selector: resource_编辑_类型
+          value: ${resource_type}
+        - action: assert_text
+          selector: resource_编辑_状态
+          value: "禁用"
+        - action: click
+          selector: 弹框关闭
+        - action: assert_be_hidden
+          selector: 弹框
   #优惠权益
   test_benefits_search:
     - description: "搜索权益配置"
@@ -702,6 +751,43 @@ test_data:
         - action: assert_text
           selector: 弹框标题
           value: "权益配置"
+        - action: click
+          selector: 弹框关闭
+        - action: assert_be_hidden
+          selector: 弹框
+  test_city_rights_edit:
+    - description: "城市权益配置编辑"
+      steps:
+        - use_module: click_c
+        - action: click
+          selector: 城市权益配置
+        - action: click
+          selector: city_rights_类型
+        - action: click
+          selector: city_rights_试驾礼
+        - action: click
+          selector: city_rights_城市
+        - action: click
+          selector: city_rights_城市_展开
+        - action: click
+          selector: city_rights_城市_北京
+        - action: click
+          selector: city_rights_状态
+        - action: click
+          selector: city_rights_状态_启用
+        - action: click
+          selector: 查询
+        - action: click
+          selector: city_rights_tb_编辑
+        - action: assert_text
+          selector: 弹框标题
+          value: "权益配置"
+        - action: assert_text
+          selector: city_rights_编辑_类型
+          value: 试驾礼
+        - action: assert_text
+          selector: city_rights_编辑_状态
+          value: 启用
         - action: click
           selector: 弹框关闭
         - action: assert_be_hidden

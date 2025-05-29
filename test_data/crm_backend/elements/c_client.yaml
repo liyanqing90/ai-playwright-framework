@@ -45,7 +45,7 @@ elements:
   # resource 资源位配置
   resource_标题: //span[@class="ant-input-affix-wrapper"]/input
   resource_类型: (//div[contains(@class,'ant-form-item-control-input')])[3]
-  resource_类型_1: //div[@class="rc-virtual-list-holder-inner"]/div[1]
+  resource_类型_1: (//div[@class='ant-select-item-option-content'])[1]
   resource_类型_2: //div[@class="rc-virtual-list-holder-inner"]/div[2]
   resource_状态: (//div[contains(@class,'ant-form-item-control-input')])[5]
   resource_状态_启用: //div[@class='ant-select-item-option-content' and normalize-space()='启用']
@@ -56,6 +56,9 @@ elements:
   resource_tb_title: //tbody/tr[1]/td[1]
   resource_tb_pvareaid: //tbody/tr[1]/td[2]
   resource_tb_状态: (//button[@role='switch'])[1]
+  resource_tb_编辑: (//button[@type='button' and contains(., '编辑')])[1]
+  resource_编辑_类型: (//div[@class="ant-modal-content"]//span[@class='ant-select-selection-item'])[1]
+  resource_编辑_状态: (//div[@class="ant-modal-content"]//span[@class='ant-select-selection-item'])[2]
 
   # 优惠权益
   benefits_位置: (//div[@class='ant-select-selector'])[1]
@@ -88,6 +91,11 @@ elements:
   city_rights_tb_类型: //tbody/tr[1]/td[3]
   city_rights_tb_城市: //tbody/tr[1]/td[4]
   city_rights_tb_状态: (//button[@role='switch'])[1]
+  city_rights_tb_编辑: (//a[contains(text(),'修改')])[1]
+  city_rights_编辑_标题: (//input[@id='basic_equityName'])[1]
+  city_rights_编辑_类型: (//div[@class="ant-modal-content"]//span[@class='ant-select-selection-item'])[1]
+  city_rights_编辑_状态: (//div[@class="ant-modal-content"]//span[@class='ant-select-selection-item'])[2]
+
  #精彩现场
   live_标题: //input[@id='topicTitle']
   live_城市: //input[@id='cityNames']
