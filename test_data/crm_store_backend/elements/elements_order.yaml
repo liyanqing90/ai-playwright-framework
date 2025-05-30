@@ -45,3 +45,20 @@ elements:
   手机号输入框: (//input[@id='basic_phone'])[1]
   订单id: (//td[normalize-space()='90807'])[1]
   订单线索id文本: (//div[contains(text(),'线索id：')])[1]
+
+  #详情
+  订单列表详情按钮: (//a[contains(text(),'查看详情')])[1]
+  订单详情线索id: (//a[normalize-space()='25149544867175'])[1]
+  跟进销售名称: (//div[@class='ant-descriptions-item-container'])[6]/span[2]
+  购车类型: (//span[@class='ant-descriptions-item-content'])[9]
+  提车日期: (//span[@class='ant-descriptions-item-content'][normalize-space()='2025-01-15'])[2]
+  当日转化情况类型: (//span[@class='ant-descriptions-item-content'])[19]
+  推送记录任务名称: (//span[contains(text(),'CPS-测试任务')])[1]
+  发票信息tab: (//div[@class='ant-tabs-tab'])[1]
+  发票信息图片: (//div[@class='ant-image-mask-info'][contains(text(),'预览')])[5]
+  订单信息tab: (//div[@id='rc-tabs-0-tab-1'])[1]
+  确认函链接: (//a[contains(text(),'确认函')])[1]
+  确认函名称: (//div[@class='h2'])[1]
+
+
+  #取消下订
