@@ -4,7 +4,7 @@ elements:
   密码输入框: //input[@id='password']
   登录按钮: role=button[name="登 录"]
 
-  购车政策: text="购车政策"
+  购车政策一级菜单: text="购车政策"
   购车政策列表: text="购车政策列表"
 
   新增按钮: role=button [name="+新增"]

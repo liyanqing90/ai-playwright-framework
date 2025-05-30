@@ -143,4 +143,50 @@ test_data:
       - action: assert_text
         selector: 1条数据
         value: "共 1 条数据"
+  test_order_details:
+    description: "订单列表-详情"
+    steps:
+      - use_module: login_steps
+      - action: click
+        selector: 订单管理一级菜单
+      - action: click
+        selector: 订单列表二级菜单
+      - action: fill
+        selector: 线索id输入框
+        value: "25149544867175"
+      - action: click
+        selector: 订单查询按钮
+      - action: expect_popup #点击新开页面
+        selector: 订单列表详情按钮
+      - action: assert_text
+        selector: 订单详情线索id
+        value: "25149544867175"
+      - action: assert_text
+        selector: 跟进销售名称
+        value: "罗秀蕊"
+      #- action: pause
+      - action: assert_text
+        selector: 购车类型
+        value: "个人"
+      - action: assert_text
+        selector: 提车日期
+        value: "2025-01-15"
+      - action: assert_text
+        selector: 当日转化情况类型
+        value: "自然进店"
+      - action: assert_text
+        selector: 推送记录任务名称
+        value: "CPS-测试任务"
+      - action: click
+        selector: 发票信息tab
+      - action: assert_exists
+        selector: 发票信息图片
+      - action: click
+        selector: 发票信息tab
+      - action: expect_popup
+        selector: 确认函链接
+      - action: assert_text
+        selector: 确认函名称
+        value: "尊敬的订单名先生/女士"
+
 
