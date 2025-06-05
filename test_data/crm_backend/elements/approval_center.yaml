@@ -3,6 +3,7 @@ elements:
   频道页活动审批: //li[@title='频道页活动审批']
   频道页活动配置表: //li[@title='频道页活动配置表']
 
+
   活动名称搜索: //input[@id='basic_title']
   提审人搜索: //input[@id='basic_operatorName']
   提审门店搜索: //input[@id='basic_storeId']
@@ -33,6 +34,21 @@ elements:
   配置审批状态: //tbody/tr[1]/td[9]
 
   配置重置: //button[@class='ant-btn']
+
+  平安渠道: //div[contains(text(),'平安渠道')]
+  详情: //span[contains(text(),'详情')]
+  详情位置: //th[contains(text(),'平安渠道')]
+  详情权益类型: //td[contains(text(),'购车礼金')]
+  详情活动名称: //td[contains(text(),'UI脚本专用001')]
+  详情权益价值: //td[contains(text(),'666元')]
+  详情起止时间: //td[contains(text(),'2025-05-15 20:10:53—2025-05-18 20:10:56')]
+  详情关联车系: //td[contains(text(),'全车系')]
+
+  驳回原因: //span[contains(text(),'驳回原因')]
+  确定: (//span[contains(text(),'确 定')])[3]
+
+
+
 
 
 

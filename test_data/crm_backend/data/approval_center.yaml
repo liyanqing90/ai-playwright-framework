@@ -195,6 +195,68 @@ test_data:
           selector: 配置活动位置搜索
           value: ""
 
+  test_channel_page_activity_configuration_particulars:
+    - description: "频道页活动配置表详情"
+      steps:
+        - use_module: click_approval_center
+        - action: click
+          selector: 频道页活动配置表
+        - action: wait
+        - action: fill
+          selector: 配置活动名称搜索
+          value: "UI脚本专用001"
+        - action: click
+          selector: 配置活动位置搜索
+        - action: click
+          selector: 平安渠道
+        - action: click
+          selector: 配置查询
+        - action: click
+          selector: 详情
+        - action: assert_text
+          selector: 详情位置
+          value: "平安渠道"
+        - action: assert_text
+          selector: 详情权益类型
+          value: "购车礼金"
+        - action: assert_text
+          selector: 详情活动名称
+          value: "UI脚本专用001"
+        - action: assert_text
+          selector: 详情权益价值
+          value: "666元"
+        - action: assert_text
+          selector: 详情起止时间
+          value: "2025-05-15 20:10:53—2025-05-18 20:10:56"
+        - action: assert_text
+          selector: 详情关联车系
+          value: "全车系"
+
+  test_channel_page_activity_configuration_reasons_dismissal:
+    - description: "频道页活动配置表驳回原因"
+      steps:
+        - use_module: click_approval_center
+        - action: click
+          selector: 频道页活动配置表
+        - action: wait
+        - action: fill
+          selector: 配置活动名称搜索
+          value: "UI脚本专用001"
+        - action: click
+          selector: 配置活动位置搜索
+        - action: click
+          selector: 频道页双列车卡
+        - action: click
+          selector: 配置查询
+        - action: click
+          selector: 驳回原因
+        - action: click
+          selector: 确定
+
+
+
+
+
 
 
 

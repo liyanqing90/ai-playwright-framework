@@ -1,0 +1,6 @@
+test_cases:
+  - name: test_entry_configuration_query
+    fixtures: [ "login" ]
+  - name: test_entry_configuration_query_initiate_mode
+    fixtures: [ "login" ]
+

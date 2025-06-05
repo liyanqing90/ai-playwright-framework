@@ -1,0 +1,13 @@
+elements:
+  IM运营管理: //span[@title='IM运营管理']
+  入口配置: //li[@title='入口配置']
+  快捷提问: //li[@title='快捷提问']
+
+  入口名称查询: //input[@placeholder='请输入关键词']
+  查询: //span[contains(text(),'查 询')]
+  列表入口名称: //td[contains(text(),'之家体验店门店咨询入口')]
+
+  启用状态查询: //div[@class='ant-select ant-select-single ant-select-allow-clear ant-select-show-arrow']
+  开启: (//div[@class='ant-select-item-option-content'])[1]
+  关闭: (//div[@class='ant-select-item-option-content'])[2]
+  列表启用状态: (//button[@role='switch'])[1]

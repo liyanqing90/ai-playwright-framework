@@ -1,0 +1,49 @@
+test_data:
+  test_entry_configuration_query:
+    - description: "入口配置查询"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: wait
+        - action: fill
+          selector: 入口名称查询
+          value: "之家体验店门店咨询入口"
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: assert_text
+          selector: 列表入口名称
+          value: "之家体验店门店咨询入口"
+
+  test_entry_configuration_query_initiate_mode:
+    - description: "入口配置查询启用状态"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: wait
+        - action: click
+          selector: 启用状态查询
+        - action: click
+          selector: 关闭
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: ASSERT_ATTRIBUTE
+          attribute: aria-checked
+          selector: 列表启用状态
+          value: "0"
+        - action: click
+          selector: 启用状态查询
+        - action: click
+          selector: 开启
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: ASSERT_ATTRIBUTE
+          attribute: aria-checked
+          selector: 列表启用状态
+          value: "1"
+
+
