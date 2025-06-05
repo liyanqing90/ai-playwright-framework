@@ -189,4 +189,51 @@ test_data:
         selector: 确认函名称
         value: "尊敬的订单名先生/女士"
 
+  test_order_cancel_order:
+    description: "订单列表-取消下订"
+    steps:
+      - use_module: login_steps
+      - action: click
+        selector: 订单管理一级菜单
+      - action: click
+        selector: 订单列表二级菜单
+      - action: fill
+        selector: 线索id输入框
+        value: "28342616855358"
+      - action: click
+        selector: 订单查询按钮
+      - action: click
+        selector: 店端取消下订按钮
+      - action: click
+        selector: 取消下订确认弹窗确认按钮
+      - action: click
+        selector: 取消下订列表暂无数据
+      - action: assert_exists
+        selector: 取消下订列表暂无数据
+        value: "暂无数据"
+
+  test_order_monetization:
+    description: "订单列表-本地变现"
+    steps:
+      - use_module: login_steps
+      - action: click
+        selector: 订单管理一级菜单
+      - action: click
+        selector: 订单列表二级菜单
+      - action: fill
+        selector: 线索id输入框
+        value: "28342616855358"
+      - action: click
+        selector: 订单查询按钮
+      - action: click
+        selector: 店端取消下订按钮
+      - action: click
+        selector: 取消下订确认弹窗确认按钮
+      - action: click
+        selector: 取消下订列表暂无数据
+      - action: assert_exists
+        selector: 取消下订列表暂无数据
+        value: "暂无数据"
+
+
 
