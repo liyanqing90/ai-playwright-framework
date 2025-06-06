@@ -11,3 +11,7 @@ test_cases:
     fixtures: [ "login" ]
   - name: test_channel_page_activity_configuration_inquire_reset
     fixtures: [ "login" ]
+  - name: test_channel_page_activity_configuration_particulars
+    fixtures: [ "login" ]
+  - name: test_channel_page_activity_configuration_reasons_dismissal
+    fixtures: [ "login" ]
