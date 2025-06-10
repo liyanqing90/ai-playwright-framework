@@ -55,3 +55,196 @@ test_data:
         selector: 待办列表-待接待tab
       - action: 点击
         selector: 待办列表-已逾期tab
+
+  test_all&cleaning_task_cardInfo_in_list:
+    description: 任务列表中全部任务tab切换至清洗任务tab，清洗任务tab中任务卡片信息查看
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
+      - action: 刷新
+      - action: 点击
+        selector: 首页-待办列表-全部
+      - action: 硬断言
+        selector: 全屏页页面标题
+        value: 全部待办
+      - action: 验证包含文本
+        selector: 待办列表-全部tab
+        value: 全部
+      - action: 点击
+        selector: 待办列表-待清洗tab
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索姓名
+        value:  客户名称
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索等级
+        value:  存疑
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索手机号
+        value: 182****3933
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索来源标签
+        value: 来源
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索来源值
+        value: ${ahoh_lead_source}
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-第二个标签
+        value: 任务逾期
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-打电话按钮
+        value: 打电话
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-填跟进按钮
+        value: 填跟进
+      - action: 点击
+        selector: 待办列表第一个卡片信息-填跟进按钮
+      - action: 验证
+        selector: 任务填跟进页面标题
+        value: 待清洗任务
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效-无效原因选择框
+      - action: 验证
+        selector: 清洗结果无效-无效原因半屏页标题
+        value: 无效原因
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-已购车
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-确定按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证文本
+        selector: 全屏页页面标题
+        value: 全部待办
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_cleaning_task_followup_invalid_in_list:
+    description: 任务列表-待清洗任务填跟进，标记为无效任务-第一个无效原因
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
+      - action: 刷新
+      - action: 点击
+        selector: 首页-待办列表-全部
+      - action: 点击
+        selector: 待办列表-待清洗tab
+      - action: 点击
+        selector: 待办列表第一个卡片信息-填跟进按钮
+      - action: 验证
+        selector: 任务填跟进页面标题
+        value: 待清洗任务
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效-无效原因选择框
+      - action: 验证
+        selector: 清洗结果无效-无效原因半屏页标题
+        value: 无效原因
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-已购车
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-确定按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证文本
+        selector: 全屏页页面标题
+        value: 全部待办
+      - action: 刷新
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_call_back_task_cardInfo_in_list:
+    description: 任务列表-待回电任务查看列表中的卡片信息
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
+      - action: 刷新
+      - use_module: create_call_back_task_generate_from_cleaning_task_steps
+      - action: 点击
+        selector: 首页-待办列表-全部
+      - action: 点击
+        selector: 待办列表-待回电tab
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索姓名
+        value: 客户名称
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索等级
+        value:  存疑
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索手机号
+        value: 182****3933
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索来源标签
+        value: 来源
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-线索来源值
+        value: ${ahoh_lead_source}
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-第二个标签
+        value: 咨询内容
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-第二个标签值
+        value: 买车议价
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-第三个标签
+        value: 预约回电
+#      - action: faker
+#        data_type: datetime
+#        variable_name: current_date
+#      - action: 验证包含文本 #TODO 待datetime的工具类恢复后补充
+#        selector: 待办列表第一个卡片信息-第三个标签值
+#        value: ${current_date}
+      - action: 验证包含文本
+        selector: 待办列表第一个卡片信息-第四个标签
+        value: 任务逾期
+#      - action: 硬断言
+##      - action: 验证包含文本 #TODO
+##        selector: 待办列表第一个卡片信息-第四个标签值
+##        value: ${current_date}
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-打电话按钮
+        value: 打电话
+      - action: 硬断言
+        selector: 待办列表第一个卡片信息-填跟进按钮
+        value: 填跟进
+      - action: 点击
+        selector: 待办列表第一个卡片信息-填跟进按钮
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待回电任务
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 验证
+        selector: 线索详情页面标题-线索状态2
+        value: 战败
+      - action: 刷新
