@@ -56,3 +56,40 @@ create_store_testDriveTask_lead_steps: #创建到店线索和试驾任务
   - action: 点击
     selector: 新增用户按钮
 
+create_call_back_task_generate_from_cleaning_task_steps: #清洗任务生成管家回电任务，需要依赖生成未到店的线索
+  - action: 点击
+    selector: 底部菜单-客户
+  - action: 点击
+    selector: 客户列表-搜索
+  - action: 输入
+    selector: 客户列表查询条件输入框
+    value: ${phone_num}
+  - action: 点击
+    selector: 客户列表_执行搜索
+  - action: 点击
+    selector: 客户列表查询结果第一条填跟进按钮
+  - action: 点击
+    selector: 客户详情页面点击填跟进
+  - action: 验证
+    selector: 任务填跟进页面标题
+    value: 待清洗任务
+  - action: 点击
+    selector: 待清洗任务填跟进页-清洗结果-有效
+  - action: 点击
+    selector: 购车周期-存疑
+  - action: 点击
+    selector: 待清洗任务填跟进页-清洗结果-有效-用户诉求-管家回电
+  - action: 点击
+    selector: 待清洗任务填跟进页-管家回电-咨询内容-买车议价
+  - action: 点击
+    selector: 待清洗任务填跟进页-管家回电-回电时间输入框
+  - action: 点击
+    selector: 待清洗任务填跟进页-管家回电-回电时间弹窗-确认按钮
+  - action: 点击
+    selector: 任务填跟进页-提交跟进记录按钮
+  - action: 验证
+    selector: 线索详情页面标题-线索状态2
+    value: 咨询待预约
+  - action: 点击
+    selector: 线索详情页面-任务tab-第一个任务点击填跟进
+  - action: 刷新

@@ -62,12 +62,12 @@ elements:
   任务填跟进页-跟进结果-再联系-下次联系时间半屏页-确认按钮: button.van-picker__confirm
   任务填跟进页-跟进结果-再联系-下次联系时间输入框: form>div[trigger="onChange"]
   任务填跟进页-跟进结果-战败: xpath=//div[@class="radio-item-text" and text()="战败"]
-  任务填跟进页-跟进结果-战败-一级战败因素选项: xpath=//div[@class="radio-item-text" and text()="至二级因素选择"]
+  任务填跟进页-跟进结果-战败-一级战败因素选项: form.van-form[data-v-74fa51b6] > div.reset-form.commonFileCheck:nth-of-type(4) div.van-radio:nth-child(1)         #xpath=//div[@class="radio-item-text" and text()="至二级因素选择"]
   任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项: div.commonFileCheck-popup-content-scroll>div:nth-child(1)
   任务填跟进页-跟进结果-战败-二级战败因素输入框: xpath=//input[contains(@placeholder, '因素')]
   任务填跟进页面标题: div.van-popup--full>div>section>div>div>section.nav-title
   任务详情-推送按钮: div.customerDetail-foot>div:nth-child(2)>img
-  全屏页页面标题: section.nav-title
+  全屏页页面标题:  section.nav-title
   全部订单: div.fun-button__item-order
   切换登录方式: section.login-cut
   创建用户: div.adduser-btn

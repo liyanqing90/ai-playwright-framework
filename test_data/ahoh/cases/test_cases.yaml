@@ -23,4 +23,7 @@ test_cases:
 #    - name: test_customer_cleaning_task_info
 #    - name: test_customer_cleaned_task_info
 #    - name: test_task_type_tab_name_in_list
-    - name: test_switch_task_tab_name_in_list
+#    - name: test_switch_task_tab_name_in_list
+#    - name: test_all&cleaning_task_cardInfo_in_list
+#    - name: test_cleaning_task_followup_invalid_in_list
+    - name: test_call_back_task_cardInfo_in_list
