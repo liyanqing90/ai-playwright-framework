@@ -285,3 +285,16 @@ test_data:
         selector: 全屏页页面标题
         value: 全部待办
       - action: 刷新
+
+  test_switch_process_unconfirmed_task_tab_in_list:
+    description: 任务列表-切换tab至预约确认任务
+    steps:
+      - use_module: login_steps
+      - action: 点击
+        selector: 首页-待办列表-全部
+      - action: 点击
+        selector: 待办列表-预约确认tab
+      - action: 验证包含文本
+        selector: 待办列表-预约确认tab
+        value: 预约确认
+      - action: 刷新
