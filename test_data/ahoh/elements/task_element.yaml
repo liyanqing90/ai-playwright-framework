@@ -17,5 +17,6 @@ elements:
   待办列表第一个卡片信息-第三个标签: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(5) label.listcard-item__name   #待回电是预约回电
   待办列表第一个卡片信息-第三个标签值: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(5) div.value-oneline
   待办列表第一个卡片信息-第四个标签: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(6) label.listcard-item__name
+  待办列表第一个卡片信息-第四个标签值: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(6) div.value-oneline
   待办列表第一个卡片信息-打电话按钮: div.van-list > div:nth-child(1) div.listcard-operation>div.updateBtn-white
   待办列表第一个卡片信息-填跟进按钮: div.van-list > div:nth-child(1) div.listcard-operation>div.updataBtn-rightColor
