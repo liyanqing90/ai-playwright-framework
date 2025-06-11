@@ -22,8 +22,9 @@ test_cases:
 #    - name: test_card_info_in_policy_detail
 #    - name: test_customer_cleaning_task_info
 #    - name: test_customer_cleaned_task_info
-#    - name: test_task_type_tab_name_in_list
-#    - name: test_switch_task_tab_name_in_list
-#    - name: test_all&cleaning_task_cardInfo_in_list
-#    - name: test_cleaning_task_followup_invalid_in_list
-    - name: test_call_back_task_cardInfo_in_list
+    - name: test_task_type_tab_name_in_list
+    - name: test_switch_task_tab_name_in_list
+    - name: test_all&cleaning_task_cardInfo_in_list
+    - name: test_cleaning_task_followup_invalid_in_list #待清洗任务待办列表战败
+    - name: test_call_back_task_cardInfo_in_list #任务列表_管家回电任务卡片信息
+    - name: test_call_back_task_followup_invalid_in_list #管家回电任务待办列表战败

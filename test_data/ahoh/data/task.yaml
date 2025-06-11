@@ -204,19 +204,18 @@ test_data:
       - action: 硬断言
         selector: 待办列表第一个卡片信息-第三个标签
         value: 预约回电
-#      - action: faker
-#        data_type: datetime
-#        variable_name: current_date
-#      - action: 验证包含文本 #TODO 待datetime的工具类恢复后补充
-#        selector: 待办列表第一个卡片信息-第三个标签值
-#        value: ${current_date}
+      - action: faker
+        data_type: datetime
+        variable_name: current_date
+      - action: 验证包含文本
+        selector: 待办列表第一个卡片信息-第三个标签值
+        value: ${current_date}
       - action: 验证包含文本
         selector: 待办列表第一个卡片信息-第四个标签
         value: 任务逾期
-#      - action: 硬断言
-##      - action: 验证包含文本 #TODO
-##        selector: 待办列表第一个卡片信息-第四个标签值
-##        value: ${current_date}
+      - action: 验证包含文本
+        selector: 待办列表第一个卡片信息-第四个标签值
+        value: ${current_date}
       - action: 硬断言
         selector: 待办列表第一个卡片信息-打电话按钮
         value: 打电话
@@ -244,7 +243,45 @@ test_data:
         selector: 任务填跟进页-二级战败因素弹框-确认按钮
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
       - action: 验证
-        selector: 线索详情页面标题-线索状态2
-        value: 战败
+        selector: 全屏页页面标题
+        value: 全部待办
+      - action: 刷新
+
+  test_call_back_task_followup_invalid_in_list:
+    description: 任务列表-待回电任务填跟进，标记为战败任务-第一个无效原因
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
+      - action: 刷新
+      - use_module: create_call_back_task_generate_from_cleaning_task_steps
+      - action: 点击
+        selector: 首页-待办列表-全部
+      - action: 点击
+        selector: 待办列表-待回电tab
+      - action: 点击
+        selector: 待办列表第一个卡片信息-填跟进按钮
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 验证
+        selector: 全屏页页面标题
+        value: 全部待办
       - action: 刷新
