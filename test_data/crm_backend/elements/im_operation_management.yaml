@@ -1,7 +1,7 @@
 elements:
   IM运营管理: //span[@title='IM运营管理']
   入口配置: //li[@title='入口配置']
-  快捷提问: //li[@title='快捷提问']
+  快捷提问: (//li[@title='快捷提问'])[1]
 
   入口名称查询: //input[@placeholder='请输入关键词']
   查询: //span[contains(text(),'查 询')]
@@ -11,3 +11,19 @@ elements:
   开启: (//div[@class='ant-select-item-option-content'])[1]
   关闭: (//div[@class='ant-select-item-option-content'])[2]
   列表启用状态: (//button[@role='switch'])[1]
+
+  #快捷提问
+  quick_标题: //span[@class='ant-input-affix-wrapper']/input
+  quick_类型: (//div[@class='ant-select-selector'])[1]
+  quick_城市: (//div[@class='ant-col ant-form-item-control'])[3]
+  quick_类型_快捷提问: //div[@class='ant-select-item ant-select-item-option ant-select-item-option-active']//div[@class='ant-select-item-option-content']
+  quick_城市_展开: //div[@class='ant-select-tree-list-holder-inner']//div[1]//span[2]
+  quick_城市_北京: //span[@class='ant-select-tree-node-content-wrapper ant-select-tree-node-content-wrapper-normal']
+  quick_状态: (//div[@class='ant-col ant-form-item-control'])[4]
+  quick_状态_启用: //div[@class='ant-select-item-option-content'][contains(., '启用')]
+  quick_rights_状态_关闭: //div[@class='ant-select-item-option-content'][contains(., '关闭')]
+  quick_tb_title: tbody tr:nth-child(1) td:nth-child(3)
+  quick_tb_type: tbody tr:nth-child(1) td:nth-child(2)
+  quick_tb_状态: (//button[@role='switch'])[1]
+  quick_tb_详情: (//span[contains(text(),'详情')])[1]
+  quick_tb_编辑: (//span[contains(text(),'编辑')])[1]
