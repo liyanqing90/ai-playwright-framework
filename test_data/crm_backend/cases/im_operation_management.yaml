@@ -6,20 +6,20 @@ test_cases:
   - name: test_entry_configuration_query_reset
     fixtures: [ "login" ]
 
-#  #快捷提问
-#  - name: test_quick_ask_search
-#    fixtures: [ "login" ]
-#  - name: test_quick_ask_title
-#    fixtures: [ "login" ]
-#  - name: test_quick_ask_type
-#    fixtures: [ "login" ]
-#  - name: test_quick_ask_status
-#    fixtures: [ "login" ]
-#  - name: test_quick_ask_detail
-#    fixtures: [ "login" ]
-#  - name: test_quick_ask_edit
-#    fixtures: [ "login" ]
-#  - name: test_quick_ask_new
-#    fixtures: [ "login" ]
-#  - name: test_quick_ask_reset
-#    fixtures: [ "login" ]
+  #快捷提问
+  - name: test_quick_ask_search
+    fixtures: [ "login" ]
+  - name: test_quick_ask_title
+    fixtures: [ "login" ]
+  - name: test_quick_ask_type
+    fixtures: [ "login" ]
+  - name: test_quick_ask_status
+    fixtures: [ "login" ]
+  - name: test_quick_ask_detail
+    fixtures: [ "login" ]
+  - name: test_quick_ask_edit
+    fixtures: [ "login" ]
+  - name: test_quick_ask_new
+    fixtures: [ "login" ]
+  - name: test_quick_ask_reset
+    fixtures: [ "login" ]
