@@ -45,6 +45,62 @@ test_data:
           selector: 列表启用状态
           value: "1"
 
+  test_entry_configuration_query_reset:
+    - description: "入口配置查询重置"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: fill
+          selector: 入口名称查询
+          value: "之家体验店门店咨询入口"
+        - action: click
+          selector: 查询城市选择
+        - action: click
+          selector: 省选择
+        - action: click
+          selector: 市选择
+        - action: click
+          selector: 启用状态查询
+        - action: click
+          selector: 开启
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: click
+          selector: 重置
+        - action: assert_text
+          selector: 入口名称查询
+          value: ""
+        - action: assert_text
+          selector: 查询城市选择
+          value: ""
+        - action: assert_text
+          selector: 启用状态查询
+          value: "请选择"
+
+  test_entry_configuration_add:
+    - description: "入口配置查询"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: click
+          selector: 新建
+        - action: fill
+          selector: 新增列表名称
+          value: "哈哈哈哈哈哈哈哈"
+        - action: fill
+          selector: 新增pvareaid
+          value: "6666666"
+        - action: fill
+          selector: 新增用户自动发言
+          value: "呵呵呵呵呵呵呵呵呵呵呵和"
+        - action: click
+          selector: 新增自动回复卡片
+        - action: click
+          selector: 取消
+
 
   test_quick_ask_search:
     - description: "快捷提问查询"

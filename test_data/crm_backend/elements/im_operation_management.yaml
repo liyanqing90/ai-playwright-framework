@@ -4,13 +4,23 @@ elements:
   快捷提问: (//li[@title='快捷提问'])[1]
 
   入口名称查询: //input[@placeholder='请输入关键词']
-  查询: //span[contains(text(),'查 询')]
   列表入口名称: //td[contains(text(),'之家体验店门店咨询入口')]
 
   启用状态查询: //div[@class='ant-select ant-select-single ant-select-allow-clear ant-select-show-arrow']
   开启: (//div[@class='ant-select-item-option-content'])[1]
   关闭: (//div[@class='ant-select-item-option-content'])[2]
   列表启用状态: (//button[@role='switch'])[1]
+
+  查询城市选择: //input[@id='rc_select_0']
+  省选择: //div[@class='ant-select-tree-list-holder-inner']//div[1]//span[2]//span[1]//*[name()='svg']
+  市选择: //span[@class='ant-select-tree-node-content-wrapper ant-select-tree-node-content-wrapper-normal']//span[@class='ant-select-tree-title'][contains(text(),'北京')]
+
+  新增列表名称: //input[@id='form_item_name']
+  新增pvareaid: //input[@placeholder='请输入数字']
+  新增用户自动发言: //textarea[@id='form_item_autoRequest']
+  新增自动回复卡片: //div[@id='form_item_autoReplyType1']//label[@class='ant-radio-wrapper']
+  取消: //span[contains(text(),'取 消')]
+
 
   #快捷提问
   quick_标题: //span[@class='ant-input-affix-wrapper']/input
