@@ -5,6 +5,8 @@ test_cases:
     fixtures: [ "login" ]
   - name: test_entry_configuration_query_reset
     fixtures: [ "login" ]
+  - name: test_entry_configuration_add
+    fixtures: [ "login" ]
 
   #快捷提问
   - name: test_quick_ask_search

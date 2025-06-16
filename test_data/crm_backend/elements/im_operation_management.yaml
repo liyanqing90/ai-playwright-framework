@@ -17,6 +17,14 @@ elements:
   市选择: //span[@class='ant-select-tree-node-content-wrapper ant-select-tree-node-content-wrapper-normal']//span[@class='ant-select-tree-title'][contains(text(),'北京')]
   重置: //span[contains(text(),'重 置')]
 
+  新建: //span[contains(text(),'新 建')]
+  新增列表名称: //input[@id='form_item_name']
+  新增pvareaid: //input[@placeholder='请输入数字']
+  新增用户自动发言: //textarea[@id='form_item_autoRequest']
+  新增自动回复卡片: //div[@id='form_item_autoReplyType1']//label[@class='ant-radio-wrapper']
+  取消: //span[contains(text(),'取 消')]
+
+
   #快捷提问
   quick_标题: //span[@class='ant-input-affix-wrapper']/input
   quick_类型: (//div[@class='ant-select-selector'])[1]
