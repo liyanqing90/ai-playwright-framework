@@ -121,7 +121,14 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     # 获取环境配置
     config = Config()
     env = os.getenv("ENV", config.env.value)
-    duration = round(time.time() - terminalreporter._sessionstarttime, 2)
+    # 使用session的开始时间，如果不存在则使用当前时间减去一个默认值
+    session_start_time = getattr(terminalreporter, "_sessionstarttime", None)
+    if session_start_time is None:
+        # 如果没有_sessionstarttime属性，尝试从config或session中获取
+        session_start_time = getattr(
+            terminalreporter.config, "_session_start_time", time.time() - 1
+        )
+    duration = round(time.time() - session_start_time, 2)
     # 获取失败用例详情
     failures = []
     if terminalreporter.stats:
@@ -248,14 +255,42 @@ def pytest_generate_tests(metafunc):  # noqa
     )
 
 
+
 @pytest.fixture()
 def get_test_name(request):
     """返回当前测试用例的完整名称，包括参数化ID"""
     test_name = request.node.name
     # 将Unicode转义序列解码为实际的中文字符
-    decoded_name = test_name.encode("utf-8").decode("unicode_escape")
-    logger.debug(f"当前测试用例名称: {decoded_name}")
+    try:
+        # 首先尝试标准的unicode_escape解码
+        decoded_name = test_name.encode("utf-8").decode("unicode_escape")
+
+        # 如果解码后看起来像乱码（包含特殊字符），尝试其他方法
+        if any(ord(c) > 127 and ord(c) < 256 for c in decoded_name):
+            # 这可能是UTF-8字节被错误解释，尝试重新编码
+            try:
+                decoded_name = decoded_name.encode("latin-1").decode("utf-8")
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                # 如果还是失败，保持原来的解码结果
+                pass
+
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        # 如果解码失败，使用原始名称
+        decoded_name = test_name
+
+    # 移除DEBUG日志，减少重复信息
     return decoded_name
+
+
+@pytest.fixture()
+def current_test_name(request):
+    """返回当前测试用例的基础名称（不包含参数化部分）"""
+    test_name = request.node.name
+    # 提取基础测试名称（去掉参数化部分）
+    base_name = test_name.split("[")[0] if "[" in test_name else test_name
+    logger.debug(f"当前测试用例基础名称: {base_name}")
+    return base_name
+
 
 
 @pytest.hookimpl(trylast=True)

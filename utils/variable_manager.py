@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional, Literal
 
@@ -41,15 +42,19 @@ class VariableManager:
 
         # 变量作用域继承关系
         self.scope_hierarchy = {
-            "step": ["step", "module", "test_case", "global"],
+            "step": ["step", "test_case", "module", "global"],
             "module": ["module", "test_case", "global"],
             "test_case": ["test_case", "global"],
             "global": ["global"],
-            "temp": ["temp", "step", "module", "test_case", "global"],
+            "temp": ["temp", "test_case", "step", "module", "global"],
         }
 
         # 变量缓存
         self._variable_cache = {}
+        self._max_cache_size = 1000  # 最大缓存项数
+
+        # 优化：使用集合管理缓存键，提高删除效率
+        self._cache_keys_by_variable = defaultdict(set)  # variable_name -> set of cache_keys
 
         # 变量访问统计
         self._stats = {
@@ -57,7 +62,17 @@ class VariableManager:
             "set_count": 0,
             "cache_hits": 0,
             "cache_misses": 0,
+            "cache_evictions": 0,  # 新增：缓存驱逐次数
         }
+
+        # 优化：预编译正则表达式
+        self._compiled_patterns = {
+            "exact_match": re.compile(r"^\${([^}]+)}$|^\$<([^>]+)>$"),
+            "embedded_var": re.compile(r"\$\{([^}]+)\}|\$<([^>]+)>"),
+        }
+
+        # 优化：预计算常用的缓存键格式
+        self._default_scope_key = "default"
 
         # 文件存储模式的配置
         if storage_file is None:
@@ -77,7 +92,7 @@ class VariableManager:
                 with open(self.storage_file, "r", encoding="utf-8") as f:
                     file_variables = json.load(f)
                     # 确保文件中的变量结构符合预期
-                    for scope in ["global", "test_case", "temp"]:
+                    for scope in ["global", "test_case", "module", "step", "temp"]:
                         if scope in file_variables and isinstance(
                             file_variables[scope], dict
                         ):
@@ -87,13 +102,13 @@ class VariableManager:
             except json.JSONDecodeError:
                 self.logger.error(f"无法解析变量存储文件: {self.storage_file}")
                 # 初始化为空字典
-                for scope in ["global", "test_case", "temp"]:
+                for scope in ["global", "test_case", "module", "step", "temp"]:
                     self.variables[scope] = {}
         else:
             # 确保存储目录存在
             os.makedirs(os.path.dirname(self.storage_file), exist_ok=True)
             # 初始化为空字典
-            for scope in ["global", "test_case", "temp"]:
+            for scope in ["global", "test_case", "module", "step", "temp"]:
                 self.variables[scope] = {}
 
     def _save_variables_to_file(self):
@@ -105,6 +120,29 @@ class VariableManager:
                 self.logger.debug(f"变量已保存到文件: {self.storage_file}")
             except Exception as e:
                 self.logger.error(f"保存变量到文件失败: {str(e)}")
+
+    def _evict_cache_if_needed(self):
+        """优化：如果缓存超过限制，驱逐最旧的缓存项"""
+        if len(self._variable_cache) > self._max_cache_size:
+            # 简单的FIFO策略，删除一半缓存
+            items_to_remove = len(self._variable_cache) // 2
+            cache_keys = list(self._variable_cache.keys())
+
+            for i in range(items_to_remove):
+                key_to_remove = cache_keys[i]
+                del self._variable_cache[key_to_remove]
+
+                # 从缓存键管理中移除
+                for var_name, key_set in self._cache_keys_by_variable.items():
+                    key_set.discard(key_to_remove)
+
+            # 清理空的集合
+            empty_vars = [var for var, keys in self._cache_keys_by_variable.items() if not keys]
+            for var in empty_vars:
+                del self._cache_keys_by_variable[var]
+
+            self._stats["cache_evictions"] += items_to_remove
+            self.logger.debug(f"缓存驱逐: 移除了 {items_to_remove} 个缓存项")
 
     def set_storage_mode(
         self, mode: Literal["memory", "file"], storage_file: str = None
@@ -141,6 +179,10 @@ class VariableManager:
         for scope in self.variables:
             self.variables[scope] = {}
 
+        # 优化：清空缓存管理结构
+        self._variable_cache.clear()
+        self._cache_keys_by_variable.clear()
+
         if self.storage_mode == "file":
             self._save_variables_to_file()
 
@@ -154,7 +196,15 @@ class VariableManager:
             scope: 变量作用域，默认为test_case
         """
         if scope in self.variables:
+            # 获取要清除的变量名列表
+            variables_to_clear = list(self.variables[scope].keys())
+
+            # 清除变量
             self.variables[scope] = {}
+
+            # 优化：批量清除相关缓存
+            for var_name in variables_to_clear:
+                self._clear_variable_cache_optimized(var_name)
 
             if self.storage_mode == "file":
                 self._save_variables_to_file()
@@ -163,7 +213,7 @@ class VariableManager:
         else:
             self.logger.warning(f"无效的作用域: {scope}")
 
-    def set_variable(self, name: str, value: Any, scope: str = "test_case"):
+    def set_variable(self, name: str, value: Any, scope: str = "global"):
         """
         设置变量
 
@@ -189,8 +239,8 @@ class VariableManager:
         old_value = self.variables[scope].get(name, "未定义")
         self.variables[scope][name] = value
 
-        # 清除相关缓存
-        self._clear_variable_cache(name)
+        # 优化：清除相关缓存
+        self._clear_variable_cache_optimized(name)
 
         # 如果是文件存储模式，保存到文件
         if self.storage_mode == "file":
@@ -200,9 +250,9 @@ class VariableManager:
             f"设置变量 '{name}' = '{value}' (作用域: {scope}, 原值: {old_value})"
         )
 
-    def _clear_variable_cache(self, name: str = None):
+    def _clear_variable_cache_optimized(self, name: str = None):
         """
-        清除变量缓存
+        清除变量缓存，使用集合管理提高效率
 
         Args:
             name: 变量名，如果为 None，则清除所有缓存
@@ -210,19 +260,26 @@ class VariableManager:
         if name is None:
             # 清除所有缓存
             self._variable_cache.clear()
+            self._cache_keys_by_variable.clear()
             return
 
-        # 清除指定变量的缓存
-        keys_to_remove = []
-        for cache_key in self._variable_cache:
-            if cache_key.startswith(f"{name}:"):
-                keys_to_remove.append(cache_key)
+        # 优化：使用集合快速获取要删除的缓存键
+        if name in self._cache_keys_by_variable:
+            keys_to_remove = self._cache_keys_by_variable[name].copy()
+            for key in keys_to_remove:
+                self._variable_cache.pop(key, None)
 
-        for key in keys_to_remove:
-            del self._variable_cache[key]
+            # 清空该变量的缓存键集合
+            del self._cache_keys_by_variable[name]
+
+    def _build_cache_key(self, name: str, scope: Optional[str]) -> str:
+        """优化：构建缓存键，减少字符串操作"""
+        if scope is None:
+            return f"{name}:{self._default_scope_key}"
+        return f"{name}:{scope}"
 
     def get_variable(
-        self, name: str, scope: Optional[str] = None, default: Any = None
+        self, name: str, scope: Optional[str] = None
     ) -> Any:
         """
         获取变量值，支持作用域继承
@@ -238,14 +295,18 @@ class VariableManager:
         # 增加访问计数
         self._stats["get_count"] += 1
 
-        # 检查缓存
-        cache_key = f"{name}:{scope if scope else 'default'}"
+        # 优化：构建缓存键
+        cache_key = self._build_cache_key(name, scope)
+
         if cache_key in self._variable_cache:
             self._stats["cache_hits"] += 1
             return self._variable_cache[cache_key]
 
         self._stats["cache_misses"] += 1
 
+        # 查找变量值
+        found = False
+        value = name
         # 如果指定了作用域，则按照作用域继承关系查找
         if scope in self.scope_hierarchy:
             for search_scope in self.scope_hierarchy[scope]:
@@ -253,77 +314,29 @@ class VariableManager:
                     value = self.variables[search_scope][name]
                     # 将结果存入缓存
                     self._variable_cache[cache_key] = value
-                    return value
+                    found = True
+                    break
         else:
-            # 没有指定作用域，按照默认优先级查找
-            for search_scope in ["test_case", "module", "global", "step", "temp"]:
-                if name in self.variables[search_scope]:
+            for search_scope in ["test_case", "global", "module", "step", "temp"]:
+
+                if name in self.variables[search_scope].keys():
                     value = self.variables[search_scope][name]
                     # 将结果存入缓存
                     self._variable_cache[cache_key] = value
-                    return value
+                    found = True
+                    break
 
-        # 未找到变量，返回默认值
-        self.logger.debug(f"未找到变量 '{name}'，返回默认值: {default}")
-        # 将默认值存入缓存
-        self._variable_cache[cache_key] = default
-        return default
+        # 如果未找到，使用默认值
+        if not found:
+            self.logger.debug(f"未找到变量 '{name}'")
 
-    def get_variable_from_scope(
-        self, name: str, scope: str = "global", default: Any = None
-    ) -> Any:
-        """
-        从指定作用域获取变量值
+        # 优化：将结果存入缓存，并管理缓存键
+        self._evict_cache_if_needed()  # 检查缓存大小
+        self._variable_cache[cache_key] = value,
+        self._cache_keys_by_variable[name].add(cache_key)
 
-        Args:
-            name: 变量名
-            scope: 变量作用域
-            default: 如果变量不存在，返回的默认值
+        return value
 
-        Returns:
-            变量值，如果不存在则返回默认值
-        """
-        if scope not in self.variables:
-            self.logger.warning(f"无效的作用域: {scope}")
-            return default
-
-        return self.variables[scope].get(name, default)
-
-    def remove_variable(self, name: str, scope: Optional[str] = None) -> bool:
-        """
-        删除变量
-
-        Args:
-            name: 变量名
-            scope: 变量作用域，如果为None则尝试从所有作用域中删除
-
-        Returns:
-            是否成功删除至少一个变量
-        """
-        removed = False
-
-        if scope is not None:
-            # 从指定作用域删除
-            if scope in self.variables and name in self.variables[scope]:
-                del self.variables[scope][name]
-                removed = True
-                self.logger.debug(f"已删除变量 '{name}' (作用域: {scope})")
-        else:
-            # 从所有作用域删除
-            for scope_name in self.variables:
-                if name in self.variables[scope_name]:
-                    del self.variables[scope_name][name]
-                    removed = True
-                    self.logger.debug(f"已删除变量 '{name}' (作用域: {scope_name})")
-
-        # 如果是文件存储模式且有变量被删除，保存到文件
-        if removed and self.storage_mode == "file":
-            self._save_variables_to_file()
-
-        if not removed:
-            self.logger.debug(f"未找到要删除的变量 '{name}'")
-
-        return removed
 
     def list_variables(self, scope: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -344,8 +357,8 @@ class VariableManager:
         else:
             # 合并所有作用域的变量，按优先级覆盖
             result = {}
-            # 按照global -> test_case -> temp的顺序合并，保持最高优先级
-            for scope_name in ["global", "test_case", "temp"]:
+            # 优化：按照优先级顺序合并
+            for scope_name in ["global", "module", "test_case", "step", "temp"]:
                 result.update(self.variables[scope_name])
             return result
 
@@ -378,6 +391,7 @@ class VariableManager:
             **self._stats,
             "cache_size": len(self._variable_cache),
             "cache_hit_rate": f"{hit_rate:.2f}%",
+            "max_cache_size": self._max_cache_size,
             "scopes": {scope: len(vars) for scope, vars in self.variables.items()},
         }
 
@@ -390,6 +404,7 @@ class VariableManager:
             "set_count": 0,
             "cache_hits": 0,
             "cache_misses": 0,
+            "cache_evictions": 0,
         }
 
     def debug_info(self) -> str:
@@ -406,7 +421,8 @@ class VariableManager:
             f"存储模式: {self.storage_mode}",
             f"变量访问次数: 获取={stats['get_count']}, 设置={stats['set_count']}",
             f"缓存命中率: {stats['cache_hit_rate']} ({stats['cache_hits']}/{stats['get_count']})",
-            f"缓存大小: {stats['cache_size']} 项",
+            f"缓存大小: {stats['cache_size']}/{stats['max_cache_size']} 项",
+            f"缓存驱逐次数: {stats['cache_evictions']}",
             "变量数量:",
         ]
 
@@ -431,21 +447,28 @@ class VariableManager:
             scope = "global"
 
         changes_made = False
+        variables_to_clear = []  # 收集需要清除缓存的变量
+
         for name, value in variables.items():
             if not overwrite and name in self.variables[scope]:
                 self.logger.debug(f"跳过已存在的变量 '{name}' (作用域: {scope})")
                 continue
 
             self.variables[scope][name] = value
+            variables_to_clear.append(name)
             changes_made = True
             self.logger.debug(f"导入变量 '{name}' = '{value}' (作用域: {scope})")
+
+        # 优化：批量清除缓存
+        for var_name in variables_to_clear:
+            self._clear_variable_cache_optimized(var_name)
 
         # 如果是文件存储模式且有变量被导入，保存到文件
         if changes_made and self.storage_mode == "file":
             self._save_variables_to_file()
 
     def replace_variables_refactored(
-        self, value: Any, scope: Optional[str] = None
+        self, value: Any, scope: Optional[str] = "global"
     ) -> Any:
         """
         替换值中的变量引用。递归处理字符串、列表、字典。
@@ -467,11 +490,8 @@ class VariableManager:
             # 优化：如果字符串中没有 $ 符号，直接返回
             if "$" not in value:
                 return value
-
-            # 检查整个字符串是否就是一个变量引用，以保留原始类型
-            # 支持两种格式：${var_name} 和 $<var_name>
-            exact_match_pattern = r"^\${([^}]+)}$|^\$<([^>]+)>$"
-            exact_match = re.fullmatch(exact_match_pattern, value)
+            # 优化：使用预编译的正则表达式检查精确匹配
+            exact_match = self._compiled_patterns["exact_match"].fullmatch(value)
 
             if exact_match:
                 # 获取变量名，可能在第一个或第二个捕获组中
@@ -481,13 +501,7 @@ class VariableManager:
                     else exact_match.group(2)
                 )
                 # 精确匹配，直接获取并返回原始类型的值
-                return self.get_variable(var_name)
-
-            # 优化：使用缓存存储编译后的正则表达式
-            if not hasattr(self, "_compiled_patterns"):
-                self._compiled_patterns = {
-                    "embedded_var": re.compile(r"\$\{([^}]+)\}|\$<([^>]+)>"),
-                }
+                return self.get_variable(var_name, scope)
 
             # 定义变量替换函数
             def _variable_replacer(match):
@@ -497,7 +511,7 @@ class VariableManager:
                 )
 
                 # 获取变量值
-                var_value = self.get_variable(var_name)
+                var_value = self.get_variable(var_name, scope)
 
                 if var_value is None:
                     # 变量未定义，警告并保留原始引用
@@ -523,5 +537,5 @@ class VariableManager:
             return {
                 k: self.replace_variables_refactored(v, scope) for k, v in value.items()
             }
-
+        logger.debug(f"替换变量引用完成: {value}")
         return value  # 改为返回原始值而不是 None

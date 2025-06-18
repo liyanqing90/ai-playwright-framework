@@ -544,9 +544,7 @@ test_data:
     description: "温馨礼包"
     steps:
       - action: navigate
-        value: "/ahoh-marketing/carStore?rimCityId=110100&storeCode=4682"
-      - action: click
-        selector: third_carousel_image
+        value: "/ahoh-marketing/insured?cityId=110100&pvareaid=6864096&storeCode=4682"
       - action: click
         selector: immediately_get_button
       - action: assert_text
@@ -613,6 +611,7 @@ test_data:
     steps:
       - action: goto
         value: /ahoh-marketing/carStore?rimCityId=110100&storeCode=4682
+      - action: wait
       - action: click
         selector: level
       - action: click
@@ -628,6 +627,7 @@ test_data:
     steps:
       - action: goto
         value: /ahoh-marketing/carStore?rimCityId=110100&storeCode=4682
+      - action: wait
       - action: click
         selector: level
       - action: click
