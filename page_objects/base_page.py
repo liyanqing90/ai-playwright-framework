@@ -206,8 +206,7 @@ class BasePage:
     @handle_page_error(description="导航到")
     def navigate(self, url: str):
         """导航到指定URL"""
-        self.page.goto(url)
-        self.page.wait_for_load_state()
+        self.page.goto(url, wait_until="domcontentloaded")
 
     @handle_page_error(description="暂停")
     def pause(self):
