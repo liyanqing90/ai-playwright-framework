@@ -108,11 +108,21 @@ def check_and_screenshot(description="Assertion"):
                         # 尝试提取 Locator expected 和 Actual value 部分
                         import re
 
-                        actual_pattern = r"Actual value: ([^\n]*)"
+                        patterns = [
+                                    r"实际结果:\s*'([^']*)'",  # 匹配单引号包围的实际值
+                                    r"实际结果:\s*([^\n,]*)",  # 匹配到换行或逗号为止的实际值
+                                    r"实际\s*'([^']*)'",  # 匹配 "实际 'value'" 格式
+                                    r"actual\s*'([^']*)'",  # 匹配英文格式
+                                    r"received\s*'([^']*)'",  # 匹配 received 格式
+                                ]
 
-                        actual_match = re.search(actual_pattern, error_str)
-
-                        actual_text = actual_match.group(1) if actual_match else ""
+                        for pattern in patterns:
+                            actual_match = re.search(
+                                pattern, error_str, re.IGNORECASE
+                            )
+                            if actual_match:
+                                actual_text = actual_match.group(1)
+                                break
                         if actual_text:
                             # 构建简化的错误信息 \n实际值: '{actual_text}'"
                             simplified_error += f"，实际值: '{actual_text}'"
@@ -244,13 +254,17 @@ class BasePage:
     @check_and_screenshot("断言URL")
     def assert_url(self, expected: str):
         """断言当前URL"""
-        expect(self.page).to_have_url(expected)
+        assert (
+            actual := self.page.url
+        ) == expected, f"URL断言失败: 期望结果: '{expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言文本")
     def assert_text(self, selector: str, expected: str):
         """断言元素文本"""
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
-        expect(self._locator(selector).first).to_have_text(resolved_expected)
+        assert (
+            actual := self._locator(selector).first.inner_text()
+        ) == resolved_expected, f"文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
 
     @allure.step("硬断言元素文本")
     def hard_assert_text(self, selector: str, expected: str):
@@ -259,7 +273,9 @@ class BasePage:
             resolved_expected = self.variable_manager.replace_variables_refactored(
                 expected
             )
-            expect(self._locator(selector).first).to_have_text(resolved_expected)
+            assert (
+                actual := self._locator(selector).first.inner_text()
+            ) == resolved_expected, f"文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
         except AssertionError as e:
             # 截图
             if selector and hasattr(self.page, "locator"):
@@ -287,7 +303,9 @@ class BasePage:
     @check_and_screenshot("断言页面标题")
     def assert_title(self, expected: str):
         """断言页面标题"""
-        expect(self.page).to_have_title(expected)
+        assert (
+            actual := self.page.title()
+        ) == expected, f"页面标题断言失败: 期望结果: '{expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言元素数量")
     def assert_element_count(self, selector: str, expected: int):
@@ -298,70 +316,96 @@ class BasePage:
             logger.error(f"断言元素数量失败: 期望数量 '{expected}' 不是有效的整数")
             raise
 
-        expect(self._locator(selector)).to_have_count(expected)
+        assert (
+            actual := self._locator(selector).count()
+        ) == expected, f"元素数量断言失败: 期望结果: '{expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言元素包含文本")
     def assert_text_contains(self, selector: str, expected: str):
         """断言元素文本包含指定内容"""
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
-        expect(self._locator(selector)).to_contain_text(resolved_expected)
+        assert (
+            actual := self._locator(selector).first.inner_text()
+        ) and resolved_expected in actual, f"文本包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言URL包含")
     def assert_url_contains(self, expected: str):
         """断言当前URL包含指定内容"""
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
-        expect(self.page).to_have_url(re.compile(f".*{re.escape(resolved_expected)}.*"))
+        assert (
+            actual := self.page.url
+        ) and resolved_expected in actual, f"URL包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言元素存在")
     def assert_exists(self, selector: str):
         """断言元素存在于DOM中"""
-        expect(self._locator(selector)).to_be_attached()
+        assert (
+            actual := self._locator(selector).count()
+        ) > 0, f"元素存在断言失败: 期望元素存在, 实际数量: '{actual}'"
 
     @check_and_screenshot("断言元素不存在")
     def assert_not_exists(self, selector: str):
         """断言元素不存在于DOM中"""
-        expect(self._locator(selector)).not_to_be_attached()
+        assert (
+            actual := self._locator(selector).count()
+        ) == 0, f"元素不存在断言失败: 期望元素不存在, 实际数量: '{actual}'"
 
     @check_and_screenshot("断言元素启用状态")
     def assert_element_enabled(self, selector: str):
         """断言元素处于启用状态（非禁用）"""
-        expect(self._locator(selector)).to_be_enabled()
+        assert (
+            actual := not self._locator(selector).first.is_disabled()
+        ), f"元素启用状态断言失败: 期望元素启用, 实际状态: {'禁用' if not actual else '启用'}"
 
     @check_and_screenshot("断言元素禁用状态")
     def assert_element_disabled(self, selector: str):
         """断言元素处于禁用状态"""
-        expect(self._locator(selector)).to_be_disabled()
+        assert (
+            actual := self._locator(selector).first.is_disabled()
+        ), f"元素禁用状态断言失败: 期望元素禁用, 实际状态: {'禁用' if actual else '启用'}"
 
     @check_and_screenshot("断言元素可见性")
     def assert_visible(self, selector: str):
         """断言元素可见"""
-        expect(self._locator(selector)).to_be_visible()
+        assert (
+            actual := self._locator(selector).first.is_visible()
+        ), f"元素可见性断言失败: 期望元素可见, 实际状态: {'可见' if actual else '不可见'}"
 
     @check_and_screenshot("断言元素不可见")
     def assert_not_visible(self, selector: str):
         """断言元素不可见"""
-        expect(self._locator(selector)).not_to_be_visible()
+        assert (
+            actual := not self._locator(selector).first.is_visible()
+        ), f"元素不可见断言失败: 期望元素不可见, 实际状态: {'不可见' if actual else '可见'}"
 
     @check_and_screenshot("断言元素隐藏")
     def assert_be_hidden(self, selector: str):
         """断言元素隐藏"""
-        expect(self.page.locator(selector)).to_be_hidden()
+        assert (
+            actual := self.page.locator(selector).first.is_hidden()
+        ), f"元素隐藏断言失败: 期望元素隐藏, 实际状态: {'隐藏' if actual else '显示'}"
 
     @check_and_screenshot("断言元素属性值")
     def assert_attribute(self, selector: str, attribute: str, expected: str):
         """断言元素属性值"""
-        expect(self._locator(selector)).to_have_attribute(attribute, expected)
+        assert (
+            actual := self._locator(selector).first.get_attribute(attribute)
+        ) == expected, f"元素属性断言失败: 期望结果: '{expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言元素值")
     def assert_value(self, selector: str, expected: str):
         """断言元素值"""
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
-        expect(self._locator(selector)).to_have_value(resolved_expected)
+        assert (
+            actual := self._locator(selector).first.input_value()
+        ) == resolved_expected, f"元素值断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言元素已选中")
     def assert_checked(self, selector: str):
         """断言元素已选择"""
-        expect(self._locator(selector)).to_be_checked()
+        assert (
+            actual := self._locator(selector).first.is_checked()
+        ), f"元素选中状态断言失败: 期望元素已选中, 实际状态: {'已选中' if actual else '未选中'}"
 
     @handle_page_error(description="存储变量")
     def store_variable(self, name: str, value: str, scope: str = "global"):
@@ -1034,7 +1078,9 @@ class BasePage:
         # actual_values = self.page.locator(selector).evaluate(
         #     "el => Array.from(el.selectedOptions).map(o => o.value)"
         # )
-        expect(self.page.locator(selector)).to_have_values(resolved_values)
+        assert (
+            actual := [option.get_attribute('value') for option in self.page.locator(selector).locator('option:checked').all()]
+        ) == resolved_values, f"元素值列表断言失败: 期望结果: '{resolved_values}', 实际结果: '{actual}'"
         # allure.attach(
         #     f"断言成功: 元素 {selector} 的值\n期望: {resolved_values}\n实际: {actual_values}",
         #     name="断言结果",
@@ -1046,9 +1092,9 @@ class BasePage:
         """断言元素有精确的文本（不包括子元素文本）"""
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
         # actual_text = self.page.locator(selector).inner_text()
-        expect(self._locator(selector)).to_have_text(
-            resolved_expected, use_inner_text=True
-        )
+        assert (
+            actual := self._locator(selector).first.inner_text()
+        ) == resolved_expected, f"精确文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
         # allure.attach(
         #     f"断言成功: 元素 {selector} 的精确文本\n期望: '{resolved_expected}'\n实际: '{actual_text}'",
         #     name="断言结果",
@@ -1059,7 +1105,9 @@ class BasePage:
     def assert_text_matches(self, selector: str, pattern: str):
         """断言元素文本匹配正则表达式"""
         # actual_text = self.get_text(selector)
-        expect(self._locator(selector)).to_have_text(re.compile(pattern))
+        assert (
+            actual := self._locator(selector).first.inner_text()
+        ) and re.match(pattern, actual), f"文本正则匹配断言失败: 期望匹配模式: '{pattern}', 实际结果: '{actual}'"
         # allure.attach(
         #     f"断言成功: 元素 {selector} 的文本匹配正则\n正则模式: '{pattern}'\n实际文本: '{actual_text}'",
         #     name="断言结果",
