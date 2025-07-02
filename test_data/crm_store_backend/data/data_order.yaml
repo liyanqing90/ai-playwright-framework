@@ -222,18 +222,78 @@ test_data:
         selector: 订单列表二级菜单
       - action: fill
         selector: 线索id输入框
-        value: "28342616855358"
+        value: "231612969229027"
       - action: click
         selector: 订单查询按钮
       - action: click
-        selector: 店端取消下订按钮
+        selector: 本地变现按钮
       - action: click
-        selector: 取消下订确认弹窗确认按钮
+        selector: 是否变现否
+      - action: clear
+        selector: 备注
+      - action: fill
+        selector: 备注
+        value: "是否变现否"
       - action: click
-        selector: 取消下订列表暂无数据
+        selector: 确定变现按钮
+      - action: click
+        selector: 本地变现按钮
       - action: assert_exists
-        selector: 取消下订列表暂无数据
-        value: "暂无数据"
+        selector: 备注
+        value: "是否变现否"
+      - action: click
+        selector: 是否变现是
+      - action: fill
+        selector: 车变现金额
+        value: "11"
+      - action: fill
+        selector: 金融变现金额
+        value: "22"
+      - action: click
+        selector: 是否贷款否
+      - action: clear
+        selector: 备注
+      - action: fill
+        selector: 备注
+        value: "是变现，贷款否"
+      - action: click
+        selector: 确定变现按钮
+      - action: click
+        selector: 本地变现按钮
+      - action: assert_exists
+        selector: 备注
+        value: "是变现，贷款否"
+      - action: click
+        selector: 是否贷款选择是
+      - action: click
+        selector: 贷款机构选择框
+      - action: click
+        selector: 选择贷款机构
+      - action: click
+        selector: 分期期数选择框
+      - action: click
+        selector: 选择分期期数
+      - action: fill
+        selector: 贷款金额输入框
+        value: "333"
+      - action: fill
+        selector: 客户总费率输入框
+        value: "44"
+      - action: fill
+        selector: 车架号输入框
+        value: "456"
+      - action: clear
+        selector: 备注
+      - action: fill
+        selector: 备注
+        value: "是变现，是贷款"
+      - action: click
+        selector: 确定变现按钮
+      - action: click
+        selector: 本地变现按钮
+      - action: assert_exists
+        selector: 备注
+        value: "是变现，是贷款"
 
 
 

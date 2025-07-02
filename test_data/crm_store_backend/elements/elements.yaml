@@ -2,6 +2,7 @@ elements:
   账号密码登录tab: text=账号密码登录
   账号输入框: //input[@id='phone']
   密码输入框: //input[@id='password']
+  勾选协议按钮: //input[@id='autoLogin']
   登录按钮: role=button[name="登 录"]
 
   购车政策一级菜单: text="购车政策"
