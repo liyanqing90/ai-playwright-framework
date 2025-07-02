@@ -62,3 +62,30 @@ elements:
 
 
   #取消下订
+  店端取消下订按钮: (//a[contains(text(),'取消下订')])[1]
+  取消下订确认弹窗确认按钮: (//span[contains(text(),'确 定')])[1]
+  取消下订列表暂无数据: (//p[contains(text(),'暂无数据')])[1]
+
+  #本地变现
+  本地变现按钮: (//a[contains(text(),'本地变现')])[1]
+  是否变现否: (//input[@value='0'])[1]
+  确定变现按钮: (//span[contains(text(),'确 定')])[1]
+  备注: (//textarea[@id='basic_remark'])[1]
+
+  是否变现是: (//input[@value='1'])[1]
+  车变现金额: (//input[@placeholder='请输入变现金额'])[1]
+  金融变现金额: (//input[@placeholder='请输入变现金额'])[2]
+  是否贷款否: (//input[@value='0'])[2]
+
+  是否贷款选择是: (//input[@value='1'])[2]
+  贷款机构选择框: (//input[@id='basic_loanInstitution'])[1]
+  选择贷款机构: (//div[@class='ant-select-item-option-content'][contains(text(),'平安银行')])[1]
+  分期期数选择框: //input[@id='basic_installmentPeriods']
+  选择分期期数: (//div[@class='ant-select-item-option-content'][contains(text(),'12期')])[1]
+  贷款金额输入框: (//input[@placeholder='请输入贷款金额'])[1]
+  客户总费率输入框: (//input[@placeholder='请输入费率'])[1]
+  车架号输入框: (//input[@id='basic_vin'])[1]
+
+
+
+

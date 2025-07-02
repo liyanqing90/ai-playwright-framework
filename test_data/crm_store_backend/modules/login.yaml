@@ -14,4 +14,7 @@ login_steps: #登录
     selector: 密码输入框
     value: "Admin123!"
   - action: click
+    selector: "勾选协议按钮"
+  - action: click
     selector: "登录按钮"
+
