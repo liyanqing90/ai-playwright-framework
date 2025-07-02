@@ -1,0 +1,265 @@
+test_data:
+  test_entry_configuration_query:
+    - description: "入口配置查询"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: fill
+          selector: 入口名称查询
+          value: "之家体验店门店咨询入口"
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: assert_text
+          selector: 列表入口名称
+          value: "之家体验店门店咨询入口"
+
+  test_entry_configuration_query_initiate_mode:
+    - description: "入口配置查询启用状态"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: wait
+        - action: click
+          selector: 启用状态查询
+        - action: click
+          selector: 关闭
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: ASSERT_ATTRIBUTE
+          attribute: aria-checked
+          selector: 列表启用状态
+          value: "0"
+        - action: click
+          selector: 启用状态查询
+        - action: click
+          selector: 开启
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: ASSERT_ATTRIBUTE
+          attribute: aria-checked
+          selector: 列表启用状态
+          value: "1"
+
+  test_entry_configuration_query_reset:
+    - description: "入口配置查询重置"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: fill
+          selector: 入口名称查询
+          value: "之家体验店门店咨询入口"
+        - action: click
+          selector: 查询城市选择
+        - action: click
+          selector: 省选择
+        - action: click
+          selector: 市选择
+        - action: click
+          selector: 启用状态查询
+        - action: click
+          selector: 开启
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: click
+          selector: 重置
+        - action: assert_text
+          selector: 入口名称查询
+          value: ""
+        - action: assert_text
+          selector: 查询城市选择
+          value: ""
+        - action: assert_text
+          selector: 启用状态查询
+          value: "请选择"
+
+  test_entry_configuration_add:
+    - description: "入口配置查询"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: click
+          selector: 新建
+        - action: fill
+          selector: 新增列表名称
+          value: "哈哈哈哈哈哈哈哈"
+        - action: fill
+          selector: 新增pvareaid
+          value: "6666666"
+        - action: fill
+          selector: 新增用户自动发言
+          value: "呵呵呵呵呵呵呵呵呵呵呵和"
+        - action: click
+          selector: 新增自动回复卡片
+        - action: click
+          selector: 取消
+
+
+  test_quick_ask_search:
+    - description: "快捷提问查询"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 快捷提问
+        - action: fill
+          selector: quick_标题
+          value: "试驾"
+        - action: click
+          selector: quick_类型
+        - action: click
+          selector: quick_类型_快捷提问
+          value: "快捷提问"
+        - action: click
+          selector: quick_城市
+        - action: click
+          selector: quick_城市_展开
+        - action: click
+          selector: quick_城市_北京
+        - action: click
+          selector: quick_状态
+        - action: click
+          selector: quick_状态_启用
+        - action: monitor_request
+          selector: 查询
+          url_pattern: /api/admin/im/config/enter/list
+          assert_params:
+            $.configType: 2
+            $.name: 试驾
+            $.configState: 1
+            $.cityId: 110100
+  test_quick_ask_new:
+    - description: "快捷提问新建"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 快捷提问
+        - action: click
+          selector: 新建
+          value: "新增"
+        - action: click
+          selector: 弹框关闭
+        - action: assert_be_hidden
+          selector: 弹框
+  test_quick_ask_reset:
+    - description: "快捷提问重置"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 快捷提问
+        - action: fill
+          selector: quick_标题
+          value: "试驾"
+        - action: click
+          selector: quick_类型
+        - action: click
+          selector: quick_类型_快捷提问
+        - action: click
+          selector: quick_城市
+        - action: click
+          selector: quick_城市_展开
+        - action: click
+          selector: quick_城市_北京
+        - action: click
+          selector: quick_状态
+        - action: click
+          selector: quick_状态_启用
+        - action: click
+          selector: 重置
+        - action: assert_text
+          selector: quick_标题
+          value: ""
+        - action: assert_text
+          selector: quick_类型
+          value: "请选择"
+        - action: assert_text
+          selector: quick_城市
+          value: "请选择"
+        - action: assert_text
+          selector: quick_状态
+          value: "请选择"
+  test_quick_ask_title:
+    - description: "快捷提问搜索标题"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 快捷提问
+        - action: fill
+          selector: quick_标题
+          value: "试驾"
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: assert_text_contains
+          selector: quick_tb_title
+          value: "试驾"
+  test_quick_ask_type:
+    - description: "快捷提问搜索类型"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 快捷提问
+        - action: click
+          selector: quick_类型
+        - action: click
+          selector: quick_类型_快捷提问
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: assert_text
+          selector: quick_tb_type
+          value: "快捷提问"
+  test_quick_ask_status:
+    - description: "快捷提问搜索启用状态"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 快捷提问
+        - action: click
+          selector: quick_状态
+        - action: click
+          selector: quick_状态_启用
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: ASSERT_ATTRIBUTE
+          attribute: aria-checked
+          selector: quick_tb_状态
+          value: "1"
+  test_quick_ask_detail:
+    - description: "快捷提问详情"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 快捷提问
+        - action: click
+          selector: quick_tb_详情
+        - action: assert_text
+          selector: 弹框标题
+          value: "详情"
+        - action: click
+          selector: 弹框关闭
+        - action: assert_be_hidden
+          selector: 弹框
+  test_quick_ask_edit:
+    - description: "快捷提问编辑"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 快捷提问
+          value: 3
+        - action: click
+          selector: quick_tb_编辑
+        - action: assert_text
+          selector: 弹框标题
+          value: "编辑"
+        - action: click
+          selector: 弹框关闭
+        - action: assert_be_hidden
+          selector: 弹框

@@ -539,7 +539,7 @@ create_order: # APP中管家创建线索并下订，不填写任何信息
     value: 选择车型
   - action: 输入
     selector: 推送-选择车型输入框
-    value: 新海狮X30L
+    value: 新海狮X30L  #奥迪A4L
   - action: 点击
     selector: 推送-选择筛选的第一个车型
   - action: 点击

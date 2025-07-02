@@ -20,6 +20,11 @@ def generate_faker_data(data_type, **kwargs):
         return "新零售" + faker.uuid4().replace("-", "")[:6]
     elif data_type == "mobile":
         return "18210233933"
+    elif data_type == "datetime":
+        import datetime
+
+        today = datetime.date.today()
+        return today.strftime("%Y-%m-%d")
     else:
         raise ValueError(f"不支持的数据类型: {data_type}")
 

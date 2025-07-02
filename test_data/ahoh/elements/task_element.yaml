@@ -6,3 +6,17 @@ elements:
   待办列表-持续跟进tab: div[role="tablist"]>div:nth-child(5)>span
   待办列表-待接待tab: div[role="tablist"]>div:nth-child(6)>span
   待办列表-已逾期tab: div[role="tablist"]>div:nth-child(7)>span
+  待办列表第一个卡片信息-线索姓名: div.van-list > div:nth-child(1) div.listcard-title span.username
+  待办列表第一个卡片信息-线索等级: div.van-list > div:nth-child(1) div.listcard-title span.level
+  待办列表第一个卡片信息-任务逾期倒计时时间: div.van-list > div:nth-child(1) div.listcard-title__hk span.status
+  待办列表第一个卡片信息-线索手机号: div.van-list > div:nth-child(1) div.listcard-title-flex-box div.userphone
+  待办列表第一个卡片信息-线索来源标签: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(3) label.listcard-item__name
+  待办列表第一个卡片信息-线索来源值: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(3) div.value-oneline
+  待办列表第一个卡片信息-第二个标签: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(4) label.listcard-item__name   #待清洗任务是任务逾期、待回电是咨询内容
+  待办列表第一个卡片信息-第二个标签值: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(4) div.value-oneline
+  待办列表第一个卡片信息-第三个标签: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(5) label.listcard-item__name   #待回电是预约回电
+  待办列表第一个卡片信息-第三个标签值: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(5) div.value-oneline
+  待办列表第一个卡片信息-第四个标签: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(6) label.listcard-item__name
+  待办列表第一个卡片信息-第四个标签值: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(6) div.value-oneline
+  待办列表第一个卡片信息-打电话按钮: div.van-list > div:nth-child(1) div.listcard-operation>div.updateBtn-white
+  待办列表第一个卡片信息-填跟进按钮: div.van-list > div:nth-child(1) div.listcard-operation>div.updataBtn-rightColor
