@@ -1,8 +1,8 @@
 test_cases:
 #订单列表
 
-   #- name: test_order_list #列表
-   #- name: test_order_filter #筛选
-   #- name: test_order_details #详情
-   #- name: test_order_cancel_order #取消下订
+   - name: test_order_list #列表
+   - name: test_order_filter #筛选
+   - name: test_order_details #详情
+   - name: test_order_cancel_order #取消下订
    - name: test_order_monetization  #本地变现
