@@ -332,7 +332,7 @@ class VariableManager:
 
         # 优化：将结果存入缓存，并管理缓存键
         self._evict_cache_if_needed()  # 检查缓存大小
-        self._variable_cache[cache_key] = value,
+        self._variable_cache[cache_key] = value
         self._cache_keys_by_variable[name].add(cache_key)
 
         return value
