@@ -1,0 +1,8 @@
+test_cases:
+#买贵必赔保单
+
+   - name: test_order_policy_list #列表
+   #- name: test_order_policy_filter #筛选
+   #- name: test_order_policy_details #详情
+   #- name: test_order_policy_button #按钮展示
+
