@@ -80,7 +80,7 @@ test_data:
           value: "请选择"
 
   test_entry_configuration_add:
-    - description: "入口配置查询"
+    - description: "入口配置新增"
       steps:
         - use_module: click_im_operation_management
         - action: click
@@ -100,6 +100,40 @@ test_data:
           selector: 新增自动回复卡片
         - action: click
           selector: 取消
+
+  test_entry_configuration_particulars:
+    - description: "入口配置详情"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: fill
+          selector: 入口名称查询
+          value: "之家体验店门店咨询入口"
+        - action: click
+          selector: 查询
+        - action: wait
+        - action: click
+          selector: 详情
+        - action: assert_text
+          selector: 详情入口名称
+          value: "之家体验店门店咨询入口"
+
+  test_entry_configuration_edit:
+    - description: "入口配置编辑"
+      steps:
+        - use_module: click_im_operation_management
+        - action: click
+          selector: 入口配置
+        - action: fill
+          selector: 入口名称查询
+          value: "之家体验店门店咨询入口"
+        - action: click
+          selector: 查询
+        - action: click
+          selector: 编辑
+        - action: click
+          selector: 弹窗关闭
 
 
   test_quick_ask_search:
