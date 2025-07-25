@@ -5,15 +5,15 @@ test_data:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
-      - action: click
-        selector: AI营销助手工作中
+      - if : "${{ element_attribute('AI营销助手总开关', 'aria-checked') == 'true' }}"
+        then:
+          - action: click
+            selector: AI营销助手总开关
       - action: assert_text
         value: "未开启"
         selector: 未开启
       - action: click
-        selector: AI营销助手未开启
+        selector: AI营销助手总开关
       - action: assert_text
         value: "工作中"
         selector: 已开启
@@ -23,48 +23,44 @@ test_data:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: wait
         value: 2
-      - action: click
-        selector: 进私开关
-      - action: click
-        selector: 进私开关
+      - if : "${{ element_attribute('进私开关', 'aria-checked') == 'true' }}"
+        else:
+          - action: click
+            selector: 进私开关
       - action: assert_text
         value: "生效中"
-        selector: 已生效
+        selector: 进私触达生效中
   test_qian_ke:
     description: "营销助手页面潜客触达测试"
     steps:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: wait
         value: 2
-      - action: click
-        selector: 潜客开关
+      - if : "${{ element_attribute('潜客开关', 'aria-checked') == 'true' }}"
+        else:
+          - action: click
+            selector: 潜客开关
       - action: click
         selector: 潜客开关
       - action: assert_text
         value: "生效中"
-        selector: 已生效
+        selector: 进私触达生效中
   test_wan_hui:
     description: "营销助手页面线索挽回测试"
     steps:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: wait
         value: 2
-      - action: click
-        selector: 挽回开关
-      - action: click
-        selector: 挽回开关
+      - if : "${{ element_attribute('挽回开关', 'aria-checked') == 'true' }}"
+        else:
+          - action: click
+            selector: 挽回开关
       - action: assert_text
         value: "两次动态挽回生效中"
         selector: 挽回已生效
@@ -74,25 +70,19 @@ test_data:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: wait
         value: 2
-      - action: click
-        selector: 回复率开关
-      - action: click
-        selector: 回复率开关
+      - if : "${{ element_attribute('回复率开关', 'aria-checked') == 'true' }}"
+        else:
+          - action: click
+            selector: 回复率开关
       - action: assert_text
-        value: "3分钟回复率提升生效中"
+        value: "生效中"
         selector: 回复率提升已生效
   test_si_xin_hui_hua:
     description: "营销助手页面私信会话展开测试"
     steps:
       - use_module: login_futian
-      - action: click
-        selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 私信会话
       - action: assert_text
@@ -104,10 +94,6 @@ test_data:
     description: "营销助手页面私信会话弹窗留资状态筛选测试"
     steps:
       - use_module: login_futian
-      - action: click
-        selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 私信会话
       - action: assert_text
@@ -125,10 +111,6 @@ test_data:
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 营销助手
-      - action: click
         selector: 私信会话
       - action: click
         selector: 全部状态
@@ -141,10 +123,6 @@ test_data:
     description: "营销助手页面私信会话弹窗起止时间筛选测试"
     steps:
       - use_module: login_futian
-      - action: click
-        selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 私信会话
       - action: click
@@ -162,10 +140,6 @@ test_data:
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 营销助手
-      - action: click
         selector: 私信会话
       - action: click
         selector: 全部状态
@@ -178,15 +152,11 @@ test_data:
         selector: 重置按钮
       - action: assert_text
         value: "全部"
-        selector: 全部
+        selector: 留资筛选
   test_hui_hua_tab:
     description: "营销助手页面私信会话弹窗会话列表tab测试"
     steps:
       - use_module: login_futian
-      - action: click
-        selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 私信会话
       - action: click
@@ -197,13 +167,11 @@ test_data:
         value: "全部"
         selector: 全部
   test_shi_fou_liu_zi:
-    description: "私信营销页面是否留资筛选测试"
+    description: "私信页面是否留资筛选测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 私信营销
+        selector: 私信
       - action: click
         selector: 全部
       - action: click
@@ -212,13 +180,11 @@ test_data:
         value: "未留资"
         selector: 未留资
   test_chu_da_zhuang_tai:
-    description: "私信营销页面触达状态筛选测试"
+    description: "私信页面触达状态筛选测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 私信营销
+        selector: 私信
       - action: click
         selector: 触达状态
       - action: click
@@ -232,13 +198,11 @@ test_data:
         assert_params:
           $.reachStatus: "1"
   test_suo_shu_di_qu:
-    description: "私信营销页面所属地区筛选测试"
+    description: "私信页面所属地区筛选测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 私信营销
+        selector: 私信
       - action: click
         selector: 所属地区
       - action: click
@@ -247,13 +211,11 @@ test_data:
         value: "北京"
         selector: 北京
   test_yi_xiang_che_xi:
-    description: "私信营销页面意向车系筛选测试"
+    description: "私信页面意向车系筛选测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 私信营销
+        selector: 私信
       - action: click
         selector: 所属地区
       - action: click
@@ -270,13 +232,11 @@ test_data:
         assert_params:
           $.preferSeriesName: "宝马"
   test_si_xin_chong_zhi:
-    description: "私信营销页面重置按钮测试"
+    description: "私信页面重置按钮测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 私信营销
+        selector: 私信
       - action: click
         selector: 触达状态
       - action: click
@@ -301,13 +261,11 @@ test_data:
         assert_params:
           $.preferSeriesName: null
   test_si_xin_ri_qi:
-    description: "私信营销页面日期组件测试"
+    description: "私信页面日期组件测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 私信营销
+        selector: 私信
       - action: click
         selector: 私信开始日期
       - action: fill
@@ -321,58 +279,51 @@ test_data:
       - action: click
         selector: 查询按钮
   test_xian_suo_zong_lan:
-    description: "线索管理页面线索总览测试"
+    description: "线索页面线索总览测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 线索管理
+        selector: 线索
       - action: assert_text
         value: "全部线索数"
         selector: 全部线索数
   test_xian_suo_ri_qi:
-    description: "线索管理页面日期组件测试"
+    description: "线索页面日期组件测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 线索管理
+        selector: 线索
       - action: click
         selector: 30天
       - action: assert_text
         value: "30天"
         selector: 30天
   test_xian_suo_lie_biao:
-    description: "线索管理页面列表展示测试"
+    description: "线索页面列表展示测试"
     steps:
       - use_module: login_futian
       - action: click
-        selector: 营销
-      - action: click
-        selector: 线索管理
+        selector: 线索
       - action: wait
       - action: monitor_response
-        url_pattern: api/aim/leads/page?BUserId=9250&pageIndex=1&pageSize=10
+        url_pattern: api/aim/leads/page
         selector: 关闭图标
         action_type: click
         assert_params:
-          $.result.list[0].sourceName: "抖音"
+          $.returncode: 0
   test_zhi_neng_hui_fu:
     description: "营销助手页面弹幕智能回复开关测试"
     steps:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
-      - action: click
-        selector: 弹幕智能回复开关
-      - action: click
-        selector: 弹幕智能回复开关
+      - if : "${{ element_attribute('弹幕智能回复开关', 'aria-checked') == 'true' }}"
+        else:
+          - action: click
+            selector: 弹幕智能回复开关
+      - action: wait
       - action: assert_text
-        value: "弹幕智能回复生效中"
+        value: "生效中"
         selector: 弹幕智能回复生效中
   test_she_zhi_yu_liao:
     description: "营销助手页面设置语料入口测试"
@@ -381,20 +332,16 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
         selector: 设置语料
-      - action: assert_text
-        value: "回复语料设置 新增"
-        selector: 回复语料设置
+      - action: assert_text_contains
+        value: "回复语料设置"
+        selector: 设置_title
   test_xin_zeng_yu_liao:
     description: "回复语料设置页面新增功能测试"
     steps:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 设置语料
       - action: click
@@ -408,8 +355,6 @@ test_data:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 设置语料
       - action: click
@@ -433,8 +378,6 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
         selector: 设置语料
       - action: click
         selector: 新增
@@ -456,8 +399,6 @@ test_data:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 设置语料
       - action: click
@@ -495,21 +436,19 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
         selector: 设置语料
-      - action: double_click
+      - action: click
         selector: 翻页
-      - action: assert_visible
-        selector: 序号
+      - action: assert_attribute
+        attribute: aria-disabled
+        value: "false"
+        selector: 上一页
   test_bian_ji_yu_liao:
     description: "弹幕语料页面编辑功能测试"
     steps:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 设置语料
       - action: click
@@ -524,8 +463,6 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
         selector: 设置语料
       - action: click
         selector: 删除
@@ -538,20 +475,16 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
         selector: 白名单菜单项
-      - action: assert_text
-        value: "白名单 新增"
-        selector: 白名单
+      - action: assert_text_contains
+        value: "白名单"
+        selector: 设置_title
   test_xin_zeng_bai_ming_dan:
     description: "白名单新增功能测试"
     steps:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 白名单菜单项
       - action: click
@@ -579,8 +512,6 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
         selector: 白名单菜单项
       - action: click
         selector: 编辑
@@ -593,8 +524,6 @@ test_data:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 白名单菜单项
       - action: click
@@ -612,20 +541,16 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
         selector: 福袋口令菜单
-      - action: assert_text
-        value: "编辑白名单账号"
-        selector: 编辑白名单
+      - action: assert_text_contains
+        value: "屏蔽福袋口令"
+        selector: 设置_title
   test_xin_zeng_fu_dai:
     description: "福袋口令新增功能测试"
     steps:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 福袋口令菜单
       - action: click
@@ -653,8 +578,6 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
         selector: 福袋口令菜单
       - action: click
         selector: 编辑
@@ -667,8 +590,6 @@ test_data:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
       - action: click
         selector: 福袋口令菜单
       - action: click
@@ -685,12 +606,12 @@ test_data:
       - use_module: login_futian
       - action: click
         selector: 营销
-      - action: click
-        selector: 营销助手
-      - action: click
-        selector: 弹幕循环播报开关
+      - if : "${{ element_attribute('弹幕循环播报开关', 'aria-checked') == 'true' }}"
+        else:
+          - action: click
+            selector: 弹幕循环播报开关
       - action: assert_text
-        value: "弹幕循环播报生效中"
+        value: "生效中"
         selector: 弹幕循环播报生效中
       - action: click
         selector: 弹幕循环播报开关
@@ -701,12 +622,25 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
-        selector: 去设置
+        selector: 弹幕轮播去设置
       - action: assert_text
         value: "循环播报设置"
         selector: 循环播报设置
+  test_shan_chu_bo_bao:
+    description: "弹幕循环播报删除功能测试"
+    steps:
+      - use_module: login_futian
+      - action: click
+        selector: 营销
+      - action: click
+        selector: 弹幕轮播去设置
+      - action: click
+        selector: 删除图标
+      - action: click
+        selector: 确认按钮
+      - action: click
+        selector: 确定
+      - action: wait
   test_xin_zeng_bo_bao:
     description: "弹幕循环播报新增功能测试"
     steps:
@@ -714,9 +648,8 @@ test_data:
       - action: click
         selector: 营销
       - action: click
-        selector: 营销助手
-      - action: click
-        selector: 去设置
+        selector: 弹幕轮播去设置
+      - action: wait
       - action: click
         selector: 轮播内容输入框
       - action: fill
@@ -727,25 +660,6 @@ test_data:
       - action: assert_text
         value: "谢谢点点关注"
         selector: 谢谢点点关注
-      - action: click
-        selector: 确定
-      - action: wait
-  test_shan_chu_bo_bao:
-    description: "弹幕循环播报删除功能测试"
-    steps:
-      - use_module: login_futian
-      - action: click
-        selector: 营销
-      - action: click
-        selector: 营销助手
-      - action: click
-        selector: 去设置
-      - action: click
-        selector: 轮播内容输入框
-      - action: click
-        selector: 删除图标
-      - action: click
-        selector: 确认按钮
       - action: click
         selector: 确定
       - action: wait

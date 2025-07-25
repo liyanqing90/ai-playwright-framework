@@ -361,21 +361,149 @@ login_test:
       description: "验证登录成功"
 ```
 
-### 条件分支
+### 条件分支执行
 
-条件分支允许基于条件执行不同的测试步骤，增加测试用例的灵活性。
+支持在测试用例中使用 if-then-else 条件分支，根据不同条件执行不同的测试步骤。
+
+#### 基本语法
 
 ```yaml
-# 条件分支示例
+- if: "${{ condition_expression }}"
+  then:
+    - action: some_action
+      # ... 条件为真时执行的步骤
+  else:
+    - action: other_action
+      # ... 条件为假时执行的步骤（可选）
+```
+
+#### 支持的条件类型
+
+**1. 变量比较**
+```yaml
 - if: "${{ ${user_type} == 'admin' }}"
   then:
     - action: click
-      selector: "admin_panel"
-      description: "点击管理员面板"
+      selector: "admin_panel_button"
   else:
+    - action: navigate
+      value: "/user-dashboard"
+```
+
+**2. UI元素状态判断**
+```yaml
+# 元素可见性判断
+- if: "${{ element_visible('#login-button') }}"
+  then:
     - action: click
-      selector: "user_dashboard"
-      description: "点击用户仪表盘"
+      selector: "#login-button"
+  else:
+    - action: wait
+      value: 2
+
+# 元素存在性判断
+- if: "${{ element_exists('.error-message') }}"
+  then:
+    - action: assert_text_contains
+      selector: ".error-message"
+      expected: "错误信息"
+
+# 元素启用状态判断
+- if: "${{ element_enabled('#submit-btn') }}"
+  then:
+    - action: click
+      selector: "#submit-btn"
+  else:
+    - action: log
+      value: "提交按钮未启用"
+```
+
+**3. 元素内容判断**
+```yaml
+# 元素文本内容判断
+- if: "${{ element_text('#status') == 'ready' }}"
+  then:
+    - action: click
+      selector: "#submit"
+
+# 元素属性值判断
+- if: "${{ element_attribute('#input', 'disabled') == None }}"
+  then:
+    - action: fill
+      selector: "#input"
+      value: "test data"
+
+# 元素数量判断
+- if: "${{ element_count('.item') > 0 }}"
+  then:
+    - action: click
+      selector: ".item:first-child"
+```
+
+**4. 复合条件判断**
+```yaml
+# 多条件组合
+- if: "${{ element_visible('#modal') and element_text('#modal .title') == 'Confirm' }}"
+  then:
+    - action: click
+      selector: "#modal .confirm-btn"
+
+# 复杂逻辑判断
+- if: "${{ ${retry_count} < 3 and element_exists('.loading') }}"
+  then:
+    - action: wait
+      value: 1
+    - action: set_variable
+      variable_name: "retry_count"
+      value: "${{ ${retry_count} + 1 }}"
+```
+
+#### 可用的UI元素检查函数
+
+| 函数名 | 参数 | 返回值 | 说明 |
+|--------|------|--------|------|
+| `element_exists(selector)` | 元素选择器 | boolean | 检查元素是否存在于DOM中 |
+| `element_visible(selector)` | 元素选择器 | boolean | 检查元素是否可见 |
+| `element_enabled(selector)` | 元素选择器 | boolean | 检查元素是否启用（非disabled） |
+| `element_text(selector)` | 元素选择器 | string | 获取元素的文本内容 |
+| `element_attribute(selector, attr_name)` | 元素选择器, 属性名 | string/None | 获取元素的指定属性值 |
+| `element_count(selector)` | 元素选择器 | number | 获取匹配元素的数量 |
+
+#### 实际应用示例
+
+```yaml
+# 智能登录流程
+test_cases:
+  - name: "智能登录测试"
+    steps:
+      - action: navigate
+        value: "/login"
+      
+      # 检查是否已登录
+      - if: "${{ element_exists('.user-profile') }}"
+        then:
+          - action: log
+            value: "用户已登录，跳过登录步骤"
+        else:
+          # 执行登录流程
+          - action: fill
+            selector: "#username"
+            value: "${username}"
+          - action: fill
+            selector: "#password"
+            value: "${password}"
+          - action: click
+            selector: "#login-btn"
+      
+      # 检查登录结果
+      - if: "${{ element_visible('.error-message') }}"
+        then:
+          - action: assert_text_contains
+            selector: ".error-message"
+            expected: "用户名或密码错误"
+        else:
+          - action: assert_element_visible
+            selector: ".dashboard"
 ```
 
 ### 循环执行
