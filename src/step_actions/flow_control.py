@@ -99,73 +99,152 @@ def execute_loop(step_executor, step: Dict[str, Any]) -> None:
 
 def evaluate_expression(step_executor, expression: str) -> bool:
     """
-    计算表达式的值，支持数学运算和比较操作
+    计算表达式的值，支持数学运算、比较操作和UI元素判断
 
     Args:
-        step_executor: StepExecutor实例
-        expression: 表达式字符串，如 "${{ ${count} > 5 }}" 或 "${{ ${num1} + ${num2} * 2 }}"
+        step_executor: 步骤执行器实例
+        expression: 表达式字符串，格式为 ${{ expression }}
 
     Returns:
-        表达式的布尔结果
+        bool: 表达式计算结果
+
+    支持的UI元素判断函数：
+        - element_exists(selector): 检查元素是否存在
+        - element_visible(selector): 检查元素是否可见
+        - element_enabled(selector): 检查元素是否启用
+        - element_text(selector): 获取元素文本内容
+        - element_attribute(selector, attr_name): 获取元素属性值
+        - element_count(selector): 获取匹配元素的数量
     """
-    # 检查是否是表达式格式
     if not (expression.startswith("${{") and expression.endswith("}}")):
-        # 不是表达式，直接返回表达式值的布尔性
         return bool(step_executor._replace_variables(expression))
 
-    # 提取表达式内容
     expr_content = expression[3:-2].strip()
 
-    # 替换所有变量引用
+    # 先替换表达式中的选择器（通过elements映射）
+    import re
+
+    def replace_selector_in_expression(match):
+        """替换表达式中的选择器引用，使用与step_executor相同的逻辑"""
+        func_name = match.group(1)
+        params_str = match.group(2)
+
+        # 解析函数参数
+        if func_name in ['element_exists', 'element_visible', 'element_enabled', 'element_text', 'element_count']:
+            # 单参数函数：element_exists('selector')
+            selector_match = re.match(r"'([^']+)'|\"([^\"]+)\"", params_str.strip())
+            if selector_match:
+                pre_selector = selector_match.group(1) or selector_match.group(2)
+                # 使用与step_executor相同的替换逻辑
+                selector = step_executor.variable_manager.replace_variables_refactored(
+                    step_executor.elements.get(pre_selector, pre_selector)
+                )
+                # 转义选择器中的单引号
+                escaped_selector = selector.replace("'", "\\'")
+                return f"{func_name}('{escaped_selector}')"
+        elif func_name == 'element_attribute':
+            # 双参数函数：element_attribute('selector', 'attr')
+            params = params_str.split(',', 1)
+            if len(params) == 2:
+                selector_match = re.match(r"'([^']+)'|\"([^\"]+)\"", params[0].strip())
+                if selector_match:
+                    pre_selector = selector_match.group(1) or selector_match.group(2)
+                    # 使用与step_executor相同的替换逻辑
+                    selector = step_executor.variable_manager.replace_variables_refactored(
+                        step_executor.elements.get(pre_selector, pre_selector)
+                    )
+                    # 转义选择器中的单引号
+                    escaped_selector = selector.replace("'", "\\'")
+                    attr_part = params[1].strip()
+                    return f"{func_name}('{escaped_selector}', {attr_part})"
+
+        return match.group(0)  # 如果无法解析，返回原始内容
+
+    # 替换表达式中的选择器引用
+    pattern = r'(element_(?:exists|visible|enabled|text|attribute|count))\(([^)]+)\)'
+    expr_content = re.sub(pattern, replace_selector_in_expression, expr_content)
+
+    # 然后替换其他变量
     expr_content = step_executor._replace_variables(expr_content)
 
-    # 安全计算表达式
     try:
-        # 创建一个安全的执行环境，添加必要的数学函数和操作
         import math
         import operator
 
-        # 定义安全的数学函数集合
+        # 定义UI元素检查函数，直接使用ui_helper的_locator方法
+        def element_exists(selector):
+            """检查元素是否存在"""
+            try:
+                return step_executor.ui_helper._locator(selector).first.is_attached()
+            except Exception as e:
+                logger.debug(f"元素存在性检查失败 {selector}: {e}")
+                return False
+
+        def element_visible(selector):
+            """检查元素是否可见"""
+            try:
+                return step_executor.ui_helper._locator(selector).first.is_visible()
+            except Exception as e:
+                logger.debug(f"元素可见性检查失败 {selector}: {e}")
+                return False
+
+        def element_enabled(selector):
+            """检查元素是否启用"""
+            try:
+                return step_executor.ui_helper._locator(selector).first.is_enabled()
+            except Exception as e:
+                logger.debug(f"元素启用状态检查失败 {selector}: {e}")
+                return False
+
+        def element_text(selector):
+            """获取元素文本内容"""
+            try:
+                return step_executor.ui_helper._locator(selector).first.inner_text()
+            except Exception as e:
+                logger.debug(f"元素文本获取失败 {selector}: {e}")
+                return ""
+
+        def element_attribute(selector, attr_name):
+            """获取元素属性值"""
+            try:
+                return step_executor.ui_helper._locator(selector).first.get_attribute(attr_name)
+            except Exception as e:
+                logger.debug(f"元素属性获取失败 {selector}.{attr_name}: {e}")
+                return None
+
+        def element_count(selector):
+            """获取匹配元素的数量"""
+            try:
+                return step_executor.ui_helper._locator(selector).count()
+            except Exception as e:
+                logger.debug(f"元素计数失败 {selector}: {e}")
+                return 0
+
+        # 扩展安全函数集合
         safe_math_functions = {
-            # 基本数学函数
-            "abs": abs,
-            "round": round,
-            "min": min,
-            "max": max,
-            "sum": sum,
+            # 原有数学函数
+            "abs": abs, "round": round, "min": min, "max": max,
+            "sqrt": math.sqrt, "pow": math.pow,
+            "int": int, "float": float, "str": str, "bool": bool,
             "len": len,
-            # 数学模块函数
-            "sqrt": math.sqrt,
-            "pow": math.pow,
-            "sin": math.sin,
-            "cos": math.cos,
-            "tan": math.tan,
-            "floor": math.floor,
-            "ceil": math.ceil,
-            "log": math.log,
-            "log10": math.log10,
-            "exp": math.exp,
-            # 常量
-            "pi": math.pi,
-            "e": math.e,
-            # 类型转换
-            "int": int,
-            "float": float,
-            "str": str,
-            "bool": bool,
+
+            # 新增UI元素检查函数
+            "element_exists": element_exists,
+            "element_visible": element_visible,
+            "element_enabled": element_enabled,
+            "element_text": element_text,
+            "element_attribute": element_attribute,
+            "element_count": element_count,
         }
 
-        # 设置安全的执行环境
         safe_globals = {
-            "__builtins__": {},  # 清空内置函数
-            **safe_math_functions,  # 添加安全的数学函数
+            "__builtins__": {},
+            **safe_math_functions,
         }
 
-        # 预处理表达式，处理字符串和数字
         processed_expr = preprocess_expression(expr_content)
-
-        # 执行表达式
         result = eval(processed_expr, safe_globals)
+        logger.debug(f"表达式计算: {expr_content} = {result}")
         return bool(result)
     except Exception as e:
         logger.error(f"表达式计算错误: {expr_content} - {e}")
@@ -173,51 +252,23 @@ def evaluate_expression(step_executor, expression: str) -> bool:
 
 
 def preprocess_expression(expr: str) -> str:
-    """
-    预处理表达式，处理字符串和数字
+    operators = ["==", "!=", ">=", "<=", ">", "<"]
+    for op in operators:
+        if op in expr:
+            # 分割表达式
+            parts = expr.split(op, 1)  # 只分割一次，处理第一个操作符
+            if len(parts) == 2:
+                left = parts[0].strip()
+                right = parts[1].strip()
 
-    Args:
-        expr: 原始表达式字符串
+                # 处理左侧
+                left = process_operand(left)
 
-    Returns:
-        处理后的表达式字符串
-    """
+                # 处理右侧
+                right = process_operand(right)
 
-    # 已经是合法Python表达式的情况直接返回
-    try:
-        # 尝试编译表达式，如果成功则直接返回
-        compile(expr, "<string>", "eval")
-        return expr
-    except SyntaxError:
-        pass  # 继续处理
-
-    # 处理常见的比较操作符
-    if (
-        "==" in expr
-        or "!=" in expr
-        or ">" in expr
-        or "<" in expr
-        or ">=" in expr
-        or "<=" in expr
-    ):
-        # 使用正则表达式匹配操作符
-        operators = ["==", "!=", ">=", "<=", ">", "<"]
-        for op in operators:
-            if op in expr:
-                # 分割表达式
-                parts = expr.split(op, 1)  # 只分割一次，处理第一个操作符
-                if len(parts) == 2:
-                    left = parts[0].strip()
-                    right = parts[1].strip()
-
-                    # 处理左侧
-                    left = process_operand(left)
-
-                    # 处理右侧
-                    right = process_operand(right)
-
-                    # 重新组合表达式
-                    return f"{left} {op} {right}"
+                # 重新组合表达式
+                return f"{left} {op} {right}"
 
     # 处理数学运算表达式
     # 这里我们假设如果没有比较操作符，那么整个表达式就是一个数学运算

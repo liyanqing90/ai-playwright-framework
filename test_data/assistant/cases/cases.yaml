@@ -14,10 +14,6 @@ test_cases:
 
 
   #  营销
-  - name: test_ji_qiao
-    fixtures: [ login ]
-  - name: test_ling_gan
-    fixtures: [ login ]
   - name: test_zong_kai_guan
   - name: test_jin_si
   - name: test_qian_ke
@@ -58,8 +54,8 @@ test_cases:
   - name: test_shan_chu_fu_dai
   - name: test_dan_mu_xun_huan_bo_bao
   - name: test_dan_mu_xun_huan_ru_kou
-  - name: test_xin_zeng_bo_bao
   - name: test_shan_chu_bo_bao
+  - name: test_xin_zeng_bo_bao
 #  个人中心
   - name: test_Personal_Center
     fixtures: [ login ]
@@ -72,6 +68,10 @@ test_cases:
   - name: test_skill_Enable
     fixtures: [ login ]
   - name: test_skill_speech
+    fixtures: [ login ]
+  - name: test_ji_qiao
+    fixtures: [ login ]
+  - name: test_ling_gan
     fixtures: [ login ]
 
   #灵感

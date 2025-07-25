@@ -2,25 +2,24 @@ elements:
   用户名输入框: role=textbox[name="请输入您的用户名"]
   密码输入框: role=textbox[name="请输入您的密码"]
   营销: text=营销
-  营销助手: text=营销助手
-  AI营销助手工作中: "div >> text=/^AI营销助手工作中$/ >> role=switch"
-  AI营销助手未开启: "div >> text=/^AI营销助手未开启$/ >> role=switch"
-  进私开关: //*[@id="app"]/main/div/div[2]/div[2]/section/div[2]/div/div[1]/div[2]/button
+  AI营销助手总开关: //div[@class='main-section__title']//button[@role='switch']
+  进私开关: (//button[@role='switch'])[3]
   未开启: text=未开启
   已开启: text=工作中
-  已生效: text=生效中
-  潜客开关: "div:nth-child(2) > .item > .item-right"
-  挽回开关: "div:nth-child(3) > .item > .item-right"
-  挽回已生效: text=两次动态挽回生效
-  回复率开关: "div:nth-child(4) > .item > .item-right"
-  回复率提升已生效: text=3分钟回复率提升生效
+  进私触达生效中: //div[./h4[text()='进私触达']]/span[@class='tag']
+  潜客开关: (//button[@role='switch'])[4]
+  挽回开关: (//button[@role='switch'])[5]
+  挽回已生效: //div[./h4[text()='线索挽回']]/span[@class='tag']
+  回复率开关: (//button[@role='switch'])[6]
+  回复率提升已生效: //div[./h4[text()='进私触达']]/span[@class='tag']
   私信会话: "text=私信会话"
   收起会话: text=收起会话
-  私信营销: "text=私信营销"
+  私信: "text=私信"
   全部: "text=全部"
-  全部状态: "div:nth-child(2) > div:nth-child(2) > .ant-form-item-control-input > .ant-form-item-control-input-content > .ant-select > .ant-select-selector"
-  未留资: ".rc-virtual-list-holder-inner > div:nth-child(2)"
-  未回复: ".rc-virtual-list-holder-inner > div:nth-child(2)"
+  全部状态: (//div[@class='ant-col ant-form-item-control'])[2]
+  未留资: //div[@optionsvalue='未留资']
+  未回复: //div[@optionsvalue='未回复']
+  设置_title: (//div[@class='sub-title'])[1]
   留资筛选: (//span[@class='ant-select-selection-item'])[1]
   没回复: text=未回复
   起止时间: role=textbox[name="起止时间 :"]
@@ -39,12 +38,12 @@ elements:
   查询按钮: "role=button[name='查 询']"
   私信重置: //*[@id="app"]/main/div/div[2]/div[2]/form/div[2]/button[1]/span
   私信开始日期: //*[@id="app"]/main/div/div[2]/div[2]/div[1]/div[2]/div/div/div[1]/input
-  线索管理: "text=线索管理"
+  线索: "text=线索"
   全部线索数: "text=全部线索数"
   30天: "text=30天"
   关闭图标: "role=img[name='close-circle'] >> svg"
-  弹幕智能回复开关: "div:nth-child(4) > div > .item > .item-right"
-  弹幕智能回复生效中: "text=弹幕智能回复生效中"
+  弹幕智能回复开关: (//button[@role='switch'])[7]
+  弹幕智能回复生效中: //h4[text()='弹幕智能回复']/following-sibling::span
   设置语料: "text=设置语料"
   回复语料设置: "text=回复语料设置 新增"
   新增: "text=新增"
@@ -61,10 +60,10 @@ elements:
   关键字: "role=cell[name='驾照']"
   删除语料: "role=row[name='驾照 点击关注 编辑 删除'] >> div >> nth=2"
   翻页: "role=button[name='right']"
-  序号: "role=cell[name='21']"
+  上一页: //li[@title='上一页']
   编辑: "text=编辑"
   编辑弹幕语料: "text=编辑弹幕语料"
-  删除: (//div[@class='edit-btn delete'][contains(text(),'删除')])[${Total}]
+  删除: (//div[@class='edit-btn delete'][contains(text(),'删除')])
   确认: "role=button[name='确 认']"
   白名单菜单项: "text=白名单"
   抖音昵称输入框: "role=textbox[name='抖音昵称 *']"
@@ -79,11 +78,12 @@ elements:
   关闭按钮: "role=button[name='Close']"
   删除行: "role=row[name='vvvv - 2025-04-10 11:30:07 编辑 删除'] >> div >> nth=2"
   删除福袋: "text=删除"
-  弹幕循环播报开关: "div:nth-child(4) > div:nth-child(2) > .item > .item-right"
-  弹幕循环播报生效中: "text=弹幕循环播报生效中"
-  去设置: "text=去设置"
+  弹幕循环播报开关: (//button[@role='switch'])[8]
+  弹幕循环播报生效中: //div[./h4[text()='弹幕循环播报']]/span[@class='tag']
+  门店信息去设置: "(//div[@class='btn'][contains(text(),'去设置')])[1]"
+  弹幕轮播去设置: "(//div[@class='btn'][contains(text(),'去设置')])[2]"
   循环播报设置: "text=循环播报设置"
-  轮播内容输入框: "role=textbox[name='请编辑轮播内容，上限49个字']"
+  轮播内容输入框: (//textarea[@placeholder='请编辑轮播内容，上限49个字'])[1]
   谢谢点点关注: "text=谢谢点点关注"
-  删除图标: "role=row[name='谢谢点点关注 删除'] >> role=img"
+  删除图标: (//img[@alt='删除'])[1]
   确认按钮: "role=tooltip >> role=button[name='确 定']"
