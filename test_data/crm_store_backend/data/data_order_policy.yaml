@@ -1,0 +1,191 @@
+test_data:
+#买贵必赔保单
+  test_order_policy_list:
+    description: "买贵必赔保单-列表"
+    steps:
+      - use_module: login_steps
+      - action: click
+        selector: 订单管理一级菜单
+      - action: click
+        selector: 买贵必赔保单二级菜单
+      - action: click
+        selector: 买贵必赔保单线索筛选框
+      - action: fill
+        selector: 线索id输入框
+        value: "25754651876977"
+      - action: click
+        selector: 买贵必赔保单查询按钮
+      - action: assert_text
+        selector: 保单列表订单id
+        value: "93617"
+      - action: assert_text
+        selector: 保单列表线索id
+        value: "25754651876977"
+      - action: assert_text
+        selector: 保单列表客户姓名
+        value: "客户姓名：卫星店账号非卫星店订单"
+      - action: assert_text
+        selector: 保单列表手机号
+        value: "手机号：151****6033"
+      - action: assert_text
+        selector: 保单列表确认函状态
+        value: "确认函：已签署"
+      - action: assert_text
+        selector: 保单列表订单状态
+        value: "订单状态：审核通过"
+      - action: assert_text
+        selector: 保单列表下订车辆
+        value: "下订车辆：宝马i3 2024款 eDrive 40 L 曜夜运动套装"
+      - action: assert_text
+        selector: 保单列表提交人
+        value: "提交人：加盟商香港综合测试门店1 罗秀蕊"
+      - action: assert_text
+        selector: 保单列表下订时间
+        value: "下订时间：2025-02-11 10:37:15"
+      - action: assert_text
+        selector: 保单列表保单状态
+        value: "保单状态：待投保"
+      - action: assert_text
+        selector: 保单列表订单详情按钮
+        value: "订单详情 "
+      - action: assert_text
+        selector: 保单列表订单投保按钮
+        value: "投保"
+      - action: assert_text
+        selector: 保单列表条数
+        value: "共 1 条数据"
+
+  test_order_policy_filter:
+    description: "贵必赔保单-筛选"
+    steps:
+      - use_module: login_steps
+      - action: click
+        selector: 订单管理一级菜单
+      - action: click
+        selector: 订单列表二级菜单
+      - action: click
+        selector: 下订时间输入框
+      - action: fill
+        selector: 下订时间输入框
+        value: "2025-01-15"
+      - action: click
+        selector: 日期选择器
+      - action: click
+        selector: 结束时间输入框
+      - action: fill
+        selector: 结束时间输入框
+        value: "2025-01-15"
+      - action: click
+        selector: 日期选择器
+      - action: click
+        selector: 订单审核状态下拉框
+      - action: click
+        selector: 审核通过选项
+      - action: click
+        selector: 成交周期下拉框
+      - action: click
+        selector: 当日转化选项
+      - action: click
+        selector: 发票状态下拉框
+      - action: click
+        selector: 已确认选项
+      - action: click
+        selector: 发票校验状态下拉框
+      - action: click
+        selector: 校验通过选项
+      - action: click
+        selector: 确认函下拉框
+      - action: click
+        selector: 已签署选项
+      - action: click
+        selector: 品牌类型下拉框
+      - action: click
+        selector: 重点品牌选项
+      - action: click
+        selector: 手机号输入框
+      - action: fill
+        selector: 手机号输入框
+        value: "6033"
+      - action: click
+        selector: 订单查询按钮
+      - action: assert_text
+        selector: 订单id
+        value: "90807"
+      - action: assert_text
+        selector: 订单线索id文本
+        value: "线索id： 25149544867175 "
+      - action: assert_text
+        selector: 手机号文本
+        value: "手机号：151****6033"
+      - action: assert_text
+        selector: 1条数据
+        value: "共 1 条数据"
+  test_order_policy_details:
+    description: "贵必赔保单-详情"
+    steps:
+      - use_module: login_steps
+      - action: click
+        selector: 订单管理一级菜单
+      - action: click
+        selector: 订单列表二级菜单
+      - action: fill
+        selector: 线索id输入框
+        value: "25149544867175"
+      - action: click
+        selector: 订单查询按钮
+      - action: expect_popup #点击新开页面
+        selector: 订单列表详情按钮
+      - action: assert_text
+        selector: 订单详情线索id
+        value: "25149544867175"
+      - action: assert_text
+        selector: 跟进销售名称
+        value: "罗秀蕊"
+      #- action: pause
+      - action: assert_text
+        selector: 购车类型
+        value: "个人"
+      - action: assert_text
+        selector: 提车日期
+        value: "2025-01-15"
+      - action: assert_text
+        selector: 当日转化情况类型
+        value: "自然进店"
+      - action: assert_text
+        selector: 推送记录任务名称
+        value: "CPS-测试任务"
+      - action: click
+        selector: 发票信息tab
+      - action: assert_exists
+        selector: 发票信息图片
+      - action: click
+        selector: 发票信息tab
+      - action: expect_popup
+        selector: 确认函链接
+      - action: assert_text
+        selector: 确认函名称
+        value: "尊敬的订单名先生/女士"
+
+  test_order_policy_button:
+    description: "贵必赔保单-按钮展示"
+    steps:
+      - use_module: login_steps
+      - action: click
+        selector: 订单管理一级菜单
+      - action: click
+        selector: 订单列表二级菜单
+      - action: fill
+        selector: 线索id输入框
+        value: "28342616855358"
+      - action: click
+        selector: 订单查询按钮
+      - action: click
+        selector: 店端取消下订按钮
+      - action: click
+        selector: 取消下订确认弹窗确认按钮
+      - action: click
+        selector: 取消下订列表暂无数据
+      - action: assert_exists
+        selector: 取消下订列表暂无数据
+        value: "暂无数据"
+
