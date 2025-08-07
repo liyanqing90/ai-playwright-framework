@@ -20,7 +20,7 @@ test_data:
         value: "93617"
       - action: assert_text
         selector: 保单列表线索id
-        value: "25754651876977"
+        value: "线索id： 25754651876977"
       - action: assert_text
         selector: 保单列表客户姓名
         value: "客户姓名：卫星店账号非卫星店订单"
@@ -62,109 +62,80 @@ test_data:
       - action: click
         selector: 订单管理一级菜单
       - action: click
-        selector: 订单列表二级菜单
+        selector: 买贵必赔保单二级菜单
       - action: click
-        selector: 下订时间输入框
+        selector: 保单列表手机号筛选框
       - action: fill
-        selector: 下订时间输入框
-        value: "2025-01-15"
-      - action: click
-        selector: 日期选择器
-      - action: click
-        selector: 结束时间输入框
-      - action: fill
-        selector: 结束时间输入框
-        value: "2025-01-15"
-      - action: click
-        selector: 日期选择器
-      - action: click
-        selector: 订单审核状态下拉框
-      - action: click
-        selector: 审核通过选项
-      - action: click
-        selector: 成交周期下拉框
-      - action: click
-        selector: 当日转化选项
-      - action: click
-        selector: 发票状态下拉框
-      - action: click
-        selector: 已确认选项
-      - action: click
-        selector: 发票校验状态下拉框
-      - action: click
-        selector: 校验通过选项
-      - action: click
-        selector: 确认函下拉框
-      - action: click
-        selector: 已签署选项
-      - action: click
-        selector: 品牌类型下拉框
-      - action: click
-        selector: 重点品牌选项
-      - action: click
-        selector: 手机号输入框
-      - action: fill
-        selector: 手机号输入框
+        selector: 保单列表手机号筛选框
         value: "6033"
       - action: click
-        selector: 订单查询按钮
+        selector: 保单列表姓名筛选框
+      - action: fill
+        selector: 保单列表姓名筛选框
+        value: "看发票"
+      - action: click
+        selector: 保单列表姓名筛选框
+      - action: fill
+        selector: 保单列表姓名筛选框
+        value: "看发票"
+      - action: click
+        selector: 保单列表订单状态筛选框
+      - action: click
+        selector: 保单列表订单状态筛选框审核通过选项
+      - action: click
+        selector: 列表列表保单状态筛选框
+      - action: click
+        selector: 列表列表保单状态筛选框待投保选项
+      - action: click
+        selector: 列表列表下订时间筛选框开始时间
+      - action: fill
+        selector: 列表列表下订时间筛选框开始时间
+        value: "2025-02-11"
+      - action: click
+        selector: 列表列表下订时间筛选框结束时间
+      - action: fill
+        selector: 列表列表下订时间筛选框结束时间
+        value: "2025-02-11"
+      - action: click
+        selector: 买贵必赔保单查询按钮
       - action: assert_text
-        selector: 订单id
-        value: "90807"
-      - action: assert_text
-        selector: 订单线索id文本
-        value: "线索id： 25149544867175 "
-      - action: assert_text
-        selector: 手机号文本
-        value: "手机号：151****6033"
+        selector: 保单列表线索id
+        value: "线索id： 25763062492478"
       - action: assert_text
         selector: 1条数据
         value: "共 1 条数据"
+
   test_order_policy_details:
-    description: "贵必赔保单-详情"
+    description: "买贵必赔保单-详情"
     steps:
       - use_module: login_steps
       - action: click
         selector: 订单管理一级菜单
       - action: click
-        selector: 订单列表二级菜单
+        selector: 买贵必赔保单二级菜单
       - action: fill
         selector: 线索id输入框
-        value: "25149544867175"
+        value: "25763062492478"
       - action: click
         selector: 订单查询按钮
       - action: expect_popup #点击新开页面
-        selector: 订单列表详情按钮
+        selector: 买贵必赔列表详情按钮
       - action: assert_text
-        selector: 订单详情线索id
-        value: "25149544867175"
+        selector: 买贵必赔列表详情线索id
+        value: "25763062492478"
       - action: assert_text
-        selector: 跟进销售名称
-        value: "罗秀蕊"
+        selector: 买贵必赔列表详情订单id
+        value: "93711"
       #- action: pause
       - action: assert_text
-        selector: 购车类型
+        selector: 买贵必赔列表详情购车类型
         value: "个人"
-      - action: assert_text
-        selector: 提车日期
-        value: "2025-01-15"
-      - action: assert_text
-        selector: 当日转化情况类型
-        value: "自然进店"
-      - action: assert_text
-        selector: 推送记录任务名称
-        value: "CPS-测试任务"
       - action: click
-        selector: 发票信息tab
-      - action: assert_exists
-        selector: 发票信息图片
-      - action: click
-        selector: 发票信息tab
-      - action: expect_popup
-        selector: 确认函链接
+        selector: 买贵必赔列表详情发票信息tab
       - action: assert_text
-        selector: 确认函名称
-        value: "尊敬的订单名先生/女士"
+        selector: 买贵必赔列表详情发票信息tab预览按钮
+        value: "预览"
+
 
   test_order_policy_button:
     description: "贵必赔保单-按钮展示"
