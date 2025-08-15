@@ -45,7 +45,7 @@ class VariableManager:
             "step": ["step", "test_case", "module", "global"],
             "module": ["module", "test_case", "global"],
             "test_case": ["test_case", "global"],
-            "global": ["global"],
+            "global": ["global", "temp"],  # 添加temp作为global的备用作用域
             "temp": ["temp", "test_case", "step", "module", "global"],
         }
 
