@@ -1,0 +1,6 @@
+test_cases:
+#商业化变现
+#
+   - name: test_rebate_create #新建
+   - name: test_rebate_search #查询
+   - name: test_rebate_edit #编辑
