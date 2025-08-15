@@ -213,7 +213,7 @@ class VariableManager:
         else:
             self.logger.warning(f"无效的作用域: {scope}")
 
-    def set_variable(self, name: str, value: Any, scope: str):
+    def set_variable(self, name: str, value: Any, scope: st = "global"):
         """
         设置变量
 
