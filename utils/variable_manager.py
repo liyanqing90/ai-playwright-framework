@@ -213,7 +213,7 @@ class VariableManager:
         else:
             self.logger.warning(f"无效的作用域: {scope}")
 
-    def set_variable(self, name: str, value: Any, scope: str = "global"):
+    def set_variable(self, name: str, value: Any, scope: str):
         """
         设置变量
 
@@ -309,6 +309,7 @@ class VariableManager:
         value = name
         # 如果指定了作用域，则按照作用域继承关系查找
         if scope in self.scope_hierarchy:
+
             for search_scope in self.scope_hierarchy[scope]:
                 if name in self.variables[search_scope]:
                     value = self.variables[search_scope][name]
