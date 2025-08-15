@@ -11,13 +11,13 @@ test_data:
         value: https://ahohcrm.autohome.com.cn/#/approval/approvalList
       - action: fill
         selector: 线索ID输入框
-        value: ${a}
+        value: ${线索ID}
       - action: click
         selector: 查询
       - action: wait
       - action: assert_text
         selector: 列表ID
-        value: ${a}
+        value: ${线索ID}
 
   test_order_approval_list_processing:
     description: "订单审核列表处理"
@@ -29,7 +29,7 @@ test_data:
         selector: 订单审核列表
       - action: fill
         selector: 线索ID输入框
-        value: ${a}
+        value: ${线索ID}
       - action: click
         selector: 查询
       - action: wait
@@ -37,11 +37,9 @@ test_data:
         rel_action: click
         selector: 处理
         variable: pop_index
-      - action: wait
-        value: 3
       - action: assert_text
         selector: 列表ID
-        value: ${a}
+        value: ${线索ID}
       - action: click
         selector: 同意
       - action: click
