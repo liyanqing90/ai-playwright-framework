@@ -21,6 +21,12 @@ elements:
   新增自动回复卡片: //div[@id='form_item_autoReplyType1']//label[@class='ant-radio-wrapper']
   取消: //span[contains(text(),'取 消')]
 
+  详情: //span[contains(text(),'详情')]
+  详情入口名称: (//div[@class='ant-col ant-col-18 ant-form-item-control'])[1]
+
+  编辑: //span[contains(text(),'编辑')]
+  弹窗关闭: //span[@aria-label='close']//*[name()='svg']
+
 
   #快捷提问
   quick_标题: //span[@class='ant-input-affix-wrapper']/input
