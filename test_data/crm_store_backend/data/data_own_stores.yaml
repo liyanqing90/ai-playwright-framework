@@ -1,0 +1,72 @@
+test_data:
+  test_own_stores_name_query:
+    description: "自营店-部门&员工管理-姓名搜索"
+    steps:
+      - use_module: login_steps_own_stores
+      - action: click
+        selector: 组织管理
+      - action: wait
+      - action: click
+        selector: 部门&员工管理
+      - action: wait
+      - action: fill
+        selector: 姓名搜索
+        value: ${name}
+      - action: click
+        selector: 查询按钮
+      - action: wait
+      - action: assert_text
+        selector: 姓名
+        value: ${name}
+      - action: wait
+
+  test_own_stores_position_query:
+    description: "自营店-部门&员工管理-岗位搜索"
+    steps:
+      - use_module: login_steps_own_stores
+      - action: click
+        selector: 组织管理
+      - action: click
+        selector: 部门&员工管理
+      - action: wait
+      - action: click
+        selector: 岗位搜索
+      - action: click
+        selector: 管家
+      - action: click
+        selector: 查询按钮
+      - action: wait
+      - action: assert_text
+        selector: 列表_管家
+        value: 管家
+      - action: wait
+
+  test_own_stores_Details:
+    description: "自营店-部门&员工管理-查看详情"
+    steps:
+      - use_module: login_steps_own_stores
+      - action: click
+        selector: 组织管理
+      - action: wait
+      - action: click
+        selector: 部门&员工管理
+      - action: wait
+      - action: fill
+        selector: 姓名搜索
+        value: ${name}
+      - action: click
+        selector: 查询按钮
+      - action: wait
+      - action: store_text
+        selector: 姓名
+        variable_name: 列表_姓名
+      - action: click
+        selector: 查看详情
+      - action: wait
+      - action: switch_window
+      - action: assert_url
+        value: ${jump_url}
+      - action: assert_text
+        selector: ${detail_name}
+        value: ${列表_姓名}
+      - action: wait

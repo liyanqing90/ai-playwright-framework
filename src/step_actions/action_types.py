@@ -117,4 +117,5 @@ class StepAction:
         + USE_MODULE
         + IF_CONDITION
         + FOR_EACH
+        + SWITCH_WINDOW
     )

@@ -18,3 +18,25 @@ login_steps: #登录
   - action: click
     selector: "登录按钮"
 
+
+login_steps_own_stores: #自营店登录
+  - action: goto
+    value: ${url}
+  - action: click
+    selector: "账号密码登录tab"
+  - action: click
+    selector: 账号输入框
+  - action: fill
+    selector: 账号输入框
+    value: ${own_stores_account}
+  - action: click
+    selector: 密码输入框
+  - action: fill
+    selector: 密码输入框
+    value: ${own_stores_pwd}
+  - action: click
+    selector: "勾选协议按钮"
+  - action: click
+    selector: "登录按钮"
+
+
