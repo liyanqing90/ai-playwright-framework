@@ -70,3 +70,41 @@ test_data:
         selector: ${detail_name}
         value: ${列表_姓名}
       - action: wait
+
+  test_own_stores_mall_management:
+    description: "自营店-商城管理"
+    steps:
+      - use_module: login_steps_own_stores
+      - action: click
+        selector: 商城
+      - action: wait
+      - action: click
+        selector: 商城管理
+      - action: wait
+        value: '6'
+      - action: switch_window
+      - action: wait
+      - action: assert_url
+        value: ${mall_management_url}
+      - action: assert_text
+        selector: 账号昵称
+        value: ${mall_management_nick_name}
+      - action: wait
+
+  test_own_stores_my_wallet:
+    description: "自营店-我的钱包"
+    steps:
+      - use_module: login_steps_own_stores
+      - action: click
+        selector: 商城
+      - action: wait
+      - action: click
+        selector: 我的钱包
+      - action: wait
+        value: '3'
+      - action: switch_window
+      - action: wait
+      - action: assert_url
+        value: ${my_wallet_url}
+
+
