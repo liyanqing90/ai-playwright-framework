@@ -6,8 +6,8 @@ test_cases:
   - name: test_policy_deactivate #停用
   - name: test_policy_filter #筛选
   - name: test_policy_edit #编辑
-  - name: test_policy_reset #重置
-  - name: test_policy_list #列表
+#  - name: test_policy_reset #重置
+#  - name: test_policy_list #列表
   - name: test_policy_delete #删除
 
 

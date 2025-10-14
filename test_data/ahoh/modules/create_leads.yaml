@@ -43,8 +43,7 @@ create_store_testDriveTask_lead_steps: #创建到店线索和试驾任务
     value: ''
   - action: 点击
     selector: 试驾车系选择框
-    value: ''
-  - action: 验证
+  - action: 验证包含文本
     selector: 选择试驾半屏页title
     value: 选择试驾
   - action: 点击
@@ -53,6 +52,243 @@ create_store_testDriveTask_lead_steps: #创建到店线索和试驾任务
   - action: 点击
     selector: 选择试驾半屏页-确定按钮
     value: ''
+  - action: 点击
+    selector: 新增用户按钮
+
+create_store_activity_lead_steps: #创建到店线索-用户诉求现场活动，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-到门店
+    value: ''
+  - action: 点击
+    selector: 到店诉求-现场活动
+  - action: 点击
+    selector: 新增用户按钮
+
+create_store_outStore_activity_lead_steps: #创建到店线索-到店类型选择店外，用户诉求现场活动，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-店外
+    value: ''
+  - action: 点击
+    selector: 到店诉求-现场活动
+  - action: 点击
+    selector: 新增用户按钮
+
+create_store_negotiate_car_price_lead_steps: #创建到店线索-用户诉求买车议价，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-到门店
+    value: ''
+  - action: 点击
+    selector: 到店诉求-买车议价
+  - action: 点击
+    selector: 新增用户按钮
+
+create_store_outStore_negotiate_car_price_lead_steps: #创建到店线索,到店类型店外用户诉求买车议价，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-店外
+    value: ''
+  - action: 点击
+    selector: 到店诉求-买车议价
+  - action: 点击
+    selector: 新增用户按钮
+
+create_store_car_purchase_consultation_lead_steps: #创建到店线索-用户诉求购车咨询，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-到门店
+    value: ''
+  - action: 点击
+    selector: 到店诉求-购车咨询
+  - action: 点击
+    selector: 新增用户按钮
+
+create_store_outStore_car_purchase_consultation_lead_steps: #创建到店线索,到店类型店外用户诉求购车咨询，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-店外
+    value: ''
+  - action: 点击
+    selector: 到店诉求-购车咨询
+  - action: 点击
+    selector: 新增用户按钮
+
+create_store_other_lead_steps: #创建到店线索-用户诉求-其他，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-到门店
+    value: ''
+  - action: 点击
+    selector: 到店诉求-其他
+  - action: 点击
+    selector: 到店诉求-其他-其他诉求
+  - action: 等待
+    value: 1
+  - action: 输入
+    selector: 到店诉求-其他-其他诉求半屏页-富文本框
+    value: 到店看看，吹吹空调
+  - action: 点击
+    selector: 到店诉求-其他-其他诉求半屏页-确定按钮
+  - action: 等待
+    value: 1
+  - action: 点击
+    selector: 新增用户按钮
+  - action: 等待
+    value: 1
+
+create_store_various_car_buying_requests_lead_steps: #创建到店线索-用户诉求现场活动、买车议价、购车咨询，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-到门店
+    value: ''
+  - action: 点击
+    selector: 到店诉求-现场活动
+  - action: 点击
+    selector: 到店诉求-买车议价
+  - action: 点击
+    selector: 到店诉求-购车咨询
+  - action: 点击
+    selector: 新增用户按钮
+
+create_store_outStore_various_car_buying_requests_lead_steps: #创建到店线索,到店类型选择店外，用户诉求现场活动、买车议价、购车咨询，生成待接待任务
+  - action: 点击
+    selector: 底部菜单-工作
+    value: ''
+  - action: 点击
+    selector: 创建用户
+    value: ''
+  - action: 输入
+    selector: 客户姓名
+    value: 客户名称
+  - action: faker
+    data_type: mobile
+    variable_name: phone_num
+  - action: 输入
+    selector: 手机号
+    value: ${phone_num}
+  - action: 点击
+    selector: 到店类型-店外
+    value: ''
+  - action: 点击
+    selector: 到店诉求-现场活动
+  - action: 点击
+    selector: 到店诉求-买车议价
+  - action: 点击
+    selector: 到店诉求-购车咨询
   - action: 点击
     selector: 新增用户按钮
 
