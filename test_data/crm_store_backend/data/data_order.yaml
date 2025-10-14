@@ -9,16 +9,15 @@ test_data:
       - action: click
         selector: 订单管理一级菜单
       - action: wait
-        value: 1
       - action: click
         selector: 订单列表二级菜单
       - action: wait
-        value: 1
       - action: click
         selector: 线索id输入框
       - action: fill
         selector: 线索id输入框
         value: "25754651876977"
+      - action: wait
       - action: click
         selector: 订单查询按钮
       - action: wait

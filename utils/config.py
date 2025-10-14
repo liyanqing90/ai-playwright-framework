@@ -35,6 +35,7 @@ class Project(str, Enum):
     AHOH = "ahoh"
     DA_PING = "da_ping"
     CRM_BACKEND = "crm_backend"
+    CAR_STORE_C = "car_store_c"
 
 
 @singleton

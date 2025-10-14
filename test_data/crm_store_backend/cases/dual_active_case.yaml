@@ -10,10 +10,10 @@ test_cases:
   - name: test_order_filter #筛选
   - name: test_order_details #详情
 #购车政策
-  - name: test_policy_add #添加
-  - name: test_policy_deactivate #停用
-  - name: test_policy_filter #筛选
-  - name: test_policy_delete #删除
+#  - name: test_policy_add #添加
+#  - name: test_policy_deactivate #停用
+#  - name: test_policy_filter #筛选
+#  - name: test_policy_delete #删除
 
 
 

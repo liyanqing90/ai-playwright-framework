@@ -9,7 +9,7 @@ import pytest
 from _pytest.python import Module
 from playwright.sync_api import Page, Browser, sync_playwright
 
-from constants import DEFAULT_TIMEOUT
+from config.constants import DEFAULT_TIMEOUT
 from page_objects.base_page import BasePage
 from src.case_utils import run_test_data, load_test_cases, load_moules
 from src.runner import TestCaseGenerator
