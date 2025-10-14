@@ -1,0 +1,6 @@
+test:
+  city_id: 110100
+stage:
+  city_id: 810810
+prod:
+  city_id: 810810

@@ -1,7 +1,7 @@
 elements:
 
 
-  线索&工单管理: role=complementary >> text=线索&工单管理
+  线索_工单管理: //span[contains(text(),'线索&工单管理')]
   主任务列表: text=主任务列表
   主任务列表筛选手机号输入框: //input[@id='basic_userPhone']
   主任务列表筛选线索id输入框: //input[@id='basic_leadId']
