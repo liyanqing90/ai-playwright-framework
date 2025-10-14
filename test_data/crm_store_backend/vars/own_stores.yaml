@@ -1,0 +1,21 @@
+# dev test stage prod
+prod:
+  url: 'https://ahohcrm.autohome.com.cn/#/login'
+  own_stores_account: '17081111114'
+  own_stores_pwd: 'Admin123!'
+  name: '徐店长'
+  jump_url: 'https://ahohcrm.autohome.com.cn/#/personManager/staff/detail/45918'
+  detail_name: //span[contains(text(),'徐店长')]
+
+
+
+test:
+  url: 'http://ahohcrm.terra.corpautohome.com/#/login'
+  own_stores_account: '17108291000'
+  own_stores_pwd: 'Admin123!'
+  name: '测试李亚男'
+  jump_url: 'http://ahohcrm.terra.corpautohome.com/#/personManager/staff/detail/10386'
+  detail_name: //span[contains(text(),'测试李亚男')]
+
+
+

@@ -584,13 +584,67 @@ class BasePage:
         self.store_variable(variable_name, len(self.pages) - 1, scope)
 
     @handle_page_error(description="切换窗口")
-    def switch_window(self, value=0):
-        """切换到指定窗口"""
-        if value < 0 or value >= len(self.pages):
-            raise ValueError("无效的窗口索引")
-        """切换到指定窗口"""
-        self.page = self.pages[value]
-        raise ValueError("未找到匹配的窗口")
+    def switch_window(self, value=None, timeout=5000):
+        """
+        切换到指定窗口
+
+        Args:
+            value: 窗口索引，None 表示切换到最新打开的窗口
+            timeout: 等待新窗口打开的超时时间（毫秒），默认5秒
+        """
+        import time
+
+        # 记录当前窗口数量
+        initial_page_count = len(self.page.context.pages)
+        logger.debug(f"当前窗口数量: {initial_page_count}")
+
+        # 参数验证：检查 value 是否为 None
+        if value is None:
+            # 如果未指定索引，需要等待新窗口打开
+            if initial_page_count == 1:
+                logger.info("等待新窗口打开...")
+                start_time = time.time()
+                while len(self.page.context.pages) == initial_page_count:
+                    if (time.time() - start_time) * 1000 > timeout:
+                        logger.error(f"等待新窗口打开超时（{timeout}ms）")
+                        raise TimeoutError(f"等待新窗口打开超时（{timeout}ms）")
+                    time.sleep(0.1)
+                logger.info(f"检测到新窗口打开，当前窗口数量: {len(self.page.context.pages)}")
+
+            # 从 context 中动态获取所有打开的页面
+            all_pages = self.page.context.pages
+            # 切换到最新打开的标签页（最后一个索引）
+            value = len(all_pages) - 1
+            logger.info(f"未指定窗口索引，切换到最新打开的标签页，索引: {value}")
+        else:
+            # 类型验证
+            if not isinstance(value, int):
+                try:
+                    value = int(value)
+                    logger.info(f"窗口索引已转换为整数: {value}")
+                except (ValueError, TypeError):
+                    logger.error(f"无效的窗口索引类型: {type(value)}, 值: {value}")
+                    raise ValueError(f"窗口索引必须是整数，当前类型: {type(value)}")
+
+            logger.info(f"指定切换到窗口索引: {value}")
+            # 从 context 中动态获取所有打开的页面
+            all_pages = self.page.context.pages
+
+        # 检查是否有可用的窗口
+        if not all_pages or len(all_pages) == 0:
+            logger.error("没有可用的窗口页面")
+            raise ValueError("没有可用的窗口页面")
+
+        # 索引范围验证
+        if value < 0 or value >= len(all_pages):
+            logger.error(f"窗口索引超出范围: {value}, 可用窗口数量: {len(all_pages)}")
+            raise ValueError(f"无效的窗口索引: {value}，可用范围: 0-{len(all_pages) - 1}")
+
+        # 切换窗口
+        self.page = all_pages[value]
+        # 同步更新 self.pages 列表，保持与实际页面一致
+        self.pages = list(all_pages)
+        logger.info(f"成功切换到窗口 {value}: {self.page.url}")
 
     @handle_page_error(description="关闭当前窗口")
     def close_window(self):

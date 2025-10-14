@@ -1,0 +1,50 @@
+elements:
+
+  组织管理: //span[@title='组织管理']//span[1]
+  部门&员工管理: //span[@class='ant-pro-menu-item-title'][contains(text(),'部门&员工管理')]
+  商城: //span[@title='商城']//span[@class='ant-pro-menu-item-title'][contains(text(),'商城')]
+  商城管理: //span[contains(text(),'商城管理')]
+  我的钱包: //span[contains(text(),'我的钱包')]
+
+  姓名搜索: //input[@id='workerName']
+  查询按钮: //span[contains(text(),'查 询')]
+  姓名: //td[@class='ant-table-cell ant-table-cell-fix-left ant-table-cell-fix-left-last']
+
+
+  岗位搜索: //input[@id='post']
+  管家: //div[contains(@title,'管家')]//div[1]
+  列表_管家: (//td[contains(@class,'ant-table-cell')][contains(text(),'管家')])[1]
+
+  查看详情: (//a[@target='_blank'][contains(text(),'查看详情')])[1]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
