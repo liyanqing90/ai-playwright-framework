@@ -3,7 +3,7 @@ elements:
   订单管理一级菜单: //span[@title='订单管理']//span[2]
   订单列表二级菜单: //li[@title='订单列表']//span[@class='ant-pro-menu-item-title'][contains(text(),'订单列表')]
   线索id输入框: (//input[@id='basic_leadId'])[1]
-  订单查询按钮: button[class='ant-btn ant-btn-primary'] span
+  订单查询按钮: //span[contains(text(),'查 询')]
   订单ID: (//td[normalize-space()='93617'])[1]
   线索id: (//a[normalize-space()='25754651876977'])[1]
   客户姓名文本: (//div[contains(text(),'客户姓名：卫星店账号非卫星店订单')])[1]

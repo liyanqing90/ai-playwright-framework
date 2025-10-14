@@ -4,10 +4,16 @@ test_data:
     description: "订单列表-列表"
     steps:
       - use_module: login_steps
+      - action: wait
+        value: 3
       - action: click
         selector: 订单管理一级菜单
+      - action: wait
+        value: 1
       - action: click
         selector: 订单列表二级菜单
+      - action: wait
+        value: 1
       - action: click
         selector: 线索id输入框
       - action: fill
@@ -15,6 +21,8 @@ test_data:
         value: "25754651876977"
       - action: click
         selector: 订单查询按钮
+      - action: wait
+        value: 1
       - action: assert_text
         selector: 订单ID
         value: "93617"
@@ -68,10 +76,10 @@ test_data:
         value: "发票校验通过"
       - action: assert_text
         selector: 查看详情
-        value: "查看详情"
+        value: "查看详情 "
       - action: assert_text
         selector: 取消下订
-        value: "取消下订"
+        value: "取消下订 "
       - action: assert_text
         selector: 本地变现
         value: "本地变现"
@@ -82,10 +90,16 @@ test_data:
     description: "订单列表-筛选"
     steps:
       - use_module: login_steps
+      - action: wait
+        value: 3
       - action: click
         selector: 订单管理一级菜单
+      - action: wait
+        value: 1
       - action: click
         selector: 订单列表二级菜单
+      - action: wait
+        value: 1
       - action: click
         selector: 下订时间输入框
       - action: fill
@@ -131,12 +145,14 @@ test_data:
         value: "6033"
       - action: click
         selector: 订单查询按钮
+      - action: wait
+        value: 5
       - action: assert_text
         selector: 订单id
         value: "90807"
       - action: assert_text
         selector: 订单线索id文本
-        value: "线索id： 25149544867175 "
+        value: "线索id： 25149544867175"
       - action: assert_text
         selector: 手机号文本
         value: "手机号：151****6033"
@@ -147,17 +163,29 @@ test_data:
     description: "订单列表-详情"
     steps:
       - use_module: login_steps
+      - action: wait
+        value: 2
       - action: click
         selector: 订单管理一级菜单
+      - action: wait
+        value: 1
       - action: click
         selector: 订单列表二级菜单
+      - action: wait
+        value: 1
       - action: fill
         selector: 线索id输入框
         value: "25149544867175"
+      - action: wait
+        value: 1
       - action: click
         selector: 订单查询按钮
+      - action: wait
+        value: 3
       - action: expect_popup #点击新开页面
         selector: 订单列表详情按钮
+      - action: wait
+        value: 3
       - action: assert_text
         selector: 订单详情线索id
         value: "25149544867175"
@@ -182,9 +210,11 @@ test_data:
       - action: assert_exists
         selector: 发票信息图片
       - action: click
-        selector: 发票信息tab
+        selector: 订单信息tab
       - action: expect_popup
         selector: 确认函链接
+      - action: wait
+        value: 3
       - action: assert_text
         selector: 确认函名称
         value: "尊敬的订单名先生/女士"
@@ -206,6 +236,7 @@ test_data:
         selector: 店端取消下订按钮
       - action: click
         selector: 取消下订确认弹窗确认按钮
+      - action: pause
       - action: click
         selector: 取消下订列表暂无数据
       - action: assert_exists
