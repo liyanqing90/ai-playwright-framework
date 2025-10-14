@@ -1,5 +1,527 @@
 test_data:
 
+
+  test_create_store_activity_lead:
+    description: 首页创建到店店内线索，用户诉求现场活动
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_activity_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_outStore_activity_lead:
+    description: 首页创建到店店内线索，到店类型选择店外，用户诉求现场活动--已调通test/online
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_outStore_activity_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_negotiate_car_price_lead:
+    description: 首页创建到店店内线索，用户诉求买车议价
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_negotiate_car_price_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_outStore_negotiate_car_price_lead:
+    description: 首页创建到店店内线索，到店类型选择店外，用户诉求买车议价--已调通test/online
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_outStore_negotiate_car_price_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_car_purchase_consultation_lead:
+    description: 首页创建到店店内线索，用户诉求购车咨询
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_car_purchase_consultation_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_outStore_car_purchase_consultation_lead:
+    description: 首页创建到店店内线索，到店类型店外，用户诉求购车咨询--已调通test/online
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_outStore_car_purchase_consultation_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_other_lead:
+    description: 首页创建到店店内线索，用户诉求其他
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_other_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_various_car_buying_requests_lead:
+    description: 首页创建到店店内线索，用户诉求多个选项买车议价、现场活动、购车咨询
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_various_car_buying_requests_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_outStore_various_car_buying_requests_lead:
+    description: 首页创建到店店内线索，到店类型选择店外，用户诉求多个选项买车议价、现场活动、购车咨询--已调通test/online
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_outStore_various_car_buying_requests_lead_steps
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+      - action: 等待
+        value: 1
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+      - action: 硬断言
+        selector: 线索详情-任务信息-第一个主任务的名称
+        value:  待接待
+      - action: 硬断言
+        selector: 客户详情页面点击填跟进
+        value: 填跟进
+      - action: 硬断言
+        selector: 线索详情页-任务信息-第一个主任务的状态
+        value: 服务中
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 硬断言
+        selector: 任务填跟进页面标题
+        value: 待接待任务
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败
+      - action: 点击
+        selector: 购车周期-存疑
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+      - action: 点击
+        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+      - action: 点击
+        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态 #更换验证元素定位
+        value: 战败
+      - action: 刷新
+        selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
   test_push_car_models_in_customer_list:
     description: 客户列表预约待接待的线索推送功能,客户卡片线索来源和意向车型验证
     steps:

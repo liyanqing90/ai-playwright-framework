@@ -1,3 +1,4 @@
+wait_time: 2 #测试环境等待时间设置为2，生产环境等待时间设置为1
 horizontal_bar_value: "-"
 deny_value: 否
 nothing_value: 无

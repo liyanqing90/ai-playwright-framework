@@ -5,7 +5,7 @@ elements:
   下订信息-基础信息-展开: div.van-cell__value
   下订信息-上牌城市: input[name="registerCityName"]
   下订信息-上牌费用输入框: input[name="registerAmount"]
-  下订信息-付款凭证输入框: div.uploader-box.payPic-box[data-v-acd976af] input.van-uploader__input
+  下订信息-付款凭证输入框: div[class="uploader-box payPic-box"] input[type="file"]
 #  xpath=//input[@name="payPic"]/parent::div
   下订信息-付款日期-选择日期-确认按钮: xpath=//div[text()="选择付款时间"]/following-sibling::button
   下订信息-付款日期输入框:
@@ -15,7 +15,7 @@ elements:
   下订信息-公户: div.select-buyertype-main>div>div:nth-child(2)
   下订信息-个户: div.select-buyertype-main>div>div:nth-child(1)
   下订信息-其他项: xpath=//span[text()="其他"]
-  下订信息-合同凭证输入框: div.uploader-box.contractPic-box[data-v-acd976af] div.van-uploader__upload input.van-uploader__input
+  下订信息-合同凭证输入框: div[class="uploader-box contractPic-box"] input[type="file"]
 #  xpath=//input[@name="contractPic"]/parent::div
   下订信息-合同日期-选择日期-确认按钮: xpath=//div[text()="选择合同日期"]/following-sibling::button
   下订信息-合同日期输入框:
@@ -49,6 +49,7 @@ elements:
   下订信息-选择车系: div.spec-name-list>div:nth-child(1)
 #  app>div:nth-child(7)>div>div.order-specSelect-content>div>div.spec-name-list>div:nth-child(1)
   下订成功-返回: xpath=//*[@id="app"]/div/div/div/section/section/div/div/section[1]/div
+  任务填跟进页-下订车系-1: span[class="no-selected-placeholder"]
   任务填跟进-下订车系选择第一个: div.series-name-left
   任务填跟进页-下订车系: span.no-selected-audios
   任务填跟进页-二级战败因素弹框-确认按钮: div.commonFileCheck-popup-btn_bgc
@@ -57,15 +58,18 @@ elements:
   任务填跟进页-持续跟进任务-跟进原因: span.follow-reason_value
   任务填跟进页-提交跟进记录按钮: div.task-form-btn
   任务填跟进页-见面开关: div[role="switch"][aria-checked="false"]
+  任务填跟进页-跟进结果-确认到店: //div[text()="确认到店"]
   任务填跟进页-跟进结果-下订: xpath=//div[text()="下订"]
   任务填跟进页-跟进结果-再联系: xpath=//div[@class="radio-item-text" and text()="再联系"]
   任务填跟进页-跟进结果-再联系-下次联系时间半屏页-确认按钮: button.van-picker__confirm
   任务填跟进页-跟进结果-再联系-下次联系时间输入框: form>div[trigger="onChange"]
   任务填跟进页-跟进结果-战败: xpath=//div[@class="radio-item-text" and text()="战败"]
-  任务填跟进页-跟进结果-战败-一级战败因素选项: form.van-form[data-v-74fa51b6] > div.reset-form.commonFileCheck:nth-of-type(4) div.van-radio:nth-child(1)         #xpath=//div[@class="radio-item-text" and text()="至二级因素选择"]
+  任务填跟进页-跟进结果-战败-一级战败因素选项: form.van-form>div:nth-child(5)  div.van-field__control>div>div:nth-child(1) #form.van-form[data-v-74fa51b6] > div.reset-form.commonFileCheck:nth-of-type(4) div.van-radio:nth-child(1)         #xpath=//div[@class="radio-item-text" and text()="至二级因素选择"]
+  任务填跟进页-跟进结果-战败-一级战败因素选项-1: form.van-form>div:nth-child(4) div.van-field__control>div>div:nth-child(1)
   任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项: div.commonFileCheck-popup-content-scroll>div:nth-child(1)
   任务填跟进页-跟进结果-战败-二级战败因素输入框: xpath=//input[contains(@placeholder, '因素')]
   任务填跟进页面标题: div.van-popup--full>div>section>div>div>section.nav-title
+  任务填跟进页面标题-1: div.app-content div.nav-bar-content section.nav-title
   任务详情-推送按钮: div.customerDetail-foot>div:nth-child(2)>img
   全屏页页面标题:  section.nav-title
   全部订单: div.fun-button__item-order
@@ -73,9 +77,16 @@ elements:
   创建用户: div.adduser-btn
   到店类型-到门店:
     xpath=//*[@id="app"]/div[2]/section[1]/section[2]/div[1]/form/div[5]/div[1]/section/div/div[2]/div/div/section/section/section[1]
+  到店类型-店外: form[class='van-form custome-form']>div:nth-child(5)>div[label="到店类型"]>section:nth-child(1) section.file-check-content-wrapper>section:nth-child(2)
   到店诉求-现场活动:
     xpath=//*[@id="app"]/div[2]/section[1]/section[2]/div[1]/form/div[5]/div[2]/section/div/div[2]/div/div/section/section/section[2]
   到店诉求-试乘试驾: xpath=//section[text()="试乘试驾"]
+  到店诉求-买车议价: xpath=//section[text()="买车议价"]
+  到店诉求-购车咨询: xpath=//section[text()="购车咨询"]
+  到店诉求-其他: xpath=//section[text()="其他"]
+  到店诉求-其他-其他诉求: form.van-form>div:nth-child(5) div[class='van-cell van-field']
+  到店诉求-其他-其他诉求半屏页-富文本框: div.van-field__body textarea
+  到店诉求-其他-其他诉求半屏页-确定按钮: section[class="common-btn submit-btn"]
   发票信息-返回上一页: div.go-back-icon
   发票信息页-上传发票: div[data-v-c75feaa3] input.van-uploader__input[type='file'][accept='image/*'][multiple]
 #  div.invoice-info-upload-wrap
@@ -183,9 +194,10 @@ elements:
   线索详情页-任务信息-第一个子任务开始按钮: div.bottom-btn>span.btn-primary
   #取消看舱或是取消试驾的半屏页
   线索详情页-任务信息-第一个子任务取消原因-客户表示不需要: section.search-car-group>section:nth-child(1)
-  cancel_reason_1: text=客户表示不需要 # 选择取消原因 - 客户表示不需要
+  cancel_reason_1: div[role="dialog"][class="van-popup van-popup--bottom cacel-popup"] section.search-car-group>section:nth-child(1) #text=客户表示不需要 # 选择取消原因 - 客户表示不需要
   cancel_reason_confirm: //section[@class="common-btn submit-btn"]
   线索详情页-任务信息-第一个子任务取消原因-半屏页标题: section.popup-header
+  线索详情页-任务信息-第一个子任务取消原因-半屏页标题-1: div[role="dialog"][class="van-popup van-popup--bottom cacel-popup"] section.popup-header
   线索详情页-任务信息-第一个子任务取消原因-半屏页确定按钮: //section[@class="common-btn submit-btn"]
   线索详情页-待填跟进主任务看舱子任务取消原因-客户表示不需要: section.search-car-group>section:nth-child(1)
   线索详情页-待填跟进主任务看舱子任务取消原因半屏页标题: section.popup-header
@@ -295,6 +307,6 @@ elements:
   订单详情-其他-提车日期: section.echo-container>section:nth-child(3)>section:nth-child(3)>span.filed-cell-content
   订单详情-其他-合同日期: section.echo-container>section:nth-child(3)>section:nth-child(4)>span.filed-cell-content
   订单详情-其他-付款日期项:  section.echo-container>section:nth-child(3)>section:nth-child(5)>span.filed-cell-label
-  订单详情-其他-合同凭证: div.echo-module-image>section:nth-child(1)>div:nth-child(2)
+  订单详情-其他-合同凭证: div[class="uploader-box contractPic-box"] input[type="file"]
   订单详情-其他-身份证号: div.echo-module-image>section:nth-child(3)>div:nth-child(2)
   订单详情-其他凭证:  div.echo-module-image>section:nth-child(4)>div:nth-child(2)

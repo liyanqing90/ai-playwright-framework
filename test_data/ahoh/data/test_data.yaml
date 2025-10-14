@@ -1,220 +1,18 @@
 test_data:
 
-  test_upload_invoice_for_submitted_corporate_order（独立用例待调试）:
+  test_upload_invoice_for_submitted_corporate_order: #todo
     description: 公户用户订单提交审核后管家上传发票（独立用例待调试）
     steps:
-      - action: 点击
-        selector: 底部菜单-工作
-      - action: 点击
-        selector: 创建用户
-      - action: 输入
-        selector: 客户姓名
-        value: 客户名称
-      - action: 输入
-        selector: 手机号
-        value: 19xxxx
-      - action: 点击
-        selector: 是否已到店
-      - action: 点击
-        selector: 新增用户按钮
-      - action: 点击
-        selector: 底部菜单-客户
-      - action: 点击
-        selector: 客户列表-搜索
-      - action: 输入
-        selector: 客户列表查询条件输入框
-        value: 前置用户手机号
-      - action: 点击
-        selector: 客户列表_执行搜索
-      - action: 点击
-        selector: 客户列表查询结果第一条填跟进按钮
-      - action: 点击
-        selector: 客户详情页面点击填跟进
+      - use_module: login_steps
+#      - use_module: create_store_unvisited_leads_steps
+#      - action: 等待
+#        value: 2
+#      - action: 刷新
+#      - use_module: follow_up_unattended_pending_task_non_key_brand_order_today
+#      - use_module: fill_company_non_priority_brand_order_info
 
-      - action: 验证
-        selector: 任务填跟进页面标题
-        value: 待清洗任务
-      - action: 点击
-        selector: 待清洗任务填跟进页-清洗结果-有效
 
       - action: 点击
-        selector: 购车周期-存疑
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-用户诉求-预计到店
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-到店诉求-现场活动
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-到店类型-到门店
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-到店时间
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-到店时间-确认按钮
-
-      - action: 点击
-        selector: 任务填跟进页-提交跟进记录按钮
-
-      - action: 点击
-        selector: 任务详情-推送按钮
-
-      - action: 点击
-        selector: 推送-添加车型按钮
-
-      - action: 验证
-        selector: 推送-选择车型页标题
-        value: 选择车型
-      - action: 输入
-        selector: 推送-选择车型输入框
-        value: 宝马5系
-      - action: 点击
-        selector: 推送-选择筛选的第一个车型型
-
-      - action: 点击
-        selector: 推送-确定选择按钮
-
-      - action: 点击
-        selector: 推送-选择推送车型
-
-      - action: 点击
-        selector: 推送-选择所属经销商
-
-      - action: 点击
-        selector: 推送-选择随机经销商
-
-      - action: 点击
-        selector: 推送-确认推送
-
-      - action: 点击
-        selector: 推送经销商弹框-确定按钮
-
-      - action: 点击
-        selector: 客户详情页面点击填跟进
-
-      - action: 点击
-        selector: 购车周期-存疑
-
-      - action: 点击
-        selector: 任务填跟进页-见面开关
-
-      - action: 点击
-        selector: 任务填跟进页-跟进结果-下订
-
-      - action: 点击
-        selector: 任务填跟进页-工牌录音-无录音
-
-      - action: 点击
-        selector: 任务填跟进页-工牌录音-无录音-填写原因-工牌没电
-
-      - action: 点击
-        selector: 任务填跟进页-下订车系
-
-      - action: 验证
-        selector: 选择车系页标题
-        value: 选择车系
-      - action: 点击
-        selector: 任务填跟进-下订车系选择第一个
-
-      - action: 点击
-        selector: 选择车系页-确定按钮
-
-      - action: 点击
-        selector: 任务填跟进页-提交跟进记录按钮
-
-      - action: 点击
-        selector: 下订成功-返回
-
-      - action: 点击
-        selector: 搜索框-返回
-
-      - action: 点击
-        selector: 底部菜单-工作
-
-      - action: 点击
-        selector: 全部订单
-
-      - action: 点击
-        selector: 订单列表-搜索
-
-      - action: 输入
-        selector: 订单列表-搜索输入框
-        value: 前置用户手机号
-      - action: 点击
-        selector: 订单卡片-填写信息按钮
-
-      - action: 点击
-        selector: 下订信息-公户
-
-      - action: 点击
-        selector: 下订信息-购车类型-下一步按钮
-
-      - action: 输入
-        selector: 下订信息-企业代码
-        value: QYDM12345678901234
-      - action: 点击
-        selector: 下订信息-车型输入框
-
-      - action: 点击
-        selector: 下订信息-选择车系
-
-      - action: 点击
-        selector: 选择下订车型页-确定按钮
-
-      - action: 输入
-        selector: 下订信息-开票价格输入框
-        value: '300001'
-      - action: 输入
-        selector: 下订信息-上牌费用输入框
-        value: '2000'
-      - action: 输入
-        selector: 下订信息-贷款额度输入框
-        value: '150000'
-      - action: 点击
-        selector: 下订信息-贷款期数输入框
-
-      - action: 输入
-        selector: 下订信息-月供输入框
-        value: '1003'
-      - action: 点击
-        selector: 下订信息-其他项
-
-      - action: 输入
-        selector: 下订信息-购车总价输入框
-        value: '302001'
-      - action: 点击
-        selector: 下订信息-提车日期输入框
-
-      - action: 点击
-        selector: 下订信息-提车日期-选择日期-确认按钮
-
-      - action: 点击
-        selector: 下订信息-合同日期输入框
-
-      - action: 点击
-        selector: 下订信息-合同日期-选择日期-确认按钮
-
-      - action: 点击
-        selector: 下订信息-付款日期输入框
-
-      - action: 点击
-        selector: 下订信息-付款日期-选择日期-确认按钮
-
-      - action: 点击
-        selector: 下订信息-提交审核按钮
-
-      - action: 点击
-        selector: 搜索框-返回
-
-      - action: 验证
-        selector: 订单列表页面标题
-        value: 全部订单
-      - action: 点击
-        selector: 订单列表-返回
-
-      - action: 验证
         selector: 底部菜单-工作
         value: 工作
       - action: 点击
@@ -225,7 +23,7 @@ test_data:
 
       - action: 输入
         selector: 订单列表-搜索输入框
-        value: 前置用户手机号
+        value: 18210233933 #${lead_id}
       - action: 验证
         selector: 订单卡片第一个-发票状态
         value: 待上传
@@ -234,7 +32,8 @@ test_data:
         value: 上传发票
       - action: 点击
         selector: 订单卡片-上传发票/查看发票按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 全屏页页面标题
         value: 发票信息
@@ -249,7 +48,8 @@ test_data:
 #        value: C:\Users\liyanan13700\Desktop\test.jpg
       - action: 点击
         selector: 发票信息页-确认发票按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 发票信息页-确认发票二次确认弹窗文案
         value: 发票确认后将提交审核无法更改
@@ -261,7 +61,8 @@ test_data:
 
       - action: 点击
         selector: 发票信息页-确认发票二次确认弹窗确认按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 发票已上传页-已确认按钮
         value: 已确认
@@ -278,7 +79,7 @@ test_data:
 
       - action: 输入
         selector: 订单列表-搜索输入框
-        value: 前置用户手机号
+        value: 18210233933 #${lead_id}
       - action: 验证
         selector: 订单卡片第一个-发票状态
         value: 已确认
@@ -403,29 +204,14 @@ test_data:
 
 
 
-  test_complete_cleaning_task_with_meet_and_wechat_img_and_view_customer_follow_up_detail:
-    description: 待清洗的线索-对客作业-跟进方式见面和微信+查看跟进详情--已调通
+  test_complete_cleaning_task_with_meet_and_view_customer_follow_up_detail:
+    description: 待清洗的线索-对客作业-跟进方式见面+查看跟进详情--调试完成test/online
     steps:
       - use_module: login_steps
-      - action: 点击
-        selector: 底部菜单-工作
-      - action: 点击
-        selector: 创建用户
-      - action: 输入
-        selector: 客户姓名
-        value: 客户名称
-      - action: faker
-        data_type: mobile
-        variable_name: phone_num
-      - action: 输入
-        selector: 手机号
-        value: ${phone_num}
-      - action: 点击
-        selector: 是否已到店
-      - action: 点击
-        selector: 新增用户按钮
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
       - action: 刷新
-        selector: ''
       - action: 点击
         selector: 底部菜单-客户
       - action: 点击
@@ -437,6 +223,8 @@ test_data:
         selector: 客户列表_执行搜索
       - action: 点击
         selector: 客户列表查询结果第一条写备注按钮
+      - action: 等待
+        value: 1
       - action: 验证
         selector: 全屏页页面标题
         value: 写备注
@@ -463,12 +251,16 @@ test_data:
         value: 有到店意向
       - action: 点击
         selector: 客户信息-对客作业-全部tab-最新记录-跟进卡片
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 全屏页页面标题
         value: 客户跟进
       - action: 验证
         selector: 客户跟进详情页-任务类型
         value: 客户跟进
+      - action: 等待
+        value: 4
       - action: 验证
         selector: 客户跟进详情页-购车周期
         value: 存疑
@@ -478,13 +270,51 @@ test_data:
       - action: 验证
         selector: 客户跟进详情页-跟进内容
         value: 有到店意向
+      - action: 点击
+        selector: 客户跟进详情页-后退箭头
+      - action: 点击
+        selector: 客户信息tab-任务信息
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+      - action: 验证
+        selector: 任务填跟进页面标题
+        value: 待清洗任务
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效-无效原因选择框
+      - action: 验证
+        selector: 清洗结果无效-无效原因半屏页标题
+        value: 无效原因
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-已购车
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-确定按钮
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 2
+      - action: 验证
+        selector: 线索详情页面标题-线索状态2
+        value: 无效
       - action: 刷新
         selector: ''
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_complete_cleaning_task_with_wechat_img_and_view_customer_follow_up_detail:
+    description: 待清洗的线索-对客作业-跟进方式微信+查看跟进详情--调试完成test/online
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
+      - action: 刷新
       - action: 点击
         selector: 底部菜单-客户
       - action: 点击
         selector: 客户列表-搜索
-
       - action: 输入
         selector: 客户列表查询条件输入框
         value: ${phone_num}
@@ -493,14 +323,13 @@ test_data:
 
       - action: 点击
         selector: 客户列表查询结果第一条写备注按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 全屏页页面标题
         value: 写备注
       - action: 点击
         selector: 客户写备注-跟进方式-微信
-
-      #      - action: pause
       - action: 上传
         selector: 客户写备注-证明截图
         value: files\ahoh\test.jpg
@@ -518,7 +347,8 @@ test_data:
 
       - action: 点击
         selector: 客户信息tab-对客作业
-
+      - action: 等待
+        value: 4
       - action: 验证
         selector: 客户信息-对客作业-全部tab-最新记录-跟进方式
         value: 微信
@@ -530,7 +360,8 @@ test_data:
         value: 未联系上
       - action: 点击
         selector: 客户信息-对客作业-全部tab-最新记录-跟进卡片
-
+      - action: 等待
+        value: 3
       - action: 验证
         selector: 全屏页页面标题
         value: 客户跟进
@@ -575,7 +406,8 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 1
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 无效
@@ -585,8 +417,245 @@ test_data:
       - action: 验证
         selector: 底部菜单-工作
         value: 工作
-  test_create_test_drive_task_and_cancel_task: #创建试驾任务和取消任务
+
+  test_complete_cleaning_task_with_companychat_and_view_customer_follow_up_detail:
+    description: 待清洗的线索-对客作业-跟进方式企微+查看跟进详情--调试完成test/online
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+
+      - action: 点击
+        selector: 客户列表查询结果第一条写备注按钮
+      - action: 等待
+        value: 2
+      - action: 验证
+        selector: 全屏页页面标题
+        value: 写备注
+      - action: 点击
+        selector: 客户写备注-跟进方式-企微
+      - action: 上传
+        selector: 客户写备注-证明截图
+        value: files\ahoh\test.jpg
+      - action: 点击
+        selector: 购车周期-存疑
+
+      - action: 点击
+        selector: 客户写备注-跟进内容-未联系上
+
+      - action: 点击
+        selector: 客户写备注-提交按钮
+
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+
+      - action: 点击
+        selector: 客户信息tab-对客作业
+      - action: 等待
+        value: 4
+      - action: 验证
+        selector: 客户信息-对客作业-全部tab-最新记录-跟进方式
+        value: 企微
+      - action: 验证
+        selector: 客户信息-对客作业-全部tab-最新记录-跟进内容
+        value: 未联系上
+      - action: 验证
+        selector: 客户信息-对客作业-全部tab-最新记录-备注
+        value: 未联系上
+      - action: 点击
+        selector: 客户信息-对客作业-全部tab-最新记录-跟进卡片
+      - action: 等待
+        value: 4
+      - action: 验证
+        selector: 全屏页页面标题
+        value: 客户跟进
+      - action: 验证
+        selector: 客户跟进详情页-任务类型
+        value: 客户跟进
+      - action: 验证
+        selector: 客户跟进详情页-购车周期
+        value: 存疑
+      - action: 验证
+        selector: 客户跟进详情页-跟进方式
+        value: 企微
+      - action: 验证
+        selector: 客户跟进详情页-跟进内容
+        value: 未联系上
+      - action: 点击
+        selector: 客户跟进详情页-后退箭头
+
+      - action: 点击
+        selector: 客户信息tab-任务信息
+
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+
+      - action: 验证
+        selector: 任务填跟进页面标题
+        value: 待清洗任务
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效
+
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效-无效原因选择框
+
+      - action: 验证
+        selector: 清洗结果无效-无效原因半屏页标题
+        value: 无效原因
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-已购车
+
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-确定按钮
+
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态2
+        value: 无效
+      - action: 刷新
+        selector: ''
+
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_complete_cleaning_task_with_telephone_and_view_customer_follow_up_detail:
+    description: 待清洗的线索-对客作业-跟进方式电话+查看跟进详情--调试完成test/online
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
+      - action: 刷新
+      - action: 点击
+        selector: 底部菜单-客户
+      - action: 点击
+        selector: 客户列表-搜索
+      - action: 输入
+        selector: 客户列表查询条件输入框
+        value: ${phone_num}
+      - action: 点击
+        selector: 客户列表_执行搜索
+
+      - action: 点击
+        selector: 客户列表查询结果第一条写备注按钮
+      - action: 等待
+        value: 2
+      - action: 验证
+        selector: 全屏页页面标题
+        value: 写备注
+      - action: 点击
+        selector: 客户写备注-跟进方式-电话
+      - action: 上传
+        selector: 客户写备注-证明截图
+        value: files\ahoh\test.jpg
+      - action: 点击
+        selector: 购车周期-存疑
+
+      - action: 点击
+        selector: 客户写备注-跟进内容-未联系上
+
+      - action: 点击
+        selector: 客户写备注-提交按钮
+
+      - action: 点击
+        selector: 客户列表-第一个客户卡片
+
+      - action: 点击
+        selector: 客户信息tab-对客作业
+      - action: 等待
+        value: 4
+      - action: 验证
+        selector: 客户信息-对客作业-全部tab-最新记录-跟进方式
+        value: 电话
+      - action: 验证
+        selector: 客户信息-对客作业-全部tab-最新记录-跟进内容
+        value: 未联系上
+      - action: 验证
+        selector: 客户信息-对客作业-全部tab-最新记录-备注
+        value: 未联系上
+      - action: 点击
+        selector: 客户信息-对客作业-全部tab-最新记录-跟进卡片
+      - action: 等待
+        value: 5
+      - action: 验证
+        selector: 全屏页页面标题
+        value: 客户跟进
+      - action: 验证
+        selector: 客户跟进详情页-任务类型
+        value: 客户跟进
+      - action: 验证
+        selector: 客户跟进详情页-购车周期
+        value: 存疑
+      - action: 验证
+        selector: 客户跟进详情页-跟进方式
+        value: 电话
+      - action: 验证
+        selector: 客户跟进详情页-跟进内容
+        value: 未联系上
+      - action: 点击
+        selector: 客户跟进详情页-后退箭头
+
+      - action: 点击
+        selector: 客户信息tab-任务信息
+
+      - action: 点击
+        selector: 客户详情页面点击填跟进
+
+      - action: 验证
+        selector: 任务填跟进页面标题
+        value: 待清洗任务
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效
+
+      - action: 点击
+        selector: 待清洗任务填跟进页-清洗结果-无效-无效原因选择框
+
+      - action: 验证
+        selector: 清洗结果无效-无效原因半屏页标题
+        value: 无效原因
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-已购车
+
+      - action: 点击
+        selector: 清洗结果无效-无效原因半屏页-确定按钮
+
+      - action: 点击
+        selector: 任务填跟进页-提交跟进记录按钮
+      - action: 等待
+        value: 1
+      - action: 验证
+        selector: 线索详情页面标题-线索状态2
+        value: 无效
+      - action: 刷新
+        selector: ''
+
+      - action: 验证
+        selector: 底部菜单-工作
+        value: 工作
+
+  test_create_store_drive_task_and_cancel_task: #创建试驾任务和取消任务  # todo
     description: 创建试驾任务和取消任务--已调通
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_testDriveTask_lead_steps
+
+  test_create_test_drive_task_and_cancel_task: #创建试驾任务和取消任务
+    description: 创建试驾任务和取消任务--已调通 test/online
     steps:
       - use_module: login_steps
       - use_module: create_store_testDriveTask_lead_steps
@@ -605,14 +674,14 @@ test_data:
 
       - action: 点击
         selector: 客户列表查询结果第一条填跟进按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
-        selector: 任务填跟进页面标题
+        selector: 任务填跟进页面标题-1
         value: 已接待
       - action: 验证
         selector: 线索详情页-任务信息-第一个主任务的状态
         value: 服务中
-      #      - action: 暂停
       - action: 验证
         selector: 线索详情页-任务tab-第一个主任务的用户诉求内容
         value: 试乘试驾
@@ -627,13 +696,17 @@ test_data:
         value: 试驾
       - action: 点击
         selector: 线索详情页-任务信息-第一个子任务取消按钮
+      - action: 等待
+        value: 2
       - action: 验证
-        selector: 线索详情页-任务信息-第一个子任务取消原因-半屏页标题
+        selector: 线索详情页-任务信息-第一个子任务取消原因-半屏页标题-1
         value: 选择取消原因
       - action: 点击
         selector: cancel_reason_1
       - action: 点击
         selector: cancel_reason_confirm
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页-任务信息-第一个子任务的状态
         value: 服务取消
@@ -660,11 +733,14 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 战败
       - action: 刷新
+      - action: 等待
+        value: 2
 
   test_login:
     description: 登录--已调通
@@ -691,7 +767,7 @@ test_data:
         value: '管家2'
 
   test_cancel_holographic_cabin_viewing_task:
-    description: 取消看舱--已调通
+    description: 取消看舱--已调通 test/online
     steps:
       - use_module: login_steps
       - use_module: create_store_unvisited_leads_steps
@@ -742,7 +818,8 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页-待填跟进主任务看舱子任务状态
         value: 待服务
@@ -757,7 +834,8 @@ test_data:
 
       - action: 点击
         selector: 线索详情页-待填跟进主任务看舱子任务取消原因页确定按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页-待填跟进主任务看舱子任务状态
         value: 服务取消
@@ -784,7 +862,8 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 战败
@@ -796,75 +875,67 @@ test_data:
         value: 工作
 
   test_complete_cleaning_task:
-    description: 清洗任务填跟进--已调通
+    description: 清洗任务填跟进选择无效--已调通 test/online
     steps:
       - use_module: login_steps
       - use_module: create_store_unvisited_leads_steps
       - action: 刷新
         selector: ''
-
       - action: 点击
         selector: 底部菜单-客户
-
       - action: 点击
         selector: 客户列表-搜索
-
       - action: 输入
         selector: 客户列表查询条件输入框
         value: ${phone_num}
       - action: 点击
         selector: 客户列表_执行搜索
-
       - action: 点击
         selector: 客户列表查询结果第一条填跟进按钮
-
       - action: 点击
         selector: 客户详情页面点击填跟进
-
       - action: 验证
         selector: 任务填跟进页面标题
         value: 待清洗任务
       - action: 点击
         selector: 待清洗任务填跟进页-清洗结果-无效
-
       - action: 点击
         selector: 待清洗任务填跟进页-清洗结果-无效-无效原因选择框
-
       - action: 验证
         selector: 清洗结果无效-无效原因半屏页标题
         value: 无效原因
       - action: 点击
         selector: 清洗结果无效-无效原因半屏页-已购车
-
       - action: 点击
         selector: 清洗结果无效-无效原因半屏页-确定按钮
-
       - action: 输入
         selector: 待清洗任务填跟进页-其他备注-文本框
         value: 客户无意向
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页-任务信息-第一个主任务的状态
         value: 已完成
+      - action: 等待
+        value: 1
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 无效
       - action: 刷新
-        selector: ''
-
       - action: 验证
         selector: 底部菜单-工作
         value: 工作
+      - action: 等待
+        value: 3
 
   test_complete_call_back_task_generate_from_cleaning_task:
-    description: test_清洗任务生成的管家回电任务填跟进--已调通
+    description: test_清洗任务生成的管家回电任务填跟进--已调通 test/online
     steps:
       - use_module: login_steps
       - use_module: create_store_unvisited_leads_steps
       - action: 刷新
-        selector: ''
 
       - action: 点击
         selector: 底部菜单-客户
@@ -907,7 +978,8 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 咨询待预约
@@ -924,7 +996,7 @@ test_data:
         selector: 任务填跟进页-跟进结果-战败
 
       - action: 点击
-        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项-1
 
       - action: 点击
         selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
@@ -937,7 +1009,8 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 战败
@@ -947,14 +1020,15 @@ test_data:
       - action: 验证
         selector: 底部菜单-工作
         value: 工作
+      - action: 等待
+        value: 2
 
   test_complete_reconnection_task_generate_from_call_back_task:
-    description: 管家回电任务生成的再联系任务填跟进-线索战败--已调通
+    description: 管家回电任务生成的再联系任务填跟进-线索战败--已调通 test/online
     steps:
       - use_module: login_steps
       - use_module: create_store_unvisited_leads_steps
       - action: 刷新
-        selector: ''
 
       - action: 点击
         selector: 底部菜单-客户
@@ -973,7 +1047,8 @@ test_data:
 
       - action: 点击
         selector: 客户详情页面点击填跟进
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 任务填跟进页面标题
         value: 待清洗任务
@@ -997,13 +1072,15 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 咨询待预约
       - action: 点击
         selector: 线索详情页面-任务tab-第一个任务点击填跟进
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 任务填跟进页面标题
         value: 待回电任务
@@ -1021,13 +1098,15 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 1
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 持续跟进
       - action: 点击
         selector: 线索详情页面-任务tab-第一个任务点击填跟进
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 任务填跟进页面标题
         value: 持续跟进任务
@@ -1041,7 +1120,7 @@ test_data:
         selector: 任务填跟进页-跟进结果-战败
 
       - action: 点击
-        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项-1
 
       - action: 点击
         selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
@@ -1054,7 +1133,8 @@ test_data:
 
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 战败
@@ -1064,451 +1144,131 @@ test_data:
       - action: 验证
         selector: 底部菜单-工作
         value: 工作
+      - action: 等待
+        value: 3
 
   test_complete_holographic_cabin_viewing_task:
-    description: 看舱任务完成--已调通
+    description: 看舱任务完成--已调通 test/online
     steps:
       - use_module: login_steps
       - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 1
       - action: 刷新
-        selector: ''
-
       - action: 点击
         selector: 底部菜单-客户
-
       - action: 点击
         selector: 客户列表-搜索
-
       - action: 输入
         selector: 客户列表查询条件输入框
         value: ${phone_num}
       - action: 点击
         selector: 客户列表_执行搜索
-
       - action: 点击
         selector: 客户列表查询结果第一条填跟进按钮
-
       - action: 点击
         selector: 客户详情页面点击填跟进
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 任务填跟进页面标题
         value: 待清洗任务
       - action: 点击
         selector: 待清洗任务填跟进页-清洗结果-有效
-
       - action: 点击
         selector: 购车周期-存疑
-
       - action: 点击
         selector: 待清洗任务填跟进页-用户诉求-预计到店
-
       - action: 点击
         selector: 待清洗任务填跟进页-到店诉求-全息体验
-
       - action: 点击
         selector: 待清洗任务填跟进页-到店类型-到门店
-
       - action: 点击
         selector: 待清洗任务填跟进页-到店时间
-
       - action: 点击
         selector: 待清洗任务填跟进页-到店时间-确认按钮
-
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 2
       - action: 验证
         selector: 线索详情页-待填跟进主任务看舱子任务状态
         value: 待服务
       - action: 点击
         selector: 线索详情页-任务信息-第一个子任务开始按钮
-
+      - action: 等待
+        value: 1
       - action: 验证
         selector: 线索详情页-待填跟进主任务看舱子任务状态
         value: 服务中
       - action: 点击
         selector: 线索详情页-待填跟进主任务看舱子任务结束按钮
-
       - action: 点击
         selector: 线索详情页-待填跟进主任务看舱子任务车型半屏页第一个车型
-
       - action: 点击
         selector: 线索详情页-待填跟进主任务看舱子任务车型半屏页-确定按钮
-
+      - action: 等待
+        value: 1
       - action: 验证
         selector: 线索详情页-待填跟进主任务看舱子任务状态
         value: 服务完成
       - action: 点击
         selector: 客户详情页面点击填跟进
-
       - action: 点击
         selector: 购车周期-存疑
-
       - action: 点击
         selector: 任务填跟进页-跟进结果-战败
-
       - action: 点击
         selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
-
       - action: 点击
         selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
-
       - action: 点击
         selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
-
       - action: 点击
         selector: 任务填跟进页-二级战败因素弹框-确认按钮
-
       - action: 点击
         selector: 任务填跟进页-工牌录音-无录音
-
       - action: 点击
         selector: 任务填跟进页-工牌录音-无录音-填写原因-工牌没电
-
       - action: 点击
         selector: 任务填跟进页-提交跟进记录按钮
-
+      - action: 等待
+        value: 1
       - action: 验证
         selector: 线索详情页面标题-线索状态2
         value: 战败
       - action: 刷新
-        selector: ''
-
       - action: 验证
         selector: 底部菜单-工作
         value: 工作
 
-  test_submit_daily_corporate_order:
-    description: 生成当日公户用户订单，提交审核全流程--已调通
+  test_submit_daily_corporate_order: #0731
+    description: 生成当日公户用户订单，品牌类型为非重点，提交审核全流程，推送车型需要区分环境--已调通 test/online
     steps:
       - use_module: login_steps
       - use_module: create_store_unvisited_leads_steps
-      - action: 刷新
-        selector: ''
-        
-        ###################################
-      - action: 点击
-        selector: 底部菜单-客户
-
-      - action: 点击
-        selector: 客户列表-搜索
-
-      - action: 输入
-        selector: 客户列表查询条件输入框
-        value: ${phone_num}
-      - action: 点击
-        selector: 客户列表_执行搜索
-
-      - action: 点击
-        selector: 客户列表查询结果第一条填跟进按钮
-        
-        ##########################
-      - action: 点击
-        selector: 客户详情页面点击填跟进
-
-      - action: 验证
-        selector: 任务填跟进页面标题
-        value: 待清洗任务
-      - action: 点击
-        selector: 待清洗任务填跟进页-清洗结果-有效
-
-      - action: 点击
-        selector: 购车周期-存疑
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-用户诉求-预计到店
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-到店诉求-现场活动
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-到店类型-到门店
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-到店时间
-
-      - action: 点击
-        selector: 待清洗任务填跟进页-到店时间-确认按钮
-
-      - action: 点击
-        selector: 任务填跟进页-提交跟进记录按钮
-
-      ####################################
-      #      - action: 暂停
-      - action: 点击
-        selector: 任务详情-推送按钮
-
-      - action: 验证
-        selector: 推送-选择推送车型半屏页
-        value: 选择推送车型
-      - action: 验证
-        selector: 推送-选择推送车型半屏页-删除按钮
-        value: 删除
-      - action: 验证
-        selector: 推送-添加车型按钮
-        value: 添加车型
-      - action: 点击
-        selector: 推送-添加车型按钮
-
-      - action: 验证
-        selector: 推送-选择车型页标题
-        value: 选择车型
-      #      - action: 暂停
-      - action: 输入
-        selector: 推送-选择车型输入框
-        value: 新海狮X30L
-      - action: 点击
-        selector: 推送-选择筛选的第一个车型
-
-      - action: 点击
-        selector: 推送-确定选择按钮
-
-      - action: 点击
-        selector: 推送-选择推送车型
-
-      - action: 点击
-        selector: 推送-选择所属经销商
-
-      - action: 点击
-        selector: 推送-选择随机经销商
-
-      - action: 点击
-        selector: 推送-确认推送
-
-      - action: 点击
-        selector: 推送经销商弹框-确定按钮
-
-      - action: 点击
-        selector: 客户详情页面点击填跟进
-
-      - action: 点击
-        selector: 购车周期-存疑
-
-      - action: 点击
-        selector: 任务填跟进页-见面开关
-
-      - action: 点击
-        selector: 任务填跟进页-跟进结果-下订
-
-      - action: 点击
-        selector: 任务填跟进页-工牌录音-无录音
-
-      - action: 点击
-        selector: 任务填跟进页-工牌录音-无录音-填写原因-工牌没电
-
-      - action: 点击
-        selector: 任务填跟进页-下订车系
-
-      - action: 验证
-        selector: 选择车系页标题
-        value: 选择车系
-      - action: 点击
-        selector: 任务填跟进-下订车系选择第一个
-
-      - action: 点击
-        selector: 选择车系页-确定按钮
-
-      - action: 点击
-        selector: 任务填跟进页-提交跟进记录按钮
-
-      - action: 点击
-        selector: 下订成功-返回
-
-      - action: 点击
-        selector: 搜索框-返回
-
-      - action: 点击
-        selector: 底部菜单-工作
-
-      - action: 点击
-        selector: 全部订单
-
-      - action: 点击
-        selector: 订单列表-搜索
-
-      - action: 输入
-        selector: 订单列表-搜索输入框
-        value: ${phone_num}
-      - action: 点击
-        selector: 订单卡片-填写信息按钮
-
-      - action: 点击
-        selector: 下订信息-公户
-
-      - action: 点击
-        selector: 下订信息-购车类型-下一步按钮
-
-      - action: 输入
-        selector: 下订信息-企业代码
-        value: QYDM12345678901234
-      - action: 点击
-        selector: 下订信息-车型输入框
-
-      - action: 点击
-        selector: 下订信息-选择车系
-
-      - action: 点击
-        selector: 选择下订车型页-确定按钮
-
-      - action: 输入
-        selector: 下订信息-开票价格输入框
-        value: '300001'
-      - action: 输入
-        selector: 下订信息-上牌费用输入框
-        value: '2000'
-      - action: 输入
-        selector: 下订信息-贷款额度输入框
-        value: '150000'
-      - action: 点击
-        selector: 下订信息-贷款期数输入框
-
-      - action: 输入
-        selector: 下订信息-月供输入框
-        value: '1003'
-      - action: 点击
-        selector: 下订信息-其他项
-
-      - action: 输入
-        selector: 下订信息-购车总价输入框
-        value: '302001'
-      - action: 点击
-        selector: 下订信息-提车日期输入框
-
-      - action: 点击
-        selector: 下订信息-提车日期-选择日期-确认按钮
-
-      - action: 点击
-        selector: 下订信息-合同日期输入框
-
-      - action: 点击
-        selector: 下订信息-合同日期-选择日期-确认按钮
-
-      - action: 点击
-        selector: 下订信息-付款日期输入框
-
-      - action: 点击
-        selector: 下订信息-付款日期-选择日期-确认按钮
-
-      - action: 上传
-        selector: 下订信息-合同凭证输入框
-        value: files\ahoh\test.jpg
-      - action: 点击
-        selector: 下订信息-合同类型-线上合同
-      - action: 上传
-        selector: 下订信息-付款凭证输入框
-        value: files\ahoh\test.jpg
-      - action: 点击
-        selector: 下订信息-提交审核按钮
-      - action: 点击
-        selector: 搜索框-返回
-      - action: 验证
-        selector: 订单列表页面标题
-        value: 全部订单
-      - action: 点击
-        selector: 订单列表-返回
-      - action: 验证
-        selector: 底部菜单-工作
-        value: 工作
-      - action: 刷新
-        selector: ''
-
-
-
-  test_generate_daily_corporate_order_confirmations_for_regular_brand:
-    description: 生成当日公户用户订单，常规品牌发起确认函--已调通
-    steps:
-      - use_module: login_steps
-      - use_module: create_store_unvisited_leads_steps
-      - action: 刷新
-      - use_module: create_order_steps
-      - use_module: fill_company_non_priority_order_info
-      - action: 刷新
-      - action: 点击
-        selector: 底部菜单-工作
-      - action: 点击
-        selector: 全部订单
-      - action: 点击
-        selector: 订单列表-搜索
-      - action: 输入
-        selector: 订单列表-搜索输入框
-        value: ${lead_id}
-      - action: 点击
-        selector: 订单卡片-确认函按钮
-      - action: 验证
-        selector: 确认函签署-页面标题
-        value: 确认函签署
-      - action: wait
-        value: 2
-      - action: 输入
-        selector: 确认函签署填写信息页-身份证输入框
-        value: 31011019560416545X
-      - action: wait
-        value: 1
-      - action: 点击
-        selector: 确认函签署填写信息页-购买车型选择框
-        value:
-      - action: 验证
-        selector: 确认函签署填写信息页-选择车型页标题
-        value: 选择车型
-      - action: wait
-        value: 1
-      - action: 点击
-        selector: 确认函签署填写信息页-选择车型页第一项
-      - action: 点击
-        selector: 确认函签署填写信息页-选择车型的半屏页-确定按钮
-      - action: 输入
-        selector: 确认函签署填写信息页-指导价输入框
-        value: '5.65'
-      - action: 输入
-        selector: 确认函签署填写信息页-发票价格输入框
-        value: '50000'
-      - action: 点击
-        selector: 确认函签署填写信息页-合同日期输入框
-      - action: 验证
-        selector: 确认函签署填写信息页-合同日期半屏页标题
-        value: 选择合同日期
-      - action: 点击
-        selector: 确认函签署填写信息页-合同日期半屏页-确任按钮
-      - action: 点击
-        selector: 确认函签署填写信息页-合同日期半屏页-底部确定按钮
-      - action: 验证
-        selector: 全屏页页面标题
-        value: 《买贵必赔确认函》预览
       - action: 等待
-        value: 1
-      - action: 验证
-        selector: 确认函预览-标题
-        value: 尊敬的客户名称先生/女士
-      - action: 验证
-        selector: 确认函预览-客户名称
-        value: 客户名称
-      - action: 验证
-        selector: 确认函预览-手机号
-        value: 182****3933
-      - action: 验证
-        selector: 确认函预览-身份证号
-        value: 31011019560416545X
-      - action: 验证
-        selector: 确认函预览-购买车辆品牌
-        value: 金杯
-      - action: 验证
-        selector: 确认函预览-购买车辆MSRP(官方指导价)
-        value: 56500元
-      - action: 验证
-        selector: 确认函预览-购买车辆价格(发票价)
-        value: 50000元
-      - action: 验证
-        selector: 确认函预览-分享客户微信按钮
-        value: 分享客户微信
-      - action: 点击
-        selector: 确认函预览-短信按钮
-        value: 短信
-      - action: 验证
-        selector: 发票信息页-确认发票二次确认弹窗文案
-        value: 邀请信息
-      - action: 点击
-        selector: 确认函预览-邀请信息-复制文本
+        value: 2
+      - action: 刷新
+      - use_module: follow_up_unattended_pending_task_non_key_brand_order_today
+      - use_module: fill_company_non_priority_brand_order_info
+
+
+
+
+  test_generate_daily_corporate_order_confirmations_for_regular_brand: #0731
+
+    description: 生成当日公户用户订单，常规品牌发起确认函--已调通 test/online
+    steps:
+      - use_module: login_steps
+      - use_module: create_store_unvisited_leads_steps
+      - action: 等待
+        value: 2
+      - action: 刷新
+      - use_module: follow_up_unattended_pending_task_non_key_brand_order_today #create_order_steps
+      - use_module: fill_company_non_priority_brand_order_info #fill_company_non_priority_order_info
+      - action: 刷新
+      - use_module: fill_company_order_confirmation
 
   test_temp_store_today_corporate_orders:
     description: 生成当日公户用户订单，订单暂存
@@ -1901,3 +1661,154 @@ test_data:
       - action: 验证
         selector: 底部菜单-工作
         value: 工作
+
+
+  test_complete_process_unconfirmed_and_task:
+    description: 生成预约确认任务和待接待任务并完成跟进
+    steps:
+      - use_module: login_steps
+      - action: 点击
+        selector: 首页-待办列表-全部
+      - action: 等待
+        value: 2
+      - action: assert_text
+        selector: (//div[@class='swiper-slide swiper-slide-next'])[1]
+        value: "abc"
+      - action: 点击
+        selector: text="14六"
+      - action: pause
+#      - use_module: create_store_unvisited_leads_steps
+#      - action: 刷新
+#
+#      - action: 点击
+#        selector: 底部菜单-客户
+#
+#      - action: 点击
+#        selector: 客户列表-搜索
+#
+#      - action: 输入
+#        selector: 客户列表查询条件输入框
+#        value: ${phone_num}
+#      - action: 点击
+#        selector: 客户列表_执行搜索
+#
+#      - action: 点击
+#        selector: 客户列表查询结果第一条填跟进按钮
+#
+#      - action: 点击
+#        selector: 客户详情页面点击填跟进
+#
+#      - action: 验证
+#        selector: 任务填跟进页面标题
+#        value: 待清洗任务
+#      - action: 点击
+#        selector: 待清洗任务填跟进页-清洗结果-有效
+#
+#      - action: 点击
+#        selector: 购车周期-存疑
+#
+#      - action: 点击
+#        selector: 待清洗任务填跟进页-用户诉求-预计到店
+#
+#      - action: 点击
+#        selector: 待清洗任务填跟进页-到店诉求-现场活动
+#
+#      - action: 点击
+#        selector: 待清洗任务填跟进页-到店类型-到门店
+#
+#      - action: 点击
+#        selector: 待清洗任务填跟进页-到店时间
+#      - action: 点击
+#        selector: 预约到店时间半屏页_第三个日期数据
+#      - action: 点击
+#        selector: 待清洗任务填跟进页-到店时间-确认按钮
+#      - action: 点击
+#        selector: 任务填跟进页-提交跟进记录按钮
+#      - action: 验证
+#        selector: 线索详情-任务信息-第一个主任务的名称
+#        value: 待接待
+#      - action: 验证
+#        selector: 线索详情页-任务信息-第一个主任务的状态
+#        value: 服务中
+#      - action: 刷新
+
+      - action: 点击
+      - action: 等待
+        value: 2
+      - action: 硬断言
+        selector: div.swiper-container>div.swiper>div.swiper-wrapper>div[class='swiper-slide swiper-slide-next'] #div.swiper-slide-next>div.swiper-date-item #todo
+        value: '11'
+      - action: 等待
+        value: 3
+      - action: 验证包含文本
+        selector: div.swiper-slide-active p.date
+        value: '.'
+      - action: 等待
+        value: 3
+#      - action: 暂停
+#      - action: 验证包含文本
+#        selector: 待办列表-预约确认tab
+#        value: 预约确认
+#      - action: 点击
+#        selector: 待办列表-预约确认tab
+#      - action: 点击
+#        selector: 待办列表第一个卡片信息-填跟进按钮 #TODO
+#      - action: 点击
+#        selector: 任务填跟进页-跟进结果-确认到店
+#      - action: 点击
+#        selector: 任务填跟进页-提交跟进记录按钮
+#
+#      - action: 验证
+#        selector: 线索详情页-待填跟进主任务看舱子任务状态
+#        value: 服务中
+#      - action: 点击
+#        selector: 线索详情页-待填跟进主任务看舱子任务结束按钮
+#
+#      - action: 点击
+#        selector: 线索详情页-待填跟进主任务看舱子任务车型半屏页第一个车型
+#
+#      - action: 点击
+#        selector: 线索详情页-待填跟进主任务看舱子任务车型半屏页-确定按钮
+#
+#      - action: 验证
+#        selector: 线索详情页-待填跟进主任务看舱子任务状态
+#        value: 服务完成
+#      - action: 点击
+#        selector: 客户详情页面点击填跟进
+#
+#      - action: 点击
+#        selector: 购车周期-存疑
+#
+#      - action: 点击
+#        selector: 任务填跟进页-跟进结果-战败
+#
+#      - action: 点击
+#        selector: 任务填跟进页-跟进结果-战败-一级战败因素选项
+#
+#      - action: 点击
+#        selector: 任务填跟进页-跟进结果-战败-二级战败因素输入框
+#
+#      - action: 点击
+#        selector: 任务填跟进页-跟进结果-战败-二级战败因素弹框-第一个选项
+#
+#      - action: 点击
+#        selector: 任务填跟进页-二级战败因素弹框-确认按钮
+#
+#      - action: 点击
+#        selector: 任务填跟进页-工牌录音-无录音
+#
+#      - action: 点击
+#        selector: 任务填跟进页-工牌录音-无录音-填写原因-工牌没电
+#
+#      - action: 点击
+#        selector: 任务填跟进页-提交跟进记录按钮
+#
+#      - action: 验证
+#        selector: 线索详情页面标题-线索状态2
+#        value: 战败
+#      - action: 刷新
+#        selector: ''
+#
+#      - action: 验证
+#        selector: 底部菜单-工作
+#        value: 工作

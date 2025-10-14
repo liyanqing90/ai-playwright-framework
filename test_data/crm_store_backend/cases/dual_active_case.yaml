@@ -1,0 +1,19 @@
+test_cases:
+#线索列表
+  - name: test_lead_mange_search_lead
+#子任务列表
+  - name: test_sub_task_search
+  - name: test_sub_task_list
+#订单列表
+
+  - name: test_order_list #列表
+  - name: test_order_filter #筛选
+  - name: test_order_details #详情
+#购车政策
+  - name: test_policy_add #添加
+  - name: test_policy_deactivate #停用
+  - name: test_policy_filter #筛选
+  - name: test_policy_delete #删除
+
+
+

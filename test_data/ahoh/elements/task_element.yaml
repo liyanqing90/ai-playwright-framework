@@ -1,4 +1,5 @@
 elements:
+  待办列表-日期中的明天: div.swiper-slide-next #//p[@class="date"][text()="今"]/parent::*/parent::div/following-sibling::div[1]
   待办列表-全部tab: div[role="tablist"]>div:nth-child(1)>span
   待办列表-待清洗tab: div[role="tablist"]>div:nth-child(2)>span
   待办列表-待回电tab: div[role="tablist"]>div:nth-child(3)>span
@@ -20,3 +21,6 @@ elements:
   待办列表第一个卡片信息-第四个标签值: div.van-list > div:nth-child(1) div.listcard-half-content>div:nth-child(6) div.value-oneline
   待办列表第一个卡片信息-打电话按钮: div.van-list > div:nth-child(1) div.listcard-operation>div.updateBtn-white
   待办列表第一个卡片信息-填跟进按钮: div.van-list > div:nth-child(1) div.listcard-operation>div.updataBtn-rightColor
+  ##预约到店时间半屏页的元素
+  预约到店时间半屏页_第一个日期数据: div.van-picker__columns>div:nth-child(3) li:nth-child(1)
+  预约到店时间半屏页_第三个日期数据: div.van-picker__columns>div:nth-child(3) li:nth-child(3)

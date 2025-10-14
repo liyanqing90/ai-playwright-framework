@@ -3,3 +3,6 @@
 /logs/
 /reports/
 /test_data/variables.json
+/config/storage_state.json
+/evidence/
+/poetry.lock

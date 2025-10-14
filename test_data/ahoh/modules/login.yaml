@@ -1,9 +1,9 @@
 login_steps:
   - action: goto
-    value: "http://test.crmapp.ahoh.mulan.corpautohome.com/v/index" # http://app.ahohcrm.autohome.com.cn/v/login
+    value: "http://app.ahohcrm.autohome.com.cn/v/login" #http://app.ahohcrm.autohome.com.cn/v/login  http://test.crmapp.ahoh.mulan.corpautohome.com/v/index
   - action: 输入
     selector: 登录账号
-    value: '13269290719'   #12500000002 #19912222222
+    value: '12500000002'   #12500000002 #19912222222 #13269290719 17011001111
   - action: 点击
     selector: 切换登录方式
     value: ''
