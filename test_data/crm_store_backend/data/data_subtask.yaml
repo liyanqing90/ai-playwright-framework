@@ -157,6 +157,8 @@ test_data:
     description: "线索&工单管理-子任务列表-列表验证"
     steps:
       - use_module: login_steps
+      - action: wait
+        value: 2
       - action: click
         selector: 线索&工单管理
       - action: wait
