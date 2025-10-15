@@ -88,7 +88,9 @@ test_data:
         value: ${mall_management_url}
       - action: assert_text
         selector: 账号昵称
-        value: ${mall_management_nick_name}
+        value: ${mall_management_nick_name1}
+      - action: assert_visible
+        selector: 销售额
       - action: wait
 
   test_own_stores_my_wallet:
@@ -106,5 +108,49 @@ test_data:
       - action: wait
       - action: assert_url
         value: ${my_wallet_url}
+      - action: assert_visible
+        selector: 交易记录
+      - action: wait
+
+  test_flagship_stores_mall_management:
+    description: "旗舰店-商城管理"
+    steps:
+      - use_module: login_steps_flagship_stores
+      - action: click
+        selector: 商城
+      - action: wait
+      - action: click
+        selector: 商城管理
+      - action: wait
+        value: '6'
+      - action: switch_window
+      - action: wait
+      - action: assert_url
+        value: ${mall_management_url}
+      - action: assert_text
+        selector: 账号昵称
+        value: ${mall_management_nick_name2}
+      - action: assert_visible
+        selector: 销售额
+      - action: wait
+
+  test_flagship_stores_my_wallet:
+    description: "旗舰店-我的钱包"
+    steps:
+      - use_module: login_steps_flagship_stores
+      - action: click
+        selector: 商城
+      - action: wait
+      - action: click
+        selector: 我的钱包
+      - action: wait
+        value: '3'
+      - action: switch_window
+      - action: wait
+      - action: assert_url
+        value: ${my_wallet_url}
+      - action: assert_visible
+        selector: 交易记录
+      - action: wait
 
 

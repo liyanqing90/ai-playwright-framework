@@ -17,6 +17,8 @@ elements:
   查看详情: (//a[@target='_blank'][contains(text(),'查看详情')])[1]
 
   账号昵称: //span[@class='hidden-xs-only']
+  销售额: //span[contains(text(),'销售额')]
+  交易记录: //h2[contains(text(),'交易记录')]
 
 
 
