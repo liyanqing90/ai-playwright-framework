@@ -4,6 +4,8 @@ test_cases:
   - name: test_own_stores_Details
   - name: test_own_stores_mall_management
   - name: test_own_stores_my_wallet
+  - name: test_flagship_stores_mall_management
+  - name: test_flagship_stores_my_wallet
 
 
 
