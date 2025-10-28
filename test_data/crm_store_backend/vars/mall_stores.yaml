@@ -7,8 +7,12 @@ prod:
   jump_url: 'https://ahohcrm.autohome.com.cn/#/personManager/staff/detail/45918'
   detail_name: //span[contains(text(),'徐店长')]
   mall_management_url: 'https://life.autohome.com.cn/shop/#/index'
-  mall_management_nick_name: 'AHOH5048'
+  mall_management_nick_name1: 'AHOH5048'
   my_wallet_url: 'https://pay.autohome.com.cn/enterprise-web/my/home.htm'
+
+  flagship_stores_account: '17081111112'
+  flagship_stores_pwd: 'Admin123!'
+  mall_management_nick_name2: 'AHOH5043'
 
 
 
@@ -20,8 +24,11 @@ test:
   jump_url: 'http://ahohcrm.terra.corpautohome.com/#/personManager/staff/detail/10386'
   detail_name: //span[contains(text(),'测试李亚男')]
   mall_management_url: 'http://autolifemall.mesh-mulan.corpautohome.com/shop/#/index'
-  mall_management_nick_name: 'AHOH95882'
+  mall_management_nick_name1: 'AHOH95882'
   my_wallet_url: 'https://testpay.autohome.com.cn/enterprise-web/my/home.htm'
 
+  flagship_stores_account: '17020202020'
+  flagship_stores_pwd: 'Admin123!'
+  mall_management_nick_name2: 'AHOH95852'
 
 
