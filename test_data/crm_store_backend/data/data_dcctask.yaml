@@ -4,7 +4,7 @@ test_data:
     steps:
       - use_module: login_steps
       - action: click
-        selector: 线索&工单管理
+        selector: 线索_工单管理
       - action: click
         selector: 主任务列表
       - action: click
@@ -126,7 +126,7 @@ test_data:
     steps:
       - use_module: login_steps
       - action: click
-        selector: 线索&工单管理
+        selector: 线索_工单管理
       - action: click
         selector: 主任务列表
       - action: click
@@ -204,7 +204,7 @@ test_data:
     steps:
       - use_module: login_steps
       - action: click
-        selector: 线索&工单管理
+        selector: 线索_工单管理
       - action: click
         selector: 主任务列表
       - action: click
@@ -261,7 +261,7 @@ test_data:
     steps:
       - use_module: login_steps
       - action: click
-        selector: 线索&工单管理
+        selector: 线索_工单管理
       - action: click
         selector: 主任务列表
       - action: click
@@ -331,7 +331,7 @@ test_data:
     steps:
       - use_module: login_steps
       - action: click
-        selector: 线索&工单管理
+        selector: 线索_工单管理
       - action: click
         selector: 主任务列表
       - action: click
@@ -407,7 +407,7 @@ test_data:
     steps:
       - use_module: login_steps
       - action: click
-        selector: 线索&工单管理
+        selector: 线索_工单管理
       - action: click
         selector: 主任务列表
       - action: click

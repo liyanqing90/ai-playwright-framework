@@ -90,4 +90,10 @@ projects:
       stage: "https://ahohcrm-test.autohome.com.cn/screen/home?storeId=94084"
       prod: "https://ahohcrm-pre.autohome.com.cn/screen/home?storeId=3425"
     browser_config: { "viewport": { "width": 1200, "height": 600 } }
-
+  car_store_c:
+    test_dir: "test_data/car_store_c"
+    environments:
+      test: "https://energyspace-c-test.autohome.com.cn/ahoh-marketing/mall"
+      stage: "https://energyspace-c-pre.autohome.com.cn/ahoh-marketing/mall"
+      prod: "https://energyspace.m.autohome.com.cn/ahoh-marketing/mall"
+    browser_config: { 'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1', 'viewport': { 'width': 393, 'height': 659 }, 'device_scale_factor': 3, 'is_mobile': True, 'has_touch': True, 'default_browser_type': 'webkit' }

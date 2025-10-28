@@ -1,0 +1,63 @@
+test_data:
+  test_mall_order_list:
+    description: "商城订单列表"
+    steps:
+      - use_module: login_mall_steps
+      - action: click
+        selector: mall_search_button
+      - action: click
+        selector: mall_search_input
+      - action: fill
+        selector: mall_search_input
+        value : ${mall_order_card_phone}
+      - action: press_key
+        selector: mall_search_input
+        value: Enter
+      - action: assert_text_contains
+        selector: mall_order_card_phone
+        value: ${mall_order_card_phone}
+      - action: assert_text_contains
+        selector: mall_order_card_status
+        value: ${mall_order_card_status}
+      - action: assert_text_contains
+        selector: mall_order_card_username
+        value: ${mall_order_card_username}
+      - action: assert_text_contains
+        selector: mall_order_card_car_title
+        value: ${mall_order_card_car_title}
+      - action: assert_text_contains
+        selector: mall_order_card_invoice_title
+        value: ${mall_order_card_invoice_title}
+      - action: assert_text_contains
+        selector: mall_order_card_deliver_title
+        value: ${mall_order_card_deliver_title}
+      - action: assert_text_contains
+        selector: mall_order_card_car_time_title
+        value: ${mall_order_card_car_time_title}
+      - action: assert_text_contains
+        selector: mall_order_card_car_value
+        value: ${mall_order_card_car_value}
+      - action: assert_text_contains
+        selector: mall_order_card_invoice_value
+        value: ${mall_order_card_invoice_value}
+      - action: assert_text_contains
+        selector: mall_order_card_deliver_value
+        value: ${mall_order_card_deliver_value}
+      - action: assert_text_contains
+        selector: mall_order_card_car_time_value
+        value: ${mall_order_card_car_time_value}
+
+  test_mall_order_list_order_status:
+    description: "商城订单列表"
+    steps:
+      - use_module: login_mall_steps
+      - action: click
+        selector: mall_order_search_order_status
+      - action: click
+        selector: mall_order_search_order_status_1
+      - action: assert_text_contains
+        selector: mall_order_card_status
+        value: ${mall_order_card_status1}
+
+
+
