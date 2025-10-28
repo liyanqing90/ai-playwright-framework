@@ -1,0 +1,16 @@
+elements:
+  mall_search_button : //div[@class='search-icon right-icon']//img
+  mall_search_input : //input[@id='van-search-2-input']
+  mall_order_card_phone : (//div[@class='listcont'])[1]//div[@class='userPhon']
+  mall_order_card_status : (//div[@class='listcont'])[1]//span[@class='common_span']
+  mall_order_card_username : (//div[@class='listcont'])[1]//p[@class='userName']
+  mall_order_card_car_value : (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][1]/div[@class='listcard-cont-value']
+  mall_order_card_invoice_value : (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][3]/div[@class='listcard-cont-value']
+  mall_order_card_deliver_value : (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][4]/div[@class='listcard-cont-value']
+  mall_order_card_car_time_value : (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][2]/div[@class='listcard-cont-value']
+  mall_order_card_car_title: (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][1]/div[@class='listcard-cont-title']
+  mall_order_card_invoice_title: (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][3]/div[@class='listcard-cont-title']
+  mall_order_card_deliver_title: (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][4]/div[@class='listcard-cont-title']
+  mall_order_card_car_time_title: (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][2]/div[@class='listcard-cont-title']
+  mall_order_search_order_status : //span[contains(text(),'订单状态')]
+  mall_order_search_order_status_1: //li[@id='待提交审核']//div[1]

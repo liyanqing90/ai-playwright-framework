@@ -1,0 +1,20 @@
+login_mall_steps:
+  - action: goto
+    value: http://test.crmapp.ahoh.mulan.corpautohome.com/v/index  #"http://app.ahohcrm.autohome.com.cn/v/login" #http://app.ahohcrm.autohome.com.cn/v/login  http://test.crmapp.ahoh.mulan.corpautohome.com/v/index
+  - action: 输入
+    selector: 登录账号
+    value: ${mall_account}
+  - action: 点击
+    selector: 切换登录方式
+    value: ''
+  - action: 输入
+    selector: 登录密码
+    value: ${mall_password}
+  - action: 点击
+    selector: 同意协议
+    value: ''
+  - action: 点击
+    selector: 登录按钮
+    value: ''
+
+
