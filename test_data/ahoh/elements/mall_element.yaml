@@ -14,3 +14,19 @@ elements:
   mall_order_card_car_time_title: (//div[@class='listcont'])[1]//div[@class='listcard-cont-item'][2]/div[@class='listcard-cont-title']
   mall_order_search_order_status : //span[contains(text(),'订单状态')]
   mall_order_search_order_status_1: //li[@id='待提交审核']//div[1]
+
+
+  交车状态_筛选: //span[contains(text(),'交车状态')]
+  筛选_待提交: //li[@id='待提交']
+  筛选_已交车: //li[@id='已交车']
+  上传交车: (//div[@class='common-btn submit-debounce'][contains(text(),'上传交车')])[1]
+  查看交车: (//div[@class='common-btn submit-debounce'][contains(text(),'查看交车')])[1]
+  交车日期_选择框: //div[@trigger='onChange']//div[@class='van-cell__value van-field__value']
+  交车证明_选择: //input[@type='file']
+  日期确认: //button[contains(text(),'确认')]
+  日期展示: //input[@name='deliverTime']
+  车架号: //input[@placeholder='请输入车架号']
+  提交按钮: //div[@class='delivery-bottom-btn']
+  二次提交按钮: //span[@class='btn-text'][contains(text(),'提交')]
+
+

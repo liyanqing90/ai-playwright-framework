@@ -19,6 +19,11 @@ def get_yaml_files(directory: str) -> list[Any] | None:
 class YamlHandler:
     def __init__(self):
         self.yaml = YAML(typ="safe")
+        # 禁用日期自动解析，避免 2025-12-09 被解析为 datetime.date 对象
+        # 将 timestamp 标签映射到字符串构造器，这样所有日期都会保持为字符串类型
+        if 'tag:yaml.org,2002:timestamp' in self.yaml.constructor.yaml_constructors:
+            self.yaml.constructor.yaml_constructors['tag:yaml.org,2002:timestamp'] = \
+                self.yaml.constructor.yaml_constructors['tag:yaml.org,2002:str']
 
     def load_yaml(self, file_path: Path) -> Dict[str, Any]:
         if not os.path.exists(file_path):
@@ -28,8 +33,9 @@ class YamlHandler:
             try:
 
                 return self.yaml.load(f)
-            except Exception:
-                raise Exception(f"YAML文件解析错误: {file_path}")
+            except Exception as e:
+                logger.error(f"YAML文件解析错误: {file_path}, 错误详情: {str(e)}")
+                raise Exception(f"YAML文件解析错误: {file_path}, 错误详情: {str(e)}")
 
     def merge_yaml_files(self, dir_path: Path):
         yaml_datas = self.load_yaml_dir(dir_path)

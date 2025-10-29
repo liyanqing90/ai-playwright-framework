@@ -105,7 +105,7 @@ def check_and_screenshot(description="Assertion"):
 
                         simplified_error = f"断言失败：{step_description}"
                         error_str = str(e)
-                        # 尝试提取 Locator expected 和 Actual value 部分
+                        # 尝试提取期望值和实际值
                         import re
 
                         patterns = [
@@ -114,7 +114,7 @@ def check_and_screenshot(description="Assertion"):
                                     r"实际\s*'([^']*)'",  # 匹配 "实际 'value'" 格式
                                     r"actual\s*'([^']*)'",  # 匹配英文格式
                                     r"received\s*'([^']*)'",  # 匹配 received 格式
-                                ]
+                        ]
 
                         for pattern in patterns:
                             actual_match = re.search(

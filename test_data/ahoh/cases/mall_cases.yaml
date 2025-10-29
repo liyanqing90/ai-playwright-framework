@@ -1,3 +1,5 @@
 test_cases:
 #    - name: test_mall_order_list
     - name : test_mall_order_list_order_status
+    - name: test_order_up
+    - name: test_order_check

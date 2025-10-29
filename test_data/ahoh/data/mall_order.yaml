@@ -61,3 +61,51 @@ test_data:
 
 
 
+  test_order_up:
+    description: "上传交车"
+    steps:
+      - use_module: login_mall_steps
+      - action: click
+        selector: 交车状态_筛选
+      - action: click
+        selector: 筛选_待提交
+      - action: click
+        selector: 上传交车
+      - action: click
+        selector: 交车日期_选择框
+      - action: click
+        selector: 日期确认
+      - action: fill
+        selector: 车架号
+        value: vinNo
+      - action: 上传
+        selector: 交车证明_选择
+        value: files\ahoh\test.jpg
+      - action: wait
+      - action: store_input_value
+        selector: 日期展示
+        variable_name: 日期展示
+      - action: store_input_value
+        selector: 车架号
+        variable_name: 车架号
+      - action: click
+        selector: 提交按钮
+      - action: click
+        selector: 二次提交按钮
+  test_order_check:
+    description: "查看交车"
+    steps:
+      - use_module: login_mall_steps
+      - action: click
+        selector: 交车状态_筛选
+      - action: click
+        selector: 筛选_已交车
+      - action: click
+        selector: 查看交车
+      - action: wait
+      - action: assert_value
+        selector: 日期展示
+        value: ${日期展示}
+      - action: assert_value
+        selector: 车架号
+        value: ${车架号}
