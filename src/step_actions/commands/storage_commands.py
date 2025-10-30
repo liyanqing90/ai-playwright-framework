@@ -73,6 +73,22 @@ class StoreAttributeCommand(Command):
         logger.info(f"已存储元素属性 {var_name}={attr_value} (scope={scope})")
 
 
+@CommandFactory.register(StepAction.STORE_INPUT_VALUE)
+class StoreInputValueCommand(Command):
+    """存储输入框值命令"""
+
+    def execute(
+        self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
+    ) -> None:
+        var_name = step.get("variable_name", "input_value_var")
+        scope = step.get("scope", "global")
+        # 获取输入框的value值
+        input_value = ui_helper.get_value(selector=selector)
+        # 存储输入框值
+        ui_helper.variable_manager.set_variable(var_name, input_value, scope)
+        logger.info(f"已存储输入框值 {var_name}={input_value} (scope={scope})")
+
+
 @CommandFactory.register(StepAction.SAVE_ELEMENT_COUNT)
 class SaveElementCountCommand(Command):
     """存储元素数量命令"""

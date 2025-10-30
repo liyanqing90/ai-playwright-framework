@@ -38,6 +38,7 @@ class StepAction:
     STORE_VARIABLE = ["store_variable", "存储变量"]
     STORE_TEXT = ["store_text", "存储文本"]
     STORE_ATTRIBUTE = ["store_attribute", "存储属性"]
+    STORE_INPUT_VALUE = ["store_input_value", "存储输入框值"]
 
     # 等待相关
     WAIT_FOR_ELEMENT_HIDDEN = ["wait_for_element_hidden", "等待元素消失"]

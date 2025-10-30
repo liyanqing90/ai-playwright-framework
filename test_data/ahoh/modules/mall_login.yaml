@@ -17,4 +17,24 @@ login_mall_steps:
     selector: 登录按钮
     value: ''
 
-
+order_up_steps:
+  - action: click
+    selector: 交车状态_筛选
+  - action: click
+    selector: 筛选_待提交
+  - action: click
+    selector: 上传交车
+  - action: click
+    selector: 交车日期_选择框
+  - action: click
+    selector: 日期确认
+  - action: fill
+    selector: 车架号
+    value: test车架号
+  - action: 上传
+    selector: 交车证明_选择
+    value: files\ahoh\test.jpg
+  - action: click
+    selector: 提交按钮
+  - action: click
+    selector: 二次提交按钮
