@@ -54,7 +54,9 @@ class VariableManager:
         self._max_cache_size = 1000  # 最大缓存项数
 
         # 优化：使用集合管理缓存键，提高删除效率
-        self._cache_keys_by_variable = defaultdict(set)  # variable_name -> set of cache_keys
+        self._cache_keys_by_variable = defaultdict(
+            set
+        )  # variable_name -> set of cache_keys
 
         # 变量访问统计
         self._stats = {
@@ -137,7 +139,9 @@ class VariableManager:
                     key_set.discard(key_to_remove)
 
             # 清理空的集合
-            empty_vars = [var for var, keys in self._cache_keys_by_variable.items() if not keys]
+            empty_vars = [
+                var for var, keys in self._cache_keys_by_variable.items() if not keys
+            ]
             for var in empty_vars:
                 del self._cache_keys_by_variable[var]
 
@@ -278,9 +282,7 @@ class VariableManager:
             return f"{name}:{self._default_scope_key}"
         return f"{name}:{scope}"
 
-    def get_variable(
-        self, name: str, scope: Optional[str] = None
-    ) -> Any:
+    def get_variable(self, name: str, scope: Optional[str] = None) -> Any:
         """
         获取变量值，支持作用域继承
 
@@ -336,7 +338,6 @@ class VariableManager:
         self._cache_keys_by_variable[name].add(cache_key)
 
         return value
-
 
     def list_variables(self, scope: Optional[str] = None) -> Dict[str, Any]:
         """

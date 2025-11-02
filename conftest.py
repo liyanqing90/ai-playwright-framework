@@ -255,7 +255,6 @@ def pytest_generate_tests(metafunc):  # noqa
     )
 
 
-
 @pytest.fixture()
 def get_test_name(request):
     """返回当前测试用例的完整名称，包括参数化ID"""
@@ -290,7 +289,6 @@ def current_test_name(request):
     base_name = test_name.split("[")[0] if "[" in test_name else test_name
     logger.debug(f"当前测试用例基础名称: {base_name}")
     return base_name
-
 
 
 @pytest.hookimpl(trylast=True)

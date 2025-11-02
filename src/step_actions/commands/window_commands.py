@@ -13,7 +13,7 @@ class ExpectPopupCommand(Command):
     """弹出tab命令"""
 
     def execute(
-            self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
+        self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         action = step.get("real_action", "click")
         variable_name = step.get("variable_name", value)
@@ -27,7 +27,7 @@ class SwitchWindowCommand(Command):
     """切换窗口命令"""
 
     def execute(
-            self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
+        self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.switch_window(value=value)
 
@@ -37,7 +37,7 @@ class CloseWindowCommand(Command):
     """关闭窗口命令"""
 
     def execute(
-            self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
+        self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.close_window()
 
@@ -47,6 +47,6 @@ class TabSwitchCommand(Command):
     """切换标签页命令"""
 
     def execute(
-            self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
+        self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.switch_window(value=value)

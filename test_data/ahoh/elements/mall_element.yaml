@@ -15,6 +15,19 @@ elements:
   mall_order_search_order_status : //span[contains(text(),'订单状态')]
   mall_order_search_order_status_1: //li[@id='待提交审核']//div[1]
 
+  发票状态筛选: //span[contains(text(),'发票上传')]
+  待上传: //li[@id='待上传']
+  已上传: //li[@id='已上传']
+  上传发票按钮: (//div[@class='common-btn submit-debounce'][contains(text(),'上传发票')])[1]
+  上传发票: //div[@class='van-uploader__input-wrapper']//input[@type='file']
+  其他材料: //div[@class='van-uploader__upload']//input[@type='file']
+  重新上传: //div[@class='re-upload-invioce']
+  提交: //div[@class='operation-btn-dark']
+  其他材料上传: //div[@class='van-uploader__upload']//input[@type='file']
+  查看发票: //div[@id='113535']//div[@class='common-btn submit-debounce'][contains(text(),'查看发票')]
+  发票已上传: //div[@class='invoice-info-title']
+
+
 
   交车状态_筛选: //span[contains(text(),'交车状态')]
   筛选_待提交: //li[@id='待提交']
