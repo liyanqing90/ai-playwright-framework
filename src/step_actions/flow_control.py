@@ -130,7 +130,13 @@ def evaluate_expression(step_executor, expression: str) -> bool:
         params_str = match.group(2)
 
         # 解析函数参数
-        if func_name in ['element_exists', 'element_visible', 'element_enabled', 'element_text', 'element_count']:
+        if func_name in [
+            "element_exists",
+            "element_visible",
+            "element_enabled",
+            "element_text",
+            "element_count",
+        ]:
             # 单参数函数：element_exists('selector')
             selector_match = re.match(r"'([^']+)'|\"([^\"]+)\"", params_str.strip())
             if selector_match:
@@ -142,16 +148,18 @@ def evaluate_expression(step_executor, expression: str) -> bool:
                 # 转义选择器中的单引号
                 escaped_selector = selector.replace("'", "\\'")
                 return f"{func_name}('{escaped_selector}')"
-        elif func_name == 'element_attribute':
+        elif func_name == "element_attribute":
             # 双参数函数：element_attribute('selector', 'attr')
-            params = params_str.split(',', 1)
+            params = params_str.split(",", 1)
             if len(params) == 2:
                 selector_match = re.match(r"'([^']+)'|\"([^\"]+)\"", params[0].strip())
                 if selector_match:
                     pre_selector = selector_match.group(1) or selector_match.group(2)
                     # 使用与step_executor相同的替换逻辑
-                    selector = step_executor.variable_manager.replace_variables_refactored(
-                        step_executor.elements.get(pre_selector, pre_selector)
+                    selector = (
+                        step_executor.variable_manager.replace_variables_refactored(
+                            step_executor.elements.get(pre_selector, pre_selector)
+                        )
                     )
                     # 转义选择器中的单引号
                     escaped_selector = selector.replace("'", "\\'")
@@ -161,7 +169,7 @@ def evaluate_expression(step_executor, expression: str) -> bool:
         return match.group(0)  # 如果无法解析，返回原始内容
 
     # 替换表达式中的选择器引用
-    pattern = r'(element_(?:exists|visible|enabled|text|attribute|count))\(([^)]+)\)'
+    pattern = r"(element_(?:exists|visible|enabled|text|attribute|count))\(([^)]+)\)"
     expr_content = re.sub(pattern, replace_selector_in_expression, expr_content)
 
     # 然后替换其他变量
@@ -207,7 +215,9 @@ def evaluate_expression(step_executor, expression: str) -> bool:
         def element_attribute(selector, attr_name):
             """获取元素属性值"""
             try:
-                return step_executor.ui_helper._locator(selector).first.get_attribute(attr_name)
+                return step_executor.ui_helper._locator(selector).first.get_attribute(
+                    attr_name
+                )
             except Exception as e:
                 logger.debug(f"元素属性获取失败 {selector}.{attr_name}: {e}")
                 return None
@@ -223,11 +233,17 @@ def evaluate_expression(step_executor, expression: str) -> bool:
         # 扩展安全函数集合
         safe_math_functions = {
             # 原有数学函数
-            "abs": abs, "round": round, "min": min, "max": max,
-            "sqrt": math.sqrt, "pow": math.pow,
-            "int": int, "float": float, "str": str, "bool": bool,
+            "abs": abs,
+            "round": round,
+            "min": min,
+            "max": max,
+            "sqrt": math.sqrt,
+            "pow": math.pow,
+            "int": int,
+            "float": float,
+            "str": str,
+            "bool": bool,
             "len": len,
-
             # 新增UI元素检查函数
             "element_exists": element_exists,
             "element_visible": element_visible,

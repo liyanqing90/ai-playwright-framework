@@ -32,6 +32,7 @@ pytest-playwright = "^0.7.0"
 pytest-check = "^2.5.0"
 black = "^25.1.0"
 jsonpath-ng = "^1.7.0"
+urllib3 = "^2.5.0"
 
 [build-system]
 requires = ["poetry-core"]
