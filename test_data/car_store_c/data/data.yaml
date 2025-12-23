@@ -320,3 +320,43 @@ test_data:
 
       - action: assert_exists
         selector: mall_home
+
+
+  test_mall_self_operated:
+    description: "验证之家自营店"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: assert_text_contains
+        selector: header_title_text_container
+        value: "下单送车上门"
+      - action: assert_exists
+        selector: first_discount_price
+      - action: click
+        selector: header_title_text_container
+      - action: wait
+        value: 1
+      - action: assert_exists
+        selector: tag_logo_img
+
+  test_mall_brand_service:
+    description: "验证认证店"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id_hd}"
+      - action: assert_text_contains
+        selector: shop_banner_footer_div
+        value: "车源 低价 保障"
+      - action: click
+        selector: shop_banner_footer_div
+      - action: wait
+        value: 1
+      - action: assert_exists
+        selector: tag_logo_img
+      - action: assert_text_contains
+        selector: store_info_title_div
+        value: "邯郸钇帆汽车卖场店"
+      - action: assert_text_contains
+        selector: store_address_span
+        value: "河北省邯郸市丛台区邯临公路与和谐大街交叉口西500米时代汽车广场B馆"
+

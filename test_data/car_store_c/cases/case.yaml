@@ -39,3 +39,7 @@ test_cases:
   # 页面基础元素测试
   - name: test_page_has_images
   - name: test_page_content_not_empty
+
+  # 之家自营和认证店
+  - name: test_mall_self_operated
+  - name: test_mall_brand_service
