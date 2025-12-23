@@ -58,3 +58,18 @@ elements:
   # 页面结构
   header: ".header"
   footer: ".footer"
+
+
+  #之家自营区域
+  header_title_image: "img.header-title" # 头部标题图片，alt为"之家自营"
+  header_title_text_container: "div.header-title-text"  # 头部标题文本容器
+  first_discount_price: "span.discount-price"
+  second_discount_price: "span.discount-price"
+  tag_logo_img: "img.tag_logo"  # 展示自营图标的图片元素
+
+
+# 认证店
+  shop_banner_footer_div: "div.shop-banner_footer"  # 店铺横幅底部区域容器
+  shop_banner_footer_text: "车源 低价 保障"
+  store_info_title_div: "div.store-info-title"  # 店铺信息标题容器
+  store_address_span: "span.store-address"  # 店铺地址文本元素
