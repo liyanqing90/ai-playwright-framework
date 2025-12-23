@@ -1,0 +1,322 @@
+test_data:
+  # ==================== 页面基础加载测试 ====================
+  
+  test_mall_page_basic_load:
+    description: "测试车商城页面基础加载"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+
+      - action: assert_url_contains
+        value: "mall.m.autohome.com.cn"
+      - action: assert_exists
+        selector: mall_home
+  
+  # ==================== 品牌区域测试 ====================
+  
+  test_brand_section_exists:
+    description: "验证品牌区域存在"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+
+      - action: assert_exists
+        selector: brand_section
+  
+  test_brand_items_display:
+    description: "验证品牌列表展示"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+
+      - action: assert_exists
+        selector: brand_items
+  
+  test_brand_click:
+    description: "测试品牌点击功能"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait_for_element_clickable
+        selector: brand_names
+        timeout: 15000
+
+      - action: store_text
+        selector: brand_names
+        variable_name: brand_name
+      - action: click
+        selector: brand_names
+
+      - action: assert_url_contains
+        value: "brandName"
+  
+  test_brand_flagship:
+    description: "测试品牌旗舰功能"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - if: ${{ element_exists('brand_flag_ship') }}
+        then:
+          - action: wait_for_element_clickable
+            selector: brand_flag_ship
+            timeout: 15000
+          - action: click
+            selector: brand_flag_ship
+          - action: assert_url_contains
+            value: "brandId"
+        else:
+          - action: wait
+            value: 0.1
+  
+  test_more_brand:
+    description: "测试更多品牌功能"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait_for_element_clickable
+        selector: more_brand
+        timeout: 15000
+
+      - action: click
+        selector: more_brand
+
+      - action: assert_url_contains
+        value: "/series-list"
+  
+  # ==================== 价格筛选测试 ====================
+  
+  test_price_filter_8w:
+    description: "测试价格筛选-8万以下"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: price_8
+        timeout: 15000
+
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: price_8
+        action_type: click
+        assert_params:
+          $.maxPrice: 80000
+  
+  test_price_filter_15w:
+    description: "测试价格筛选-8-15万"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: price_15
+        timeout: 15000
+
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: price_15
+        action_type: click
+        assert_params:
+          $.maxPrice: 150000
+  
+  # ==================== 级别筛选测试 ====================
+  
+  test_level_filter_sedan:
+    description: "测试级别筛选-轿车"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: level_sedan
+        timeout: 15000
+
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: level_sedan
+        action_type: click
+        assert_params:
+          $.level: [98]
+  
+  test_level_filter_suv:
+    description: "测试级别筛选-SUV"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: level_suv
+        timeout: 15000
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: level_suv
+        action_type: click
+        assert_params:
+          $.level: [9]
+  
+  test_level_filter_mpv:
+    description: "测试级别筛选-MPV"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: level_mpv
+        timeout: 15000
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: level_mpv
+        action_type: click
+        assert_params:
+          $.level: [8]
+  
+  # ==================== 燃料类型筛选测试 ====================
+  
+  test_fuel_filter_gasoline:
+    description: "测试燃料筛选-汽油车"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: type_gasoline
+        timeout: 15000
+
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: type_gasoline
+        action_type: click
+        assert_params:
+          $.fuelType: [1]
+  
+  test_fuel_filter_electric:
+    description: "测试燃料筛选-纯电动"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: type_electric
+        timeout: 15000
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: type_electric
+        action_type: click
+        assert_params:
+          $.fuelType: [4]
+  
+  test_fuel_filter_phev:
+    description: "测试燃料筛选-插电混动"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: type_phev
+        timeout: 15000
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: type_phev
+        action_type: click
+        assert_params:
+          $.fuelType: [5]
+  
+  test_fuel_filter_erev:
+    description: "测试燃料筛选-增程式"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait
+      - action: click
+        selector: type_erev
+        timeout: 15000
+      - action: monitor_request
+        url_pattern: /api/gateway/carmall/pageShopProduct
+        selector: type_erev
+        action_type: click
+        assert_params:
+          $.fuelType: [6]
+  
+  # ==================== 车辆列表测试 ====================
+  
+  test_car_list_display:
+    description: "验证车辆列表展示"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+
+      - action: assert_exists
+        selector: car_cards
+  
+  # ==================== 车系列表页测试 ====================
+  
+  test_series_list_navigation:
+    description: "测试进入车系列表页面"
+    steps:
+      - action: navigate
+        value: "/series-list?cityid=${city_id}"
+      - action: wait
+      - action: assert_url_contains
+        value: "/series-list"
+      - action: assert_title
+        value: "商城"
+  
+  # ==================== 旗舰店测试 ====================
+  
+  test_flagship_banner_visible:
+    description: "验证旗舰店banner展示"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - if: ${{ element_exists('brand_flag_ship') }}
+        then:
+          - action: wait_for_element_clickable
+            selector: brand_flag_ship
+            timeout: 15000
+          - action: click
+            selector: brand_flag_ship
+          - action: wait_for_network_idle
+            timeout: 15000
+          - action: assert_visible
+            selector: flag_ship_banner
+        else:
+          - action: wait
+            value: 0.1
+  
+  # ==================== 品牌服务测试 ====================
+  
+  test_brand_service_load:
+    description: "测试品牌服务页面加载"
+    steps:
+      - action: navigate
+        value: "/brand-service?cityid=${city_id}"
+      - if: ${{ element_exists('brand_service_banner') }}
+        then:
+          - action: wait_for_element_clickable
+            selector: brand_service_banner
+            timeout: 15000
+          - action: assert_visible
+            selector: brand_service_banner
+        else:
+          - action: wait
+            value: 0.1
+  
+  # ==================== 页面基础元素测试 ====================
+  
+  test_page_has_images:
+    description: "验证页面包含图片"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+
+      - action: assert_exists
+        selector: "img"
+  
+  test_page_content_not_empty:
+    description: "验证页面内容不为空"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+
+      - action: assert_exists
+        selector: mall_home

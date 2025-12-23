@@ -1,0 +1,60 @@
+elements:
+  # ==================== 车商城页面元素 ====================
+  
+  # 主要内容区域
+  mall_home: "//div[@class='mall_home']"
+  
+  # 品牌区域
+  brand_section: "//div[@class='brand_list']"
+  brand_items: "//div[@class='brand_item']"
+  brand_names: ".brand_name >> nth=0"
+  brand_flag_ship: ".brand_flag_ship"
+  more_brand: "//div[contains(text(),'更多品牌')]"
+  brand_service_banner: "//div[@class='store']"
+  
+  # 车型区域
+  car_cards: "//div[@class='series_card']"
+  car_names: ".car_name"
+  car_prices: ".price"
+  flag_ship_car: "//div[@class='car-card']"
+  
+  # 标签页
+  new_car_tab: ".tab_item >> text=买新车"
+  
+  # 筛选器
+  price_filters: "(//div[@class='filter-tab-header__row'])[1]"
+  category_filters: "(//div[@class='filter-tab-header__row'])[2]"
+  filter_container: ".filter-container"
+  
+  # 价格筛选选项
+  price_8: "text=8万以下"
+  price_15: "text=8-15万"
+  
+  # 级别筛选选项
+  level_sedan: "//span[contains(text(),'轿车')]"
+  level_suv: "//span[contains(text(),'SUV')]"
+  level_mpv: "//span[contains(text(),'MPV')]"
+  
+  # 燃料类型筛选选项
+  type_gasoline: "//span[contains(text(),'汽油车')]"
+  type_electric: "//span[contains(text(),'纯电动')]"
+  type_phev: "//span[contains(text(),'插电混动')]"
+  type_erev: "//span[contains(text(),'增程式')]"
+  
+  # 按钮和交互元素
+  cta_buttons: "button"
+  buy_new_car: ".van-grid-item.home-tangdou >> nth=0"
+  flag_ship_buy_car: "//span[contains(text(),'购车')]"
+  
+  # 旗舰店相关
+  flag_ship_banner: "(//div[@class='flagship'])[1]"
+  flag_ship_banner_right: "//div[@class='flagship-top-right']"
+  flag_ship_name: "(//div[@class='flagship-top-left-title-text'])[1]"
+  
+  # 其他元素
+  tang_item: "//div[@class='item_content']"
+  shop_banner: "(//div[@class='shop-banner'])[1]"
+  
+  # 页面结构
+  header: ".header"
+  footer: ".footer"
