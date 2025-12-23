@@ -1,6 +1,10 @@
+# 测试环境变量配置
 test:
   city_id: 110100
+  base_url: "https://mall.m.autohome.com.cn"
 stage:
-  city_id: 810810
+  city_id: 110100
+  base_url: "https://mall.m.autohome.com.cn"
 prod:
-  city_id: 810810
+  city_id: 110100
+  base_url: "https://mall.m.autohome.com.cn"
