@@ -320,6 +320,124 @@ test_data:
 
       - action: assert_exists
         selector: mall_home
+# ==================== 鸿蒙智行品牌旗舰店测试 ====================
+  test_hongmeng_auto_flagship_store:
+    description: "鸿蒙智行品牌旗舰店"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait_for_element_clickable
+        selector: more_brand
+        timeout: 3000
+
+#      - action: click
+#        selector: more_brand
+#        timeout: 3000
+#
+#      - action: assert_url_contains
+#        value: "/series-list"
+#
+#      - action: enter_frame
+#        selector: brand_list_iframe
+#        timeout: 3000
+#
+
+#      - action: click
+#        selector: index_bar_h_text
+#        timeout: 3000
+#
+      - action: click
+        selector: aito_brand_entry_iframe
+        timeout: 3000
+
+
+      - action: assert_text_contains
+        selector: hongmeng_flagship_store_title_text
+        value: "鸿蒙智行旗舰店"
+        timeout: 3000
+
+
+      - action: click
+        selector: price_25
+        timeout: 3000
+
+
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: price_30
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: type_gasoline1
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: type_electric1
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: hongmeng_flagship_store_img_container
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: hongmeng_flagship_store_title_text
+        value: "鸿蒙智行旗舰店"
+        timeout: 3000
+
+      - action: assert_url_contains
+        value: "/flagship-store"
+        timeout: 3000
+
+      - action: click
+        selector: buy_car_text
+        timeout: 3000
+
+      - action: click
+        selector: type_gasoline1
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: type_electric1
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+
+
+
 
 
   test_mall_self_operated:
