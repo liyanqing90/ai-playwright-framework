@@ -58,6 +58,19 @@ elements:
   # 页面结构
   header: ".header"
   footer: ".footer"
+  #品牌旗舰店元素
+  brand_list_iframe: div.brand-list-wrap>iframe
+#  more_brand1: "//div[contains(text(),'更多品牌')]"
+#  index_bar_h_text: "text=H"
+  aito_brand_entry_iframe: //div[@class='brand_name'][contains(text(),'鸿蒙智行')]
+  hongmeng_flagship_store_title_text: "text=鸿蒙智行旗舰店"  # 匹配“鸿蒙智行旗舰店”文本的定位符（适配Playwright自动化测试）
+  wenjie_m7_title_text: "text=问界M"  # 匹配“问界M7”文本的定位符（适配Playwright自动化测试）
+  price_25: "text=20-25万"
+  price_30: "text=30万以上"
+  type_gasoline1: "//span[contains(text(),'SUV')]"
+  type_electric1: "//span[contains(text(),'纯电动')]"
+  hongmeng_flagship_store_img_container: (//div[@class='flagship'])[1]  # 旗舰店图片外层div容器（基础类选择器，匹配所有带flagship-img类的div）
+  buy_car_text: "text=购车"  # 匹配“购车”文本的定位符（Playwright专用）
 
 
   #之家自营区域

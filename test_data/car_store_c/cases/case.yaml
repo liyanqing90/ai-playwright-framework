@@ -40,6 +40,9 @@ test_cases:
   - name: test_page_has_images
   - name: test_page_content_not_empty
 
+  #鸿蒙智行旗舰店测试
+  - name: test_hongmeng_auto_flagship_store
+
   # 之家自营和认证店
   - name: test_mall_self_operated
   - name: test_mall_brand_service
