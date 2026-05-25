@@ -154,22 +154,17 @@
 
 ### 生成用例
 
-1. **基于显式步骤规格生成**
+1. **基于项目自然语言规格调用模型生成**
    ```bash
-   python test_runner.py --project demo --env prod --generate-case generation_specs/saucedemo.yaml --output-name saucedemo --no-ai --overwrite
+   python test_runner.py --project demo --env prod --generate-case generation_specs/demo/saucedemo_ai.yaml --output-name saucedemo_ai --overwrite
    ```
 
-2. **基于自然语言规格调用模型生成**
+2. **只预览生成结果，不写入文件**
    ```bash
-   python test_runner.py --project demo --env prod --generate-case generation_specs/saucedemo_ai.yaml --output-name saucedemo_ai --overwrite
+   python test_runner.py --project demo --generate-case generation_specs/demo/saucedemo_ai.yaml --output-name saucedemo_ai --dry-run
    ```
 
-3. **只预览生成结果，不写入文件**
-   ```bash
-   python test_runner.py --project demo --generate-case generation_specs/saucedemo_ai.yaml --output-name saucedemo_ai --dry-run
-   ```
-
-生成命令会写入 `test_data/<project>/cases/`、`data/`，并在规格包含新资产时写入 `elements/`、`modules/`、`vars/`。
+生成规格按项目放在 `generation_specs/<project>/` 下；生成命令会写入 `test_data/<project>/cases/`、`data/`，并只在模型判断必须新增资产时写入 `elements/`、`modules/`、`vars/`。
 
 ### 生成报告
 
@@ -250,36 +245,52 @@ AI 默认配置在 `config/ai_config.yaml`：
 
 ### 生成规格
 
-显式规格适合已经知道步骤和资产的场景：
+生成规格只写业务意图，不把元素、变量、公共组件复用要求写到用例描述里。复用策略由系统提示词、项目上下文和 `GenerationHarness` 负责：
+
+- 规格目录必须和 `--project` 对应，例如 `generation_specs/demo/*.yaml` 只能配合 `--project demo`。
+- `project` 字段如果存在，必须和命令行 `--project` 一致。
+- 推荐每个用例写成对象，并用 `steps` 的 `-` 列表表达自然语言步骤；不要把多个步骤塞进一个长字符串里让模型靠标点拆分。
+- 模型会读取当前项目已有 `elements`、`modules`、`vars` 和历史用例。
+- Prompt 要求优先复用已有公共组件、元素 key 和变量 key。
+- Harness 会校验输出仍符合三层结构、断言格式、元素/模块引用合法性。
+
+自然语言步骤规格示例：
 
 ```yaml
-description: "Saucedemo 基础购物流程"
+project: demo
+description: "生成百度搜索流程用例"
 mode: smart
-elements:
-  saucedemo_username: "#user-name"
-vars:
-  saucedemo_url: "https://www.saucedemo.com/"
-modules:
-  saucedemo_login:
-    - action: goto
-      value: "${saucedemo_url}"
 cases:
-  - name: test_saucedemo_login_success
-    description: "标准用户登录后进入商品列表"
-    mode: smart
+  - name: baidu_search_keyword
+    description: "百度搜索关键词"
     steps:
-      - use_module: saucedemo_login
-      - action: assert_visible
-        selector: saucedemo_inventory_list
+      - "打开百度网页"
+      - "点击搜索输入框"
+      - "输入百度"
+      - "点击搜索按钮"
+      - "断言搜索结果页打开成功"
 ```
 
-自然语言规格适合让模型基于当前项目资产补充用例：
+业务场景规格示例：
 
 ```yaml
-description: "使用 AI 基于当前 demo 项目资产生成 Saucedemo 补充用例"
+project: demo
+description: "基于当前 demo 项目生成 Saucedemo 补充用例"
 mode: smart
 cases:
-  - "基于 https://www.saucedemo.com/ 生成一个标准用户登录后添加单个 Sauce Labs Backpack 到购物车的用例。必须复用公共组件 saucedemo_login，优先复用已有 saucedemo_* 元素和变量。"
+  - name: saucedemo_backpack_cart
+    description: "标准用户添加单个商品到购物车"
+    steps:
+      - "打开 Saucedemo 登录页"
+      - "使用标准用户登录"
+      - "添加 Sauce Labs Backpack 到购物车"
+      - "断言购物车数量为 1"
+  - name: saucedemo_locked_user_error
+    description: "锁定用户登录失败提示"
+    steps:
+      - "打开 Saucedemo 登录页"
+      - "使用锁定用户登录"
+      - "断言页面展示 locked out 错误提示"
 ```
 
 输出文件仍然遵守项目三层结构：
@@ -424,7 +435,8 @@ zhijia_ui/
 │   ├── ai_config.yaml       # AI生成与智能执行配置
 │   ├── env_config.yaml      # 环境配置
 │   └── test_config.yaml     # 测试配置
-├── generation_specs/        # 用例生成规格
+├── generation_specs/        # 按项目隔离的自然语言用例生成规格
+│   └── <project>/           # 例如 demo/saucedemo_ai.yaml
 ├── evidence/                # 测试证据目录
 │   └── screenshots/         # 测试截图
 ├── logs/                    # 运行日志
@@ -870,11 +882,8 @@ $ python test_runner.py --project demo --test-file test_cases
 # 使用 smart 模式执行用例
 $ python test_runner.py --project demo --test-file saucedemo_ai --ai-mode smart
 
-# 基于显式规格生成用例
-$ python test_runner.py --project demo --generate-case generation_specs/saucedemo.yaml --output-name saucedemo --no-ai --overwrite
-
 # 基于自然语言规格调用模型生成用例
-$ python test_runner.py --project demo --generate-case generation_specs/saucedemo_ai.yaml --output-name saucedemo_ai --overwrite
+$ python test_runner.py --project demo --generate-case generation_specs/demo/saucedemo_ai.yaml --output-name saucedemo_ai --overwrite
 ```
 
 ## 元素定位技巧

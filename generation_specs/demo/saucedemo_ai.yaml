@@ -1,0 +1,24 @@
+project: demo
+description: "基于当前 demo 项目生成 Saucedemo 补充用例"
+mode: smart
+cases:
+  - name: saucedemo_backpack_cart
+    description: "标准用户添加单个商品到购物车"
+    steps:
+      - "打开 Saucedemo 登录页"
+      - "使用标准用户登录"
+      - "添加 Sauce Labs Backpack 到购物车"
+      - "断言购物车数量为 1"
+  - name: saucedemo_locked_user_error
+    description: "锁定用户登录失败提示"
+    steps:
+      - "打开 Saucedemo 登录页"
+      - "使用锁定用户登录"
+      - "断言页面展示 locked out 错误提示"
+  - name: saucedemo_open_cart
+    description: "标准用户打开购物车页面"
+    steps:
+      - "打开 Saucedemo 登录页"
+      - "使用标准用户登录"
+      - "打开购物车页面"
+      - "断言购物车页面关键元素可见"

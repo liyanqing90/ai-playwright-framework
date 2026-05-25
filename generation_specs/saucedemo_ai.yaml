@@ -1,6 +1,0 @@
-description: "使用 AI 基于当前 demo 项目资产生成 Saucedemo 补充用例"
-mode: smart
-cases:
-  - "基于 https://www.saucedemo.com/ 生成一个标准用户登录后添加单个 Sauce Labs Backpack 到购物车的用例。必须复用公共组件 saucedemo_login，优先复用已有 saucedemo_* 元素和变量。"
-  - "基于 https://www.saucedemo.com/ 生成一个锁定用户登录失败的负向用例，验证错误提示包含 locked out。优先复用已有 saucedemo_* 元素和变量。"
-  - "基于 https://www.saucedemo.com/ 生成一个标准用户登录后打开购物车页面的用例，验证购物车页面关键元素可见。必须复用公共组件 saucedemo_login。"

@@ -5,6 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from src.ai_generation.case_generator import (
+    _has_explicit_steps,
+    _validate_spec_project_scope,
+)
 from src.ai_runtime.contracts import (
     GeneratedCasePayload,
     ObservedOperationDecision,
@@ -246,6 +250,55 @@ def test_generated_case_payload_contract_normalizes_defaults():
 
     assert payload.data["test_generated"].mode == "strict"
     assert payload.elements == {}
+
+
+def test_generation_spec_scope_matches_project():
+    _validate_spec_project_scope(
+        project="demo",
+        spec_path=Path("generation_specs/demo/saucedemo_ai.yaml"),
+        spec={"project": "demo"},
+    )
+
+    with pytest.raises(ValueError, match="generation_specs/crm"):
+        _validate_spec_project_scope(
+            project="demo",
+            spec_path=Path("generation_specs/crm/smoke.yaml"),
+            spec={},
+        )
+
+    with pytest.raises(ValueError, match="project=crm"):
+        _validate_spec_project_scope(
+            project="demo",
+            spec_path=Path("generation_specs/demo/smoke.yaml"),
+            spec={"project": "crm"},
+        )
+
+
+def test_generation_spec_string_steps_still_use_ai():
+    natural_spec = {
+        "cases": [
+            {
+                "name": "baidu_search_keyword",
+                "steps": [
+                    "打开百度网页",
+                    "点击搜索输入框",
+                    "输入百度",
+                    "点击搜索按钮",
+                ],
+            }
+        ]
+    }
+    explicit_spec = {
+        "cases": [
+            {
+                "name": "baidu_search_keyword",
+                "steps": [{"action": "goto", "value": "https://baidu.com"}],
+            }
+        ]
+    }
+
+    assert _has_explicit_steps(natural_spec) is False
+    assert _has_explicit_steps(explicit_spec) is True
 
 
 def test_local_ai_candidate_values_are_not_redacted():

@@ -43,7 +43,9 @@ def generate_case_files(
     use_ai: bool = True,
 ) -> CaseGenerationResult:
     context = load_project_context(project, env=env)
+    spec_path = Path(spec_path)
     spec = _load_spec(spec_path)
+    _validate_spec_project_scope(project=project, spec_path=spec_path, spec=spec)
     payload = _build_payload(context, spec, use_ai=use_ai)
     harness = GenerationHarness(context=context, spec=spec, output_name=output_name)
     payload = harness.normalize(payload)
@@ -73,6 +75,30 @@ def _load_spec(spec_path: str | Path) -> dict[str, Any]:
     return data
 
 
+def _validate_spec_project_scope(
+    *, project: str, spec_path: str | Path, spec: dict[str, Any]
+) -> None:
+    explicit_project = spec.get("project")
+    if explicit_project and str(explicit_project) != project:
+        raise ValueError(
+            f"生成规格 project={explicit_project} 与 --project {project} 不一致"
+        )
+
+    parts = Path(spec_path).parts
+    if "generation_specs" not in parts:
+        return
+    spec_root_index = parts.index("generation_specs")
+    if spec_root_index + 1 >= len(parts):
+        return
+    scoped_project = parts[spec_root_index + 1]
+    if Path(scoped_project).suffix:
+        return
+    if scoped_project != project:
+        raise ValueError(
+            f"生成规格目录 generation_specs/{scoped_project} 与 --project {project} 不一致"
+        )
+
+
 def _build_payload(
     context: ProjectContext, spec: dict[str, Any], *, use_ai: bool
 ) -> dict[str, Any]:
@@ -99,7 +125,12 @@ def _build_payload(
                     "字段为 cases, data, elements, modules, vars。"
                     "cases只用于组织用例顺序，只允许包含name。"
                     "description和用例默认mode必须放到data对应用例下。"
-                    "优先复用已有 module、element key、变量 key。"
+                    "用户的generation_spec.cases只描述业务场景，不要求用户指定module、element或变量。"
+                    "你必须根据project_context自动选择可复用资产。"
+                    "generation_spec中的自然语言用例可以是字符串，也可以是包含name、description、steps的对象。"
+                    "当steps是字符串列表时，必须逐条理解为业务步骤，再转换为框架action步骤。"
+                    "优先复用已有module、element key、变量key；只有项目资产确实不存在且业务必须新增时，才输出新的elements、modules或vars。"
+                    "如果已有module能覆盖登录、进入页面、通用前置步骤，优先用use_module而不是重复生成步骤。"
                     "每个用例必须至少包含一个断言步骤，断言必须使用项目格式："
                     "assert_visible需要selector；assert_text/assert_text_contains需要selector和value；"
                     "assert_url/assert_url_contains/assert_title需要value。"
@@ -245,10 +276,21 @@ def _write_payload(result: dict[str, Any], *, overwrite: bool) -> None:
 
 
 def _has_explicit_steps(spec: dict[str, Any]) -> bool:
-    if isinstance(spec.get("steps"), list):
+    if _has_structured_steps(spec.get("steps")):
         return True
     cases = spec.get("cases")
-    return bool(cases and isinstance(cases, list) and isinstance(cases[0], dict))
+    return bool(
+        cases
+        and isinstance(cases, list)
+        and isinstance(cases[0], dict)
+        and _has_structured_steps(cases[0].get("steps"))
+    )
+
+
+def _has_structured_steps(steps: Any) -> bool:
+    if not isinstance(steps, list) or not steps:
+        return False
+    return all(isinstance(step, dict) for step in steps)
 
 
 def _json_payload(data: dict[str, Any]) -> str:

@@ -161,7 +161,11 @@ def main(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="只预览生成结果，不写文件"),
     overwrite: bool = typer.Option(False, "--overwrite", help="允许覆盖已存在生成文件"),
-    no_ai: bool = typer.Option(False, "--no-ai", help="只使用规格中的显式steps，不调用模型"),
+    no_ai: bool = typer.Option(
+        False,
+        "--no-ai",
+        help="兼容内部结构化规格：只转换显式 action steps，不调用模型",
+    ),
 ):
     """
     测试运行入口函数

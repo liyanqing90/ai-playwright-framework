@@ -313,10 +313,21 @@ def _normalize_verify_step(step: dict[str, Any]) -> dict[str, Any]:
 
 
 def _has_explicit_steps(spec: dict[str, Any]) -> bool:
-    if isinstance(spec.get("steps"), list):
+    if _has_structured_steps(spec.get("steps")):
         return True
     cases = spec.get("cases")
-    return bool(cases and isinstance(cases, list) and isinstance(cases[0], dict))
+    return bool(
+        cases
+        and isinstance(cases, list)
+        and isinstance(cases[0], dict)
+        and _has_structured_steps(cases[0].get("steps"))
+    )
+
+
+def _has_structured_steps(steps: Any) -> bool:
+    if not isinstance(steps, list) or not steps:
+        return False
+    return all(isinstance(step, dict) for step in steps)
 
 
 def _safe_case_name(value: str) -> str:
