@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 from datetime import datetime
@@ -10,6 +11,9 @@ from rich.table import Table
 
 from utils.config import Config, Browser, Environment, Project
 from utils.logger import logger
+from utils.token_usage import get_token_usage_tracker
+from src.ai_generation import generate_case_files
+from src.ai_runtime.provider import LLMConfigurationError
 
 console = Console()
 app = typer.Typer()
@@ -96,6 +100,41 @@ def show_test_summary(start_time: float) -> None:
     # console.print(table)
 
 
+def display_generation_result(result, dry_run: bool) -> None:
+    table = Table(title="AI用例生成结果" if not dry_run else "AI用例生成预览")
+    table.add_column("类型", style="cyan")
+    table.add_column("路径", style="magenta")
+    table.add_row("cases", str(result.case_file))
+    table.add_row("data", str(result.data_file))
+    if result.elements_file:
+        table.add_row("elements", str(result.elements_file))
+    if result.modules_file:
+        table.add_row("modules", str(result.modules_file))
+    if result.vars_file:
+        table.add_row("vars", str(result.vars_file))
+    console.print(table)
+    for warning in result.warnings:
+        console.print(f"[yellow]警告:[/yellow] {warning}")
+
+
+def display_token_usage_summary(summary: dict | None) -> None:
+    if not summary:
+        return
+    totals = summary.get("totals", {})
+    table = Table(title="AI Token Usage")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="magenta")
+    table.add_row("Calls", str(totals.get("call_count", 0)))
+    table.add_row("Input Tokens", str(totals.get("input_tokens", 0)))
+    table.add_row("Output Tokens", str(totals.get("output_tokens", 0)))
+    table.add_row("Total Tokens", str(totals.get("total_tokens", 0)))
+    table.add_row("Cache Hit Input", str(totals.get("cached_input_tokens", 0)))
+    table.add_row("Cache Miss Input", str(totals.get("uncached_input_tokens", 0)))
+    table.add_row("Usage Unavailable", str(totals.get("calls_without_usage", 0)))
+    table.add_row("Report", str(summary.get("summary_file", "")))
+    console.print(table)
+
+
 @app.command()
 def main(
     marker: Optional[str] = typer.Option(
@@ -111,6 +150,18 @@ def main(
     base_url: Optional[str] = typer.Option("", "--base-url", help="指定基础 URL"),
     test_file: Optional[str] = typer.Option("", "--test-file", help="指定测试文件"),
     no_parallel: bool = typer.Option(False, "--no-parallel", help="禁用并行执行"),
+    ai_mode: str = typer.Option(
+        "strict", "--ai-mode", help="AI执行模式: strict/smart/ai，默认不影响历史用例"
+    ),
+    generate_case: Optional[str] = typer.Option(
+        None, "--generate-case", help="根据YAML规格生成当前项目格式的用例"
+    ),
+    output_name: Optional[str] = typer.Option(
+        None, "--output-name", help="生成文件名，不含扩展名"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="只预览生成结果，不写文件"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="允许覆盖已存在生成文件"),
+    no_ai: bool = typer.Option(False, "--no-ai", help="只使用规格中的显式steps，不调用模型"),
 ):
     """
     测试运行入口函数
@@ -133,6 +184,51 @@ def main(
 
     # 配置运行环境
     config.configure_environment()
+    if ai_mode not in {"strict", "smart", "ai"}:
+        console.print("[red]--ai-mode 仅支持 strict、smart、ai[/red]")
+        sys.exit(1)
+    os.environ["UI_AI_MODE"] = ai_mode
+    tracker = get_token_usage_tracker()
+
+    if generate_case:
+        tracker.start_run(
+            run_kind="generate_case",
+            metadata={
+                "project": config.project.value,
+                "env": config.env.value,
+                "spec_path": generate_case,
+                "dry_run": dry_run,
+                "use_ai": not no_ai,
+            },
+        )
+        try:
+            result = generate_case_files(
+                project=config.project.value,
+                env=config.env.value,
+                spec_path=generate_case,
+                output_name=output_name,
+                dry_run=dry_run,
+                overwrite=overwrite,
+                use_ai=not no_ai,
+            )
+            display_generation_result(result, dry_run=dry_run)
+            display_token_usage_summary(
+                tracker.finish_run(
+                    status="passed",
+                    metadata={"output_name": output_name, "overwrite": overwrite},
+                )
+            )
+            return
+        except LLMConfigurationError as e:
+            tracker.finish_run(status="failed", metadata={"error": str(e)})
+            logger.error(str(e))
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+        except Exception as e:
+            tracker.finish_run(status="failed", metadata={"error": str(e)})
+            logger.error(f"用例生成失败: {str(e)}")
+            console.print(f"[red]用例生成失败: {e}[/red]")
+            sys.exit(1)
 
     # 显示配置信息
     display_run_configuration(config)
@@ -141,6 +237,15 @@ def main(
     start_time = time.time()
 
     try:
+        tracker.start_run(
+            run_kind="pytest",
+            metadata={
+                "project": config.project.value,
+                "env": config.env.value,
+                "test_file": config.test_file,
+                "ai_mode": ai_mode,
+            },
+        )
 
         pytest_args = build_pytest_args(config)
         logger.info(f"使用参数运行pytest: {' '.join(pytest_args)}")
@@ -148,14 +253,20 @@ def main(
 
         # 显示运行摘要
         show_test_summary(start_time)
+        tracker.finish_run(
+            status="passed" if exit_code == 0 else "failed",
+            metadata={"exit_code": exit_code},
+        )
 
         # 返回退出码
         sys.exit(exit_code)
 
     except KeyboardInterrupt:
+        tracker.finish_run(status="failed", metadata={"error": "KeyboardInterrupt"})
         logger.error("测试被用户中断")
         sys.exit(1)
     except Exception as e:
+        tracker.finish_run(status="failed", metadata={"error": str(e)})
         logger.error(f"测试运行出错: {str(e)}")
         sys.exit(1)
 

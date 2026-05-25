@@ -1,0 +1,40 @@
+runtime:
+  default_mode: strict
+  allow_ai_in_smart: true
+  ai_enabled: true
+  max_ai_calls_per_test: 3
+  candidate_limit: 120
+
+selector_registry:
+  enabled: true
+  sqlite_path: .ui_auto/selectors.db
+  unstable_threshold: 3
+
+generation:
+  output_prefix: generated
+  max_context_items: 160
+  prefer_existing_modules: true
+  prefer_existing_elements: true
+
+llm:
+  omit_temperature: true
+  response_format: json_object
+  timeout_seconds: 60
+  schema_version: ui-ai-schema-v1
+
+vision:
+  enabled: false
+  service_url: http://10.168.78.49:5100
+  timeout_seconds: 30
+  min_confidence: 0.85
+  allow_coordinate_fallback: false
+  max_calls_per_test: 1
+  screenshot_type: png
+  screenshot_full_page: false
+  send_dom_candidates: true
+
+prompts:
+  selector_version: selector-v1
+  observe_version: observe-v1
+  generation_version: generation-v1
+  vision_version: vision-v1

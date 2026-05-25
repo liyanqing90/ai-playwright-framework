@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 
 import allure
 
-from src.case_utils import load_moules
+from src.case_utils import load_modules
 from utils.logger import logger
 
 
@@ -67,7 +67,7 @@ def find_module(module_name: str) -> Dict[str, Any]:
     Raises:
         ValueError: 如果找不到模块
     """
-    all_modules = load_moules()
+    all_modules = load_modules()
 
     # 检查是否有匹配的模块名
     if module_name in all_modules:

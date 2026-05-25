@@ -2,7 +2,7 @@ import types
 from inspect import Parameter, Signature
 
 import pytest
-from playwright.async_api import Page
+from playwright.sync_api import Page
 
 from src.test_case_executor import CaseExecutor
 from utils.variable_manager import VariableManager
@@ -87,7 +87,8 @@ class TestCaseGenerator(pytest.Item):
 
         depends = case.get("depends_on", [])
         fixtures = case.get("fixtures", [])
-        case_data = self.test_datas.get(case_name, {})
+        data_name = case.get("data_name", case_name)
+        case_data = self.test_datas.get(data_name, {})
 
         case_data = (
             [case_data]
@@ -103,6 +104,7 @@ class TestCaseGenerator(pytest.Item):
         ):  # 重命名闭包函数
             self.execute_test(
                 case_data=kwargs.get("value", {}),
+                case_metadata=case,
                 elements=self.elements,
                 page=page,
                 ui_helper=ui_helper,
@@ -120,8 +122,10 @@ class TestCaseGenerator(pytest.Item):
         marked_func.__signature__ = build_test_signature(fixtures)
         return marked_func
 
-    def execute_test(self, case_data, page: Page, ui_helper, **kwargs) -> None:
-        executor = CaseExecutor(case_data, self.elements)
+    def execute_test(
+        self, case_data, page: Page, ui_helper, case_metadata=None, **kwargs
+    ) -> None:
+        executor = CaseExecutor(case_data, self.elements, case_metadata=case_metadata)
         executor.execute_test_case(page, ui_helper)
 
     def runtest(self):

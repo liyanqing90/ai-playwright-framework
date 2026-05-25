@@ -1,0 +1,11 @@
+case_name: test_generated_demo
+description: "生成器显式规格示例"
+mode: strict
+steps:
+  - action: goto
+    value: "https://baidu.com"
+  - action: assert_visible
+    selector: baidu_button
+  - action: assert_text
+    selector: title
+    value: "百度一下，你就知道"

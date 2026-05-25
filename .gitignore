@@ -1,8 +1,25 @@
-# 默认忽略的文件
+# IDE / local environment
 /.idea/
+.env
+.env.*
+!.env.example
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv-ui-vision/
+
+# Test/runtime outputs
 /logs/
 /reports/
+/evidence/
+/.ui_auto/
+/downloads/
 /test_data/variables.json
 /config/storage_state.json
-/evidence/
-/poetry.lock
+
+# Local archives and imported bundles
+*.zip

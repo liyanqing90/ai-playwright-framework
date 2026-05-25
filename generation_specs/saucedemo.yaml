@@ -1,0 +1,98 @@
+description: "Saucedemo 基础购物流程"
+mode: smart
+elements:
+  saucedemo_username: "#user-name"
+  saucedemo_password: "#password"
+  saucedemo_login_button: "#login-button"
+  saucedemo_error_message: "[data-test='error']"
+  saucedemo_inventory_list: ".inventory_list"
+  saucedemo_backpack_add: "#add-to-cart-sauce-labs-backpack"
+  saucedemo_bike_light_add: "#add-to-cart-sauce-labs-bike-light"
+  saucedemo_cart_badge: ".shopping_cart_badge"
+  saucedemo_cart_link: ".shopping_cart_link"
+  saucedemo_checkout_button: "#checkout"
+  saucedemo_first_name: "#first-name"
+  saucedemo_last_name: "#last-name"
+  saucedemo_postal_code: "#postal-code"
+  saucedemo_continue_button: "#continue"
+  saucedemo_finish_button: "#finish"
+  saucedemo_complete_header: ".complete-header"
+  saucedemo_menu_button: "#react-burger-menu-btn"
+  saucedemo_logout_link: "#logout_sidebar_link"
+vars:
+  saucedemo_url: "https://www.saucedemo.com/"
+  saucedemo_user: "standard_user"
+  saucedemo_locked_user: "locked_out_user"
+  saucedemo_password_value: "secret_sauce"
+  saucedemo_first_name: "Auto"
+  saucedemo_last_name: "Tester"
+  saucedemo_postal_code: "100000"
+modules:
+  saucedemo_login:
+    - action: goto
+      value: "${saucedemo_url}"
+    - action: fill
+      selector: saucedemo_username
+      value: "${saucedemo_user}"
+    - action: fill
+      selector: saucedemo_password
+      value: "${saucedemo_password_value}"
+    - action: click
+      selector: saucedemo_login_button
+cases:
+  - name: test_saucedemo_login_success
+    description: "标准用户登录后进入商品列表"
+    mode: smart
+    steps:
+      - use_module: saucedemo_login
+      - action: assert_visible
+        selector: saucedemo_inventory_list
+  - name: test_saucedemo_locked_user_login_error
+    description: "锁定用户登录失败并展示错误提示"
+    mode: smart
+    steps:
+      - action: goto
+        value: "${saucedemo_url}"
+      - action: fill
+        selector: saucedemo_username
+        value: "${saucedemo_locked_user}"
+      - action: fill
+        selector: saucedemo_password
+        value: "${saucedemo_password_value}"
+      - action: click
+        selector: saucedemo_login_button
+      - action: assert_text_contains
+        selector: saucedemo_error_message
+        value: "locked out"
+  - name: test_saucedemo_checkout_order
+    description: "添加商品到购物车并完成下单"
+    mode: smart
+    steps:
+      - use_module: saucedemo_login
+      - action: click
+        selector: saucedemo_backpack_add
+      - action: click
+        selector: saucedemo_bike_light_add
+      - action: assert_text
+        selector: saucedemo_cart_badge
+        value: "2"
+      - action: click
+        selector: saucedemo_cart_link
+      - action: click
+        selector: saucedemo_checkout_button
+      - action: fill
+        selector: saucedemo_first_name
+        value: "${saucedemo_first_name}"
+      - action: fill
+        selector: saucedemo_last_name
+        value: "${saucedemo_last_name}"
+      - action: fill
+        selector: saucedemo_postal_code
+        value: "${saucedemo_postal_code}"
+      - action: click
+        selector: saucedemo_continue_button
+      - action: click
+        selector: saucedemo_finish_button
+      - action: assert_text
+        selector: saucedemo_complete_header
+        value: "Thank you for your order!"

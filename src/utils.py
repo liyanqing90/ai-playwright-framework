@@ -10,6 +10,8 @@ def singleton(cls):
     def inner(**kwargs):  # 修改这里，接收关键字参数
         if cls not in _instance:
             _instance[cls] = cls(**kwargs)  # 修改这里，传递关键字参数给 cls 的构造函数
+        elif kwargs and hasattr(_instance[cls], "reconfigure"):
+            _instance[cls].reconfigure(**kwargs)
         return _instance[cls]
 
     return inner

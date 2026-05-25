@@ -57,8 +57,8 @@ class StepAction:
     SELECT = ["select", "选择"]
     DRAG_AND_DROP = ["drag_and_drop", "拖拽"]
     GET_VALUE = ["get_value", "获取值"]
-    SCROLL_INTO_VIEW = ["scroll_into_view", "滚动到元素"]
-    SCROLL_TO = ["scroll_to", "滚动到位置"]
+    SCROLL_INTO_VIEW = ["scroll_into_view", "滚动到元素", "向下滑动到"]
+    SCROLL_TO = ["scroll_to", "滚动到位置", "滑到顶部", "滑到底部"]
     FOCUS = ["focus", "聚焦"]
     BLUR = ["blur", "失焦"]
     TYPE = ["type", "模拟输入"]
@@ -82,6 +82,7 @@ class StepAction:
     KEYBOARD_SHORTCUT = ["keyboard_shortcut", "键盘快捷键"]
     KEYBOARD_PRESS = ["keyboard_press", "全局按键"]
     KEYBOARD_TYPE = ["keyboard_type", "全局输入"]
+    OBSERVE = ["observe", "AI操作", "智能操作"]
 
     # 流程控制操作
     USE_MODULE = ["use_module", "使用模块"]
@@ -115,6 +116,7 @@ class StepAction:
         + KEYBOARD_SHORTCUT
         + KEYBOARD_PRESS
         + KEYBOARD_TYPE
+        + OBSERVE
         + USE_MODULE
         + IF_CONDITION
         + FOR_EACH

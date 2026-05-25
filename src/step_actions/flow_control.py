@@ -7,6 +7,7 @@ from typing import Dict, Any
 
 import allure
 
+from src.step_actions.safe_expression import safe_eval_expression
 from utils.logger import logger
 
 
@@ -177,7 +178,6 @@ def evaluate_expression(step_executor, expression: str) -> bool:
 
     try:
         import math
-        import operator
 
         # 定义UI元素检查函数，直接使用ui_helper的_locator方法
         def element_exists(selector):
@@ -253,18 +253,13 @@ def evaluate_expression(step_executor, expression: str) -> bool:
             "element_count": element_count,
         }
 
-        safe_globals = {
-            "__builtins__": {},
-            **safe_math_functions,
-        }
-
         processed_expr = preprocess_expression(expr_content)
-        result = eval(processed_expr, safe_globals)
+        result = safe_eval_expression(processed_expr, safe_math_functions)
         logger.debug(f"表达式计算: {expr_content} = {result}")
         return bool(result)
     except Exception as e:
         logger.error(f"表达式计算错误: {expr_content} - {e}")
-        return False
+        raise
 
 
 def preprocess_expression(expr: str) -> str:

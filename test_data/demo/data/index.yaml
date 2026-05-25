@@ -4,8 +4,7 @@ test_data:
     steps:
       - action: goto
         value: "https://baidu.com"
-      - action: 验证可见
+      - action: assert_visible
         selector: baidu_button
-      - action: assert_text
+      - action: assert_title
         value: "百度一下，你就知道"
-        selector: title

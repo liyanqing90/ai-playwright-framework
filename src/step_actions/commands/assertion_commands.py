@@ -8,6 +8,25 @@ from typing import Dict, Any
 from src.step_actions.action_types import StepAction
 from src.step_actions.commands.base_command import Command, CommandFactory
 from src.step_actions.expression_evaluator import evaluate_math_expression
+from utils.logger import logger
+
+
+def _log_assertion_success(
+    action: str,
+    *,
+    selector: str | None = None,
+    expected: Any = None,
+    **extra: Any,
+) -> None:
+    parts = [f"action={action}"]
+    if selector:
+        parts.append(f"selector={selector}")
+    if expected is not None:
+        parts.append(f"expected={expected}")
+    for key, value in extra.items():
+        if value is not None:
+            parts.append(f"{key}={value}")
+    logger.info("断言通过: " + " | ".join(parts))
 
 
 @CommandFactory.register(StepAction.ASSERT_TEXT)
@@ -19,6 +38,7 @@ class AssertTextCommand(Command):
     ) -> None:
         expected = step.get("expected", value)
         ui_helper.assert_text(selector=selector, expected=expected)
+        _log_assertion_success("assert_text", selector=selector, expected=expected)
 
 
 @CommandFactory.register(StepAction.HARD_ASSERT_TEXT)
@@ -30,6 +50,7 @@ class HardAssertTextCommand(Command):
     ) -> None:
         expected = step.get("expected", value)
         ui_helper.hard_assert_text(selector=selector, expected=expected)
+        _log_assertion_success("hard_assert", selector=selector, expected=expected)
 
 
 @CommandFactory.register(StepAction.ASSERT_TEXT_CONTAINS)
@@ -41,6 +62,9 @@ class AssertTextContainsCommand(Command):
     ) -> None:
         expected = step.get("expected", str(value))
         ui_helper.assert_text_contains(selector=selector, expected=expected)
+        _log_assertion_success(
+            "assert_text_contains", selector=selector, expected=expected
+        )
 
 
 @CommandFactory.register(StepAction.ASSERT_URL)
@@ -52,6 +76,7 @@ class AssertUrlCommand(Command):
     ) -> None:
         expected = step.get("expected", value)
         ui_helper.assert_url(expected=expected)
+        _log_assertion_success("assert_url", expected=expected)
 
 
 @CommandFactory.register(StepAction.ASSERT_URL_CONTAINS)
@@ -63,6 +88,7 @@ class AssertUrlContainsCommand(Command):
     ) -> None:
         expected = step.get("expected", value)
         ui_helper.assert_url_contains(expected=expected)
+        _log_assertion_success("assert_url_contains", expected=expected)
 
 
 @CommandFactory.register(StepAction.ASSERT_TITLE)
@@ -74,6 +100,7 @@ class AssertTitleCommand(Command):
     ) -> None:
         expected = step.get("expected", value)
         ui_helper.assert_title(expected=expected)
+        _log_assertion_success("assert_title", expected=expected)
 
 
 @CommandFactory.register(StepAction.ASSERT_ELEMENT_COUNT)
@@ -102,6 +129,9 @@ class AssertElementCountCommand(Command):
                 raise
 
         ui_helper.assert_element_count(selector=selector, expected=expected)
+        _log_assertion_success(
+            "assert_element_count", selector=selector, expected=expected
+        )
 
 
 @CommandFactory.register(StepAction.ASSERT_VISIBLE)
@@ -112,6 +142,7 @@ class AssertVisibleCommand(Command):
         self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.assert_visible(selector=selector)
+        _log_assertion_success("assert_visible", selector=selector)
 
 
 @CommandFactory.register(StepAction.ASSERT_BE_HIDDEN)
@@ -122,6 +153,7 @@ class AssertBeHiddenCommand(Command):
         self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.assert_be_hidden(selector=selector)
+        _log_assertion_success("assert_be_hidden", selector=selector)
 
 
 @CommandFactory.register(StepAction.ASSERT_EXISTS)
@@ -132,6 +164,7 @@ class AssertExistsCommand(Command):
         self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.assert_exists(selector=selector)
+        _log_assertion_success("assert_exists", selector=selector)
 
 
 @CommandFactory.register(StepAction.ASSERT_NOT_EXISTS)
@@ -142,6 +175,7 @@ class AssertNotExistsCommand(Command):
         self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.assert_not_exists(selector=selector)
+        _log_assertion_success("assert_not_exists", selector=selector)
 
 
 @CommandFactory.register(StepAction.ASSERT_ENABLED)
@@ -152,6 +186,7 @@ class AssertEnabledCommand(Command):
         self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.assert_element_enabled(selector=selector)
+        _log_assertion_success("assert_enabled", selector=selector)
 
 
 @CommandFactory.register(StepAction.ASSERT_DISABLED)
@@ -162,6 +197,7 @@ class AssertDisabledCommand(Command):
         self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
         ui_helper.assert_element_disabled(selector=selector)
+        _log_assertion_success("assert_disabled", selector=selector)
 
 
 @CommandFactory.register(StepAction.ASSERT_ATTRIBUTE)
@@ -176,6 +212,12 @@ class AssertAttributeCommand(Command):
         ui_helper.assert_attribute(
             selector=selector, attribute=attribute, expected=expected
         )
+        _log_assertion_success(
+            "assert_attribute",
+            selector=selector,
+            expected=expected,
+            attribute=attribute,
+        )
 
 
 @CommandFactory.register(StepAction.ASSERT_VALUE)
@@ -187,6 +229,7 @@ class AssertValueCommand(Command):
     ) -> None:
         expected = step.get("expected", value)
         ui_helper.assert_value(selector=selector, expected=expected)
+        _log_assertion_success("assert_value", selector=selector, expected=expected)
 
 
 @CommandFactory.register(StepAction.ASSERT_HAVE_VALUES)
@@ -205,3 +248,6 @@ class AssertHaveValuesCommand(Command):
                 # 如果不是JSON，则分割字符串
                 expected = expected.split(",")
         ui_helper.assert_values(selector=selector, expected=expected)
+        _log_assertion_success(
+            "assert_have_values", selector=selector, expected=expected
+        )

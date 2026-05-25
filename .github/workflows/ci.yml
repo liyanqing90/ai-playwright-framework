@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: python -m pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --no-root
+
+      - name: Compile Python
+        run: poetry run python -m compileall src utils page_objects conftest.py test_runner.py
+
+      - name: Run framework contract tests
+        run: poetry run pytest tests -q
+
+      - name: Validate YAML action schema
+        run: poetry run python validate_yaml_schema.py
+
+      - name: Check duplicate YAML definitions
+        run: poetry run python check_duplicates.py
+
+      - name: Collect generated YAML tests
+        run: poetry run pytest --collect-only -q

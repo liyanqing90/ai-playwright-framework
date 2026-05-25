@@ -29,34 +29,39 @@ def generate_faker_data(data_type, **kwargs):
         raise ValueError(f"不支持的数据类型: {data_type}")
 
 
+def _resolve_allowed_script_path(file_path: Path) -> Path:
+    project_root = Path.cwd().resolve()
+    scripts_root = (project_root / "files").resolve()
+    resolved_path = Path(file_path)
+    if not resolved_path.is_absolute():
+        resolved_path = (project_root / resolved_path).resolve()
+    else:
+        resolved_path = resolved_path.resolve()
+    if resolved_path.suffix != ".py":
+        raise ValueError(f"动态脚本必须是 .py 文件: {resolved_path}")
+    if not resolved_path.is_relative_to(scripts_root):
+        raise ValueError(f"动态脚本只允许位于 files 目录下: {resolved_path}")
+    return resolved_path
+
+
 def run_dynamic_script_from_path(file_path: Path):
     """
     从 Path 对象表示的文件路径动态地导入和执行一个 Python 模块。
     Args:
         file_path:  A pathlib.Path object pointing to the Python file.
     """
-    file_path = Path(file_path)
-    try:
-        if not file_path.exists():
-            raise FileNotFoundError(f"文件 {file_path} 不存在。")
-        module_name = file_path.stem  # 获取不带扩展名的文件名 (模块名)
-        spec = importlib.util.spec_from_file_location(
-            module_name, str(file_path)
-        )  # 创建模块规范, 需要字符串路径
-        if spec is None:
-            print(f"无法从文件路径 {file_path} 创建模块规范。")
-            return
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-        # 检查模块是否定义了一个 `run()` 函数，如果有，则调用它
-        if hasattr(module, "run"):
-            module.run()
-        elif hasattr(module, "main"):
-            module.main()
-        else:
-            print(f"模块 {module_name} 没有 'run' 或 'main' 函数。")
-    except FileNotFoundError as e:
-        print(e)  # 直接打印 FileNotFoundError 异常信息
-    except Exception as e:
-        print(f"导入或执行模块 {file_path} 时发生错误：{e}")
+    file_path = _resolve_allowed_script_path(Path(file_path))
+    if not file_path.exists():
+        raise FileNotFoundError(f"文件 {file_path} 不存在。")
+    module_name = f"dynamic_script_{file_path.stem}"
+    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法从文件路径 {file_path} 创建模块规范。")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    if hasattr(module, "run"):
+        return module.run()
+    if hasattr(module, "main"):
+        return module.main()
+    raise AttributeError(f"模块 {module_name} 没有 'run' 或 'main' 函数。")

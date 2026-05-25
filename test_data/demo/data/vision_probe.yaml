@@ -1,0 +1,18 @@
+test_data:
+  test_ui_vision_saucedemo_login_button_fallback:
+    description: 使用真实 UI Vision 在显式 selector 失效后定位 Saucedemo 登录按钮
+    mode: smart
+    steps:
+      - action: goto
+        value: ${saucedemo_url}
+      - action: fill
+        selector: saucedemo_username
+        value: ${saucedemo_user}
+      - action: fill
+        selector: saucedemo_password
+        value: ${saucedemo_password_value}
+      - action: click
+        selector: "#missing-login-button"
+        target: LOGIN button
+      - action: assert_visible
+        selector: saucedemo_inventory_list

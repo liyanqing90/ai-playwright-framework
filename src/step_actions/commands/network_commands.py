@@ -26,6 +26,7 @@ class MonitorRequestCommand(Command):
         action_type = step.get("action_type", "click")
         assert_params = step.get("assert_params")
         variable_name = step.get("variable_name")
+        timeout = int(step.get("timeout", DEFAULT_TIMEOUT))
         scope = step.get("scope", "global")
 
         # 其他可能的参数
@@ -66,7 +67,7 @@ class MonitorRequestCommand(Command):
             selector=selector,
             action=action_type,
             assert_params=assert_params,
-            timeout=DEFAULT_TIMEOUT,
+            timeout=timeout,
             value=value,
             **kwargs,
         )
@@ -132,7 +133,7 @@ class MonitorResponseCommand(Command):
             action=action_type,
             assert_params=assert_params,
             save_params=save_params,
-            timeout=DEFAULT_TIMEOUT,
+            timeout=timeout,
             value=value,
             **kwargs,
         )

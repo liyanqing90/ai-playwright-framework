@@ -9,6 +9,8 @@ from loguru import logger
 
 from src.utils import singleton
 
+_MISSING = object()
+
 
 @singleton
 class VariableManager:
@@ -282,7 +284,9 @@ class VariableManager:
             return f"{name}:{self._default_scope_key}"
         return f"{name}:{scope}"
 
-    def get_variable(self, name: str, scope: Optional[str] = None) -> Any:
+    def get_variable(
+        self, name: str, scope: Optional[str] = None, default: Any = _MISSING
+    ) -> Any:
         """
         获取变量值，支持作用域继承
 
@@ -306,9 +310,8 @@ class VariableManager:
 
         self._stats["cache_misses"] += 1
 
-        # 查找变量值
         found = False
-        value = name
+        value = _MISSING
         # 如果指定了作用域，则按照作用域继承关系查找
         if scope in self.scope_hierarchy:
             for search_scope in self.scope_hierarchy[scope]:
@@ -328,14 +331,17 @@ class VariableManager:
                     found = True
                     break
 
-        # 如果未找到，使用默认值
         if not found:
-            self.logger.debug(f"未找到变量 '{name}'")
+            if default is not _MISSING:
+                value = default
+            else:
+                raise KeyError(f"未定义变量: {name}")
 
         # 优化：将结果存入缓存，并管理缓存键
         self._evict_cache_if_needed()  # 检查缓存大小
-        self._variable_cache[cache_key] = value
-        self._cache_keys_by_variable[name].add(cache_key)
+        if value is not _MISSING:
+            self._variable_cache[cache_key] = value
+            self._cache_keys_by_variable[name].add(cache_key)
 
         return value
 

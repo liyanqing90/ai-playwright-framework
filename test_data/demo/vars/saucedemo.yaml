@@ -1,0 +1,7 @@
+saucedemo_url: https://www.saucedemo.com/
+saucedemo_user: standard_user
+saucedemo_locked_user: locked_out_user
+saucedemo_password_value: secret_sauce
+saucedemo_first_name: Auto
+saucedemo_last_name: Tester
+saucedemo_postal_code: '100000'

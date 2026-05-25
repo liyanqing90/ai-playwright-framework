@@ -22,9 +22,15 @@ def _setup_test_environment(case: Dict[str, Any]) -> None:
 
 
 class CaseExecutor:
-    def __init__(self, case_data: Dict[str, Any], elements: Dict[str, Any]):
+    def __init__(
+        self,
+        case_data: Dict[str, Any],
+        elements: Dict[str, Any],
+        case_metadata: Dict[str, Any] | None = None,
+    ):
         self.case_data = case_data
         self.elements = elements
+        self.case_metadata = case_metadata or {}
         self.executed_fixtures: Set[str] = set()
 
     def execute_test_case(self, page, ui_helper) -> None:
@@ -34,7 +40,12 @@ class CaseExecutor:
             ui_helper: UI操作帮助类
         """
         # 执行测试步骤
-        step_executor = StepExecutor(page, ui_helper, self.elements)
+        step_executor = StepExecutor(
+            page,
+            ui_helper,
+            self.elements,
+            default_mode=self._default_mode(),
+        )
 
         # 支持两种数据结构：直接的步骤列表或包含步骤的字典
         if isinstance(self.case_data, list):
@@ -52,3 +63,8 @@ class CaseExecutor:
         # 执行所有步骤
         for step in steps:
             step_executor.execute_step(step)
+
+    def _default_mode(self) -> str | None:
+        if isinstance(self.case_data, dict) and self.case_data.get("mode"):
+            return self.case_data.get("mode")
+        return self.case_metadata.get("mode")
