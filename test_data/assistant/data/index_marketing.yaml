@@ -1,4 +1,4 @@
-test_data:
+﻿test_data:
   test_zong_kai_guan:
     description: "营销助手页面总开关测试"
     steps:
@@ -419,7 +419,7 @@ test_data:
         value: Enter
       - action: monitor_response
         url_pattern: /api/aim/aimDanmakuReply/saveOrUpdate
-        selector: 确定
+        selector: 营销确定
         action_type: click
         assert_params:
           $.result: "True"
@@ -501,7 +501,7 @@ test_data:
         value: "加入白名单"
       - action: monitor_response
         url_pattern: /api/aim/aimDanmakuWhitelist/saveOrUpdate
-        selector: 确定
+        selector: 营销确定
         action_type: click
         assert_params:
           $.result: "True"
@@ -567,7 +567,7 @@ test_data:
         value: "不进行智能回复"
       - action: monitor_response
         url_pattern: /api/aim/aimFortuneBlock/saveOrUpdate
-        selector: 确定
+        selector: 营销确定
         action_type: click
         assert_params:
           $.result: "True"
@@ -639,7 +639,7 @@ test_data:
       - action: click
         selector: 确认按钮
       - action: click
-        selector: 确定
+        selector: 营销确定
       - action: wait
   test_xin_zeng_bo_bao:
     description: "弹幕循环播报新增功能测试"
@@ -661,7 +661,7 @@ test_data:
         value: "谢谢点点关注"
         selector: 谢谢点点关注
       - action: click
-        selector: 确定
+        selector: 营销确定
       - action: wait
 
 

@@ -1,4 +1,4 @@
-test_data:
+﻿test_data:
   test_own_stores_name_query:
     description: "自营店-部门&员工管理-姓名搜索"
     steps:
@@ -13,7 +13,7 @@ test_data:
         selector: 姓名搜索
         value: ${name}
       - action: click
-        selector: 查询按钮
+        selector: 商城门店查询按钮
       - action: wait
       - action: assert_text
         selector: 姓名
@@ -34,7 +34,7 @@ test_data:
       - action: click
         selector: 管家
       - action: click
-        selector: 查询按钮
+        selector: 商城门店查询按钮
       - action: wait
       - action: assert_text
         selector: 列表_管家
@@ -55,13 +55,13 @@ test_data:
         selector: 姓名搜索
         value: ${name}
       - action: click
-        selector: 查询按钮
+        selector: 商城门店查询按钮
       - action: wait
       - action: store_text
         selector: 姓名
         variable_name: 列表_姓名
       - action: click
-        selector: 查看详情
+        selector: 商城门店查看详情
       - action: wait
       - action: switch_window
       - action: assert_url

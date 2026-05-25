@@ -1,4 +1,4 @@
-test_data:
+﻿test_data:
   test_channel_page_activity_approval_inquire:
     - description: "频道页活动审批查询"
       steps:
@@ -212,7 +212,7 @@ test_data:
         - action: click
           selector: 配置查询
         - action: click
-          selector: 详情
+          selector: 审批详情
         - action: assert_text
           selector: 详情位置
           value: "平安渠道"

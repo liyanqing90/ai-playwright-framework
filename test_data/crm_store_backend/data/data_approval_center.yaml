@@ -1,4 +1,4 @@
-test_data:
+﻿test_data:
   test_order_approval_list_query:
     description: "订单审核列表查询"
     steps:
@@ -34,9 +34,9 @@ test_data:
         selector: 查询
       - action: wait
       - action: expect_popup
-        rel_action: click
+        real_action: click
         selector: 处理
-        variable: pop_index
+        variable_name: pop_index
       - action: assert_text
         selector: 列表ID
         value: ${线索ID}

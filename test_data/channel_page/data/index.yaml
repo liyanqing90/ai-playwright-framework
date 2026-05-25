@@ -97,7 +97,6 @@ test_data:
         variable_name: 车系
       - action: click
         selector: 车系
-        variable_name: 车系
       - action: store_text
         selector: 车型
         variable_name: 车型

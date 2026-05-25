@@ -1,4 +1,4 @@
-test_data:
+﻿test_data:
   test_dcc_task_search:
     description: "线索&工单管理-主任务列表-组合搜索1"
     steps:
@@ -429,9 +429,9 @@ test_data:
       - action: click
         selector: 线索管理筛选查询按钮
       - action: expect_popup
-        rel_action: click
+        real_action: click
         selector: 主任务列表组合筛选验证
-        variable: pop_index
+        variable_name: pop_index
       - action: wait
         value: 2
       - action: assert_text

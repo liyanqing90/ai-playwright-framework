@@ -56,7 +56,7 @@ elements:
   回复内容操作区: "div:has-text(/^点击“回车”增加多条回复内容 新增$/) >> div"
   已添加回复标签: "span:has-text('点击关注') >> span"
   点击关注: "text=点击关注"
-  确定: "role=button[name='确 定']"
+  营销确定: "role=button[name='确 定']"
   关键字: "role=cell[name='驾照']"
   删除语料: "role=row[name='驾照 点击关注 编辑 删除'] >> div >> nth=2"
   翻页: "role=button[name='right']"

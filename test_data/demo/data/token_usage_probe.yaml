@@ -1,0 +1,11 @@
+test_data:
+  test_token_usage_probe_observe_cart:
+    description: 使用 observe 触发一次 LLM 调用并验证购物车页打开成功
+    mode: smart
+    steps:
+      - use_module: saucedemo_login
+      - action: observe
+        value: 点击右上角购物车图标，进入购物车页面
+        timeout: 10000
+      - action: assert_visible
+        selector: saucedemo_checkout_button
