@@ -60,6 +60,7 @@ class GenerationHarness:
                     case_name=case_name,
                     index=index,
                     step=step,
+                    case_mode=mode,
                     valid_actions=valid_actions,
                     known_elements=known_elements,
                     known_modules=known_modules,
@@ -180,6 +181,7 @@ class GenerationHarness:
         case_name: str,
         index: int,
         step: dict[str, Any],
+        case_mode: str,
         valid_actions: set[str],
         known_elements: set[str],
         known_modules: set[str],
@@ -201,12 +203,28 @@ class GenerationHarness:
 
         selector = step.get("selector")
         target = step.get("target")
-        if selector and selector not in known_elements and not _looks_raw_selector(selector):
+        effective_mode = str(step.get("mode") or case_mode or "strict").lower()
+        if effective_mode not in _VALID_MODES:
+            raise ValueError(f"{case_name} step {index} mode 不合法: {effective_mode}")
+        if (
+            selector
+            and selector not in known_elements
+            and not _looks_raw_selector(selector)
+        ):
             warnings.append(
                 f"{case_name}: selector未在元素库中找到，将按原始选择器处理: {selector}"
             )
         if not selector and not target and action not in _NO_SELECTOR_ACTIONS:
-            warnings.append(f"{case_name}: step缺少selector/target: {step}")
+            raise ValueError(f"{case_name} step {index} 缺少selector/target: {step}")
+        if (
+            target
+            and not selector
+            and action not in _NO_SELECTOR_ACTIONS
+            and effective_mode == "strict"
+        ):
+            raise ValueError(
+                f"{case_name} step {index} 使用target时必须声明 mode: smart/ai，或在data用例层声明 mode: smart/ai"
+            )
         if action in _ASSERTION_ACTIONS:
             GenerationHarness._validate_assertion_fields(
                 case_name=case_name, index=index, step=step, action=action
@@ -220,6 +238,10 @@ class GenerationHarness:
     ) -> None:
         has_selector = bool(step.get("selector") or step.get("target"))
         has_expected = step.get("value") is not None or step.get("expected") is not None
+        if _is_empty_expected(step.get("value")) or _is_empty_expected(
+            step.get("expected")
+        ):
+            raise ValueError(f"{case_name} step {index} 断言期望值不能为空: {action}")
         if action in _TEXT_ASSERTIONS:
             if not has_selector or not has_expected:
                 raise ValueError(
@@ -246,7 +268,9 @@ class GenerationHarness:
                     f"{case_name} step {index} 断言格式错误: {action} 需要 selector/target、attribute 和 value/expected"
                 )
         elif action in _MULTI_VALUE_ASSERTIONS:
-            has_values = step.get("value") is not None or step.get("expected_values") is not None
+            has_values = (
+                step.get("value") is not None or step.get("expected_values") is not None
+            )
             if not has_selector or not has_values:
                 raise ValueError(
                     f"{case_name} step {index} 断言格式错误: {action} 需要 selector/target 和 value/expected_values"
@@ -269,8 +293,13 @@ _ACTION_ALIASES = {
     "open": "goto",
 }
 
+
 def _lower_actions(*groups: list[str]) -> set[str]:
     return {action.lower() for group in groups for action in group}
+
+
+def _is_empty_expected(value: Any) -> bool:
+    return value is not None and isinstance(value, str) and not value.strip()
 
 
 _NO_SELECTOR_ACTIONS = _lower_actions(StepAction.NO_SELECTOR_ACTIONS)

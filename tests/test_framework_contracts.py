@@ -19,7 +19,7 @@ from src.ai_runtime.contracts import (
     SelectorDecision,
     VisionFindResult,
 )
-from src.ai_runtime.playwright_selectors import redact_value
+from src.ai_runtime.playwright_selectors import heuristic_selectors, redact_value
 from src.ai_runtime.provider import (
     ChatCompletionProvider,
     LLMSettings,
@@ -186,8 +186,12 @@ def test_chat_completion_provider_records_token_usage(monkeypatch, tmp_path: Pat
                 },
             }
 
-    monkeypatch.setattr("src.ai_runtime.provider.requests.post", lambda *a, **k: FakeResponse())
-    monkeypatch.setattr("src.ai_runtime.provider.get_token_usage_tracker", lambda: tracker)
+    monkeypatch.setattr(
+        "src.ai_runtime.provider.requests.post", lambda *a, **k: FakeResponse()
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.provider.get_token_usage_tracker", lambda: tracker
+    )
 
     provider = ChatCompletionProvider(
         LLMSettings(
@@ -369,12 +373,84 @@ def test_generation_harness_prefixes_pytest_case_names():
     assert _safe_case_name("test_existing_name") == "test_existing_name"
 
 
-def test_local_ai_candidate_values_are_not_redacted():
-    raw = (
-        "phone=13812345678 email=qa@example.com token=abcdefghijklmnopqrstuvwxyzABCDEF123456"
+def test_generation_harness_rejects_strict_target_only_steps(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "strict",
+                    "steps": [
+                        {"action": "click", "target": "登录按钮"},
+                        {"action": "assert_visible", "target": "首页"},
+                    ],
+                }
+            },
+        }
     )
 
+    with pytest.raises(ValueError, match="mode: smart/ai"):
+        harness.validate(payload)
+
+
+def test_generation_harness_rejects_empty_assertion_expected(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"message": "#message"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "strict",
+                    "steps": [
+                        {"action": "assert_text", "selector": "message", "value": " "}
+                    ],
+                }
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="断言期望值不能为空"):
+        harness.validate(payload)
+
+
+def test_local_ai_candidate_values_are_not_redacted():
+    raw = "phone=13812345678 email=qa@example.com token=abcdefghijklmnopqrstuvwxyzABCDEF123456"
+
     assert redact_value(raw) == raw
+
+
+def test_heuristic_selectors_prioritize_password_target():
+    selectors = heuristic_selectors("密码输入框", "fill")
+
+    assert selectors[0] == 'input[type="password"]'
+    assert "#password" in selectors[:2]
 
 
 def test_vision_find_result_contract_accepts_service_payload():
@@ -500,6 +576,122 @@ def test_vision_resolver_maps_visual_center_back_to_dom_selector():
     assert resolved.source == "vision_dom"
 
 
+def test_smart_resolver_rejects_registry_semantic_mismatch(tmp_path: Path):
+    snapshots = {
+        "#user-name": {
+            "selector": "#user-name",
+            "tag": "input",
+            "id": "user-name",
+            "name": "user-name",
+            "placeholder": "Username",
+            "type": "text",
+        },
+        "#password": {
+            "selector": "#password",
+            "tag": "input",
+            "id": "password",
+            "name": "password",
+            "placeholder": "Password",
+            "type": "password",
+        },
+    }
+
+    class FakeLocator:
+        def __init__(self, selector):
+            self.selector = selector
+
+        @property
+        def first(self):
+            return self
+
+        def wait_for(self, state, timeout):
+            if self.selector not in snapshots:
+                raise TimeoutError("not found")
+
+        def is_enabled(self):
+            return True
+
+        def evaluate(self, script):
+            if "return tag === 'input'" in script:
+                return self.selector in snapshots
+            if "const cssEscape" in script:
+                return self.selector
+            snapshot = dict(snapshots[self.selector])
+            snapshot.setdefault("class_name", "")
+            snapshot.setdefault("data_test", "")
+            snapshot.setdefault("data_testid", "")
+            snapshot.setdefault("text", "")
+            snapshot.setdefault("value", "")
+            snapshot.setdefault("role", "")
+            snapshot.setdefault("aria_label", "")
+            snapshot.setdefault("title", "")
+            snapshot.setdefault("label", "")
+            snapshot.setdefault("ancestor_text", "")
+            return snapshot
+
+    class FakePage:
+        url = "https://www.saucedemo.com/"
+
+        def locator(self, selector):
+            return FakeLocator(selector)
+
+        def evaluate(self, script, limit):
+            return [
+                {
+                    "index": 0,
+                    "selector": "#user-name",
+                    "tag": "input",
+                    "id": "user-name",
+                    "name": "user-name",
+                    "placeholder": "Username",
+                    "type": "text",
+                },
+                {
+                    "index": 1,
+                    "selector": "#password",
+                    "tag": "input",
+                    "id": "password",
+                    "name": "password",
+                    "placeholder": "Password",
+                    "type": "password",
+                },
+            ]
+
+    registry = SelectorRegistry(tmp_path / "selectors.db")
+    registry.save(
+        project="demo",
+        env="test",
+        page_key="https://www.saucedemo.com/",
+        action="fill",
+        target="密码输入框",
+        selector="#user-name",
+        source="heuristic",
+    )
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = registry
+
+    resolved = resolver.resolve(
+        action="fill",
+        target="密码输入框",
+        selector=None,
+        mode="smart",
+        timeout=1000,
+    )
+
+    assert resolved.selector == "#password"
+    assert (
+        registry.find(
+            project="demo",
+            env="test",
+            page_key="https://www.saucedemo.com/",
+            action="fill",
+            target="密码输入框",
+        ).selector
+        == "#password"
+    )
+
+
 def test_smart_resolver_uses_vision_after_llm_selector_failure(monkeypatch):
     class FakeLocator:
         def __init__(self, selector):
@@ -550,7 +742,9 @@ def test_smart_resolver_uses_vision_after_llm_selector_failure(monkeypatch):
     monkeypatch.setattr(
         "src.ai_runtime.smart_resolver.ChatCompletionProvider", FailingProvider
     )
-    monkeypatch.setattr("src.ai_runtime.smart_resolver.VisionResolver", FakeVisionResolver)
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.VisionResolver", FakeVisionResolver
+    )
 
     resolver = SmartResolver(FakePage(), project="demo", env="test")
     resolver.registry = None
@@ -598,7 +792,9 @@ def test_smart_resolver_skips_unavailable_vision_service(monkeypatch):
 
     monkeypatch.setattr(
         "src.ai_runtime.smart_resolver.load_vision_settings",
-        lambda config: VisionSettings(enabled=True, service_url="http://127.0.0.1:59999"),
+        lambda config: VisionSettings(
+            enabled=True, service_url="http://127.0.0.1:59999"
+        ),
     )
     monkeypatch.setattr(
         "src.ai_runtime.smart_resolver.ChatCompletionProvider", FailingProvider

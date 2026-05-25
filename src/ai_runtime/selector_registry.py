@@ -242,6 +242,21 @@ class SelectorRegistry:
             )
             self._conn.commit()
 
+    def deprecate(self, record_id: str, *, last_error: str | None = None) -> None:
+        now = _now()
+        with self._lock:
+            self._conn.execute(
+                """
+                UPDATE selectors
+                SET status = 'deprecated',
+                    last_error = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (last_error, now, record_id),
+            )
+            self._conn.commit()
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()

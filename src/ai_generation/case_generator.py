@@ -206,6 +206,9 @@ def _build_payload(
                     "每个用例必须至少包含一个断言步骤，断言必须使用项目格式："
                     "assert_visible需要selector；assert_text/assert_text_contains需要selector和value；"
                     "assert_url/assert_url_contains/assert_title需要value。"
+                    "断言必须验证前置步骤实际造成的页面状态，不允许用空value或泛化描述充当断言。"
+                    "负向登录、错误提示、购物车数量等结果必须断言可观察的准确文案或准确数量。"
+                    "使用target而没有selector时，该步骤或data用例层必须声明mode为smart或ai。"
                     "找不到元素时用 target + mode: smart，不要编造selector。"
                     "不要输出解释。"
                 ),

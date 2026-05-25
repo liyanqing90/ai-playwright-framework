@@ -13,6 +13,8 @@ from src.ai_runtime.playwright_selectors import (
     collect_candidates,
     heuristic_selectors,
     normalize_selector,
+    selector_matches_target,
+    semantic_selectors,
     stable_selector_for_locator,
     verify_selector,
 )
@@ -88,9 +90,7 @@ class SmartResolver:
         self.observe_prompt_version = str(
             prompts_cfg.get("observe_version", "observe-v1")
         )
-        self.vision_prompt_version = str(
-            prompts_cfg.get("vision_version", "vision-v1")
-        )
+        self.vision_prompt_version = str(prompts_cfg.get("vision_version", "vision-v1"))
         self.schema_version = str(llm_cfg.get("schema_version", "ui-ai-schema-v1"))
 
     def resolve(
@@ -112,6 +112,12 @@ class SmartResolver:
                 verify_selector(
                     self.page, normalized_selector, action=action, timeout=timeout
                 )
+                if target_text and not selector_matches_target(
+                    self.page, normalized_selector, target_text, action
+                ):
+                    raise ValueError(
+                        f"explicit selector semantic mismatch: target={target_text}, selector={normalized_selector}"
+                    )
                 return ResolvedSelector(selector=normalized_selector, source="explicit")
             except Exception as exc:
                 if mode == "strict" or not target_text:
@@ -138,21 +144,42 @@ class SmartResolver:
                     verify_selector(
                         self.page, record.selector, action=action, timeout=timeout
                     )
+                    if not selector_matches_target(
+                        self.page, record.selector, target_text, action
+                    ):
+                        self.registry.deprecate(
+                            record.id,
+                            last_error="registry selector semantic mismatch",
+                        )
+                        logger.warning(
+                            f"历史定位语义不匹配，已废弃: target={target_text} selector={record.selector}"
+                        )
+                        raise ValueError("registry selector semantic mismatch")
                     self.registry.mark_success(record.id)
                     return ResolvedSelector(selector=record.selector, source="registry")
-                except Exception:
-                    self.registry.mark_failed(
-                        record.id,
-                        unstable_threshold=self.unstable_threshold,
-                        last_error="registry selector verification failed",
-                    )
+                except Exception as exc:
+                    if str(exc) != "registry selector semantic mismatch":
+                        self.registry.mark_failed(
+                            record.id,
+                            unstable_threshold=self.unstable_threshold,
+                            last_error="registry selector verification failed",
+                        )
 
-        for candidate in heuristic_selectors(target_text, action):
+        selector_candidates = semantic_selectors(
+            self.page, target_text, action, limit=self.candidate_limit
+        )
+        selector_candidates.extend(heuristic_selectors(target_text, action))
+        for candidate in _dedupe(selector_candidates):
             try:
                 verify_selector(
                     self.page, candidate, action=action, timeout=min(timeout, 1000)
                 )
                 stable = stable_selector_for_locator(self.page.locator(candidate))
+                if not selector_matches_target(self.page, stable, target_text, action):
+                    logger.warning(
+                        f"规则定位语义不匹配，跳过: target={target_text} selector={stable}"
+                    )
+                    continue
                 self._save_selector(
                     action=action,
                     target=target_text,
@@ -189,6 +216,12 @@ class SmartResolver:
                 raise exc
 
         if resolved.selector:
+            if not selector_matches_target(
+                self.page, resolved.selector, target_text, action
+            ):
+                raise ValueError(
+                    f"智能定位结果与目标语义不匹配: target={target_text}, selector={resolved.selector}"
+                )
             self._save_selector(
                 action=action,
                 target=target_text,
@@ -337,6 +370,10 @@ class SmartResolver:
         if not selector:
             raise ValueError(f"AI未返回selector: {target}")
         verify_selector(self.page, selector, action=action, timeout=timeout)
+        if not selector_matches_target(self.page, selector, target, action):
+            raise ValueError(
+                f"AI selector semantic mismatch: target={target}, selector={selector}"
+            )
         return ResolvedSelector(
             selector=selector,
             source="ai_observe",
@@ -398,6 +435,11 @@ class SmartResolver:
     ) -> None:
         if not self.registry:
             return
+        if not selector_matches_target(self.page, selector, target, action):
+            logger.warning(
+                f"跳过保存语义不匹配的定位结果: target={target} selector={selector}"
+            )
+            return
         self.registry.save(
             project=self.project,
             env=self.env,
@@ -444,3 +486,11 @@ class SmartResolver:
         import json
 
         return json.dumps(data, ensure_ascii=False)
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        if value and value not in result:
+            result.append(value)
+    return result

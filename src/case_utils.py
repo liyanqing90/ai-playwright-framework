@@ -42,9 +42,10 @@ class LoadData:
 
     def _load_elements(self) -> Dict[str, Any]:
         """加载现有的YAML配置文件"""
-        return self.yaml.merge_yaml_files(self.test_data_dir + "/elements").get(
-            "elements", {}
-        )
+        elements_dir = Path(self.test_data_dir) / "elements"
+        if not elements_dir.exists():
+            return {}
+        return self.yaml.merge_yaml_files(elements_dir).get("elements", {})
 
     def _load_vars(self) -> Dict[str, Any]:
         return self._merge_vars(self.yaml.load_yaml_dir(self.test_data_dir + "/vars"))
