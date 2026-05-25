@@ -132,12 +132,12 @@
 
 1. **运行指定项目的测试**
    ```bash
-   python test_runner.py --project demo
+   poetry run run_case -p demo
    ```
 
 2. **运行指定测试文件**
    ```bash
-   python test_runner.py --project demo --test-file test_cases
+   poetry run run_case -p demo -f test_cases
    ```
 
 3. **有头模式运行**
@@ -147,7 +147,7 @@
 
 4. **使用 AI/Smart 执行模式运行**
    ```bash
-   python test_runner.py --project demo --test-file saucedemo_ai --ai-mode smart
+   poetry run run_case -p demo -f saucedemo_ai -m smart
    ```
 
    `--ai-mode` 只作为默认执行模式使用。若 `data` 层用例或单个步骤已经声明 `mode`，则优先使用 YAML 中的配置。
@@ -156,15 +156,15 @@
 
 1. **基于项目自然语言规格调用模型生成**
    ```bash
-   python test_runner.py --project demo --env prod --generate-case generation_specs/demo/saucedemo_ai.yaml --output-name saucedemo_ai --overwrite
+   poetry run gen -p demo saucedemo_ai
    ```
 
 2. **只预览生成结果，不写入文件**
    ```bash
-   python test_runner.py --project demo --generate-case generation_specs/demo/saucedemo_ai.yaml --output-name saucedemo_ai --dry-run
+   poetry run gen -p demo saucedemo_ai --dry-run
    ```
 
-生成规格按项目放在 `generation_specs/<project>/` 下；生成命令会写入 `test_data/<project>/cases/`、`data/`，并只在模型判断必须新增资产时写入 `elements/`、`modules/`、`vars/`。
+生成规格放在 `test_data/<project>/generation/` 下；`poetry run gen -p demo saucedemo_ai` 会读取 `test_data/demo/generation/saucedemo_ai.yaml`，默认输出并覆盖 `test_data/demo/cases/saucedemo_ai.yaml` 和 `test_data/demo/data/saucedemo_ai.yaml`，并只在模型判断必须新增资产时写入 `elements/`、`modules/`、`vars/`。
 
 ### 生成报告
 
@@ -247,7 +247,7 @@ AI 默认配置在 `config/ai_config.yaml`：
 
 生成规格只写业务意图，不把元素、变量、公共组件复用要求写到用例描述里。复用策略由系统提示词、项目上下文和 `GenerationHarness` 负责：
 
-- 规格目录必须和 `--project` 对应，例如 `generation_specs/demo/*.yaml` 只能配合 `--project demo`。
+- 规格目录必须和 `--project` 对应，例如 `test_data/demo/generation/*.yaml` 只能配合 `-p demo`。
 - `project` 字段如果存在，必须和命令行 `--project` 一致。
 - 推荐每个用例写成对象，并用 `steps` 的 `-` 列表表达自然语言步骤；不要把多个步骤塞进一个长字符串里让模型靠标点拆分。
 - 模型会读取当前项目已有 `elements`、`modules`、`vars` 和历史用例。
@@ -264,7 +264,7 @@ cases:
   - name: baidu_search_keyword
     description: "百度搜索关键词"
     steps:
-      - "打开百度网页"
+      - "打开 https://www.baidu.com/ 网页"
       - "点击搜索输入框"
       - "输入百度"
       - "点击搜索按钮"
@@ -281,14 +281,14 @@ cases:
   - name: saucedemo_backpack_cart
     description: "标准用户添加单个商品到购物车"
     steps:
-      - "打开 Saucedemo 登录页"
+      - "打开 https://www.saucedemo.com/ 登录页"
       - "使用标准用户登录"
       - "添加 Sauce Labs Backpack 到购物车"
       - "断言购物车数量为 1"
   - name: saucedemo_locked_user_error
     description: "锁定用户登录失败提示"
     steps:
-      - "打开 Saucedemo 登录页"
+      - "打开 https://www.saucedemo.com/ 登录页"
       - "使用锁定用户登录"
       - "断言页面展示 locked out 错误提示"
 ```
@@ -402,7 +402,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5100/health
 $env:UI_VISION_ENABLED="true"
 $env:UI_VISION_BASE_URL="http://127.0.0.1:5100"
 $env:UI_VISION_API_KEY="sk-ui-vision-local"  # 如果服务端配置了 UI_VISION_API_KEY
-python test_runner.py --project demo --test-file vision_probe --ai-mode smart
+poetry run run_case -p demo -f vision_probe -m smart
 ```
 
 ### 日志输出
@@ -435,8 +435,6 @@ zhijia_ui/
 │   ├── ai_config.yaml       # AI生成与智能执行配置
 │   ├── env_config.yaml      # 环境配置
 │   └── test_config.yaml     # 测试配置
-├── generation_specs/        # 按项目隔离的自然语言用例生成规格
-│   └── <project>/           # 例如 demo/saucedemo_ai.yaml
 ├── evidence/                # 测试证据目录
 │   └── screenshots/         # 测试截图
 ├── logs/                    # 运行日志
@@ -456,6 +454,7 @@ zhijia_ui/
 │   │   ├── cases/           # 用例顺序组织，只声明 name
 │   │   ├── data/            # 用例描述、mode 和 steps
 │   │   ├── elements/        # 页面元素定义
+│   │   ├── generation/      # AI自然语言生成规格，不参与运行时执行
 │   │   ├── modules/         # 可复用测试模块
 │   │   └── vars/            # 项目变量
 │   └── common/              # 公共测试数据
@@ -877,13 +876,13 @@ $ poetry run black .
 $ python check_duplicates.py
 
 # 运行指定项目和文件
-$ python test_runner.py --project demo --test-file test_cases
+$ poetry run run_case -p demo -f test_cases
 
 # 使用 smart 模式执行用例
-$ python test_runner.py --project demo --test-file saucedemo_ai --ai-mode smart
+$ poetry run run_case -p demo -f saucedemo_ai -m smart
 
 # 基于自然语言规格调用模型生成用例
-$ python test_runner.py --project demo --generate-case generation_specs/demo/saucedemo_ai.yaml --output-name saucedemo_ai --overwrite
+$ poetry run gen -p demo saucedemo_ai
 ```
 
 ## 元素定位技巧

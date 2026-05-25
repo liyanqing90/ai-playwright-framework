@@ -8,7 +8,11 @@ import pytest
 from src.ai_generation.case_generator import (
     _has_explicit_steps,
     _validate_spec_project_scope,
+    resolve_generation_spec_path,
 )
+from src.ai_generation.harness import GenerationHarness
+from src.ai_generation.harness import _safe_case_name
+from src.ai_generation.project_context import ProjectContext
 from src.ai_runtime.contracts import (
     GeneratedCasePayload,
     ObservedOperationDecision,
@@ -255,23 +259,36 @@ def test_generated_case_payload_contract_normalizes_defaults():
 def test_generation_spec_scope_matches_project():
     _validate_spec_project_scope(
         project="demo",
-        spec_path=Path("generation_specs/demo/saucedemo_ai.yaml"),
+        spec_path=Path("test_data/demo/generation/saucedemo_ai.yaml"),
         spec={"project": "demo"},
     )
 
-    with pytest.raises(ValueError, match="generation_specs/crm"):
+    with pytest.raises(ValueError, match="test_data/crm/generation"):
         _validate_spec_project_scope(
             project="demo",
-            spec_path=Path("generation_specs/crm/smoke.yaml"),
+            spec_path=Path("test_data/crm/generation/smoke.yaml"),
             spec={},
         )
 
     with pytest.raises(ValueError, match="project=crm"):
         _validate_spec_project_scope(
             project="demo",
-            spec_path=Path("generation_specs/demo/smoke.yaml"),
+            spec_path=Path("test_data/demo/generation/smoke.yaml"),
             spec={"project": "crm"},
         )
+
+
+def test_generation_spec_short_name_resolves_to_project_generation_dir(tmp_path: Path):
+    spec_dir = tmp_path / "test_data" / "demo" / "generation"
+    spec_dir.mkdir(parents=True)
+    spec_file = spec_dir / "saucedemo_ai.yaml"
+    spec_file.write_text("project: demo\ncases: []\n", encoding="utf-8")
+
+    class Context:
+        test_dir = tmp_path / "test_data" / "demo"
+
+    assert resolve_generation_spec_path(Context(), "saucedemo_ai") == spec_file
+    assert resolve_generation_spec_path(Context(), "saucedemo_ai.yaml") == spec_file
 
 
 def test_generation_spec_string_steps_still_use_ai():
@@ -299,6 +316,57 @@ def test_generation_spec_string_steps_still_use_ai():
 
     assert _has_explicit_steps(natural_spec) is False
     assert _has_explicit_steps(explicit_spec) is True
+
+
+def test_generation_harness_normalizes_model_field_aliases(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "steps": [
+                        {"action": "goto", "url": "https://example.test"},
+                        {
+                            "action": "fill",
+                            "selector": "search_input",
+                            "text": "{{search_keyword}}",
+                        },
+                        {"action": "assert_visible", "selector": "search_button"},
+                    ]
+                }
+            },
+            "elements": {
+                "search_input": {"selector": "#kw", "desc": "ignored"},
+                "search_button": "#su",
+            },
+        }
+    )
+
+    steps = payload["data"]["test_generated"]["steps"]
+    assert steps[0] == {"action": "goto", "value": "https://example.test"}
+    assert steps[1]["value"] == "${search_keyword}"
+    assert "text" not in steps[1]
+    assert payload["elements"]["search_input"] == "#kw"
+
+
+def test_generation_harness_prefixes_pytest_case_names():
+    assert _safe_case_name("saucedemo_backpack_cart") == "test_saucedemo_backpack_cart"
+    assert _safe_case_name("test_existing_name") == "test_existing_name"
 
 
 def test_local_ai_candidate_values_are_not_redacted():

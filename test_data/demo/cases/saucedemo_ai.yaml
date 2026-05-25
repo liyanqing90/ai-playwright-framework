@@ -1,4 +1,4 @@
 test_cases:
-  - name: test_saucedemo_standard_user_add_backpack_to_cart
-  - name: test_saucedemo_locked_user_login_verify_locked_out_error
-  - name: test_saucedemo_standard_user_open_cart_page_verify_elements
+  - name: test_saucedemo_backpack_cart
+  - name: test_saucedemo_locked_user_error
+  - name: test_saucedemo_open_cart

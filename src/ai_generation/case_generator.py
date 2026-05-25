@@ -43,14 +43,18 @@ def generate_case_files(
     use_ai: bool = True,
 ) -> CaseGenerationResult:
     context = load_project_context(project, env=env)
-    spec_path = Path(spec_path)
+    spec_ref = Path(spec_path)
+    spec_path = resolve_generation_spec_path(context, spec_ref)
+    resolved_output_name = output_name or _default_output_name(spec_ref)
     spec = _load_spec(spec_path)
     _validate_spec_project_scope(project=project, spec_path=spec_path, spec=spec)
     payload = _build_payload(context, spec, use_ai=use_ai)
-    harness = GenerationHarness(context=context, spec=spec, output_name=output_name)
+    harness = GenerationHarness(
+        context=context, spec=spec, output_name=resolved_output_name
+    )
     payload = harness.normalize(payload)
     warnings = harness.validate(payload)
-    result = _result_paths(context, payload, output_name=output_name)
+    result = _result_paths(context, payload, output_name=resolved_output_name)
     if not dry_run:
         _write_payload(result, overwrite=overwrite)
     return CaseGenerationResult(
@@ -63,6 +67,39 @@ def generate_case_files(
         payload=payload,
         warnings=warnings,
     )
+
+
+def resolve_generation_spec_path(
+    context: ProjectContext, spec_path: str | Path
+) -> Path:
+    raw = Path(spec_path)
+    candidates: list[Path] = []
+
+    if len(raw.parts) == 1:
+        stem = raw.stem if raw.suffix else raw.name
+        candidates.extend(
+            [
+                context.test_dir / "generation" / f"{stem}.yaml",
+                context.test_dir / "generation" / f"{stem}.yml",
+            ]
+        )
+
+    if raw.suffix:
+        candidates.append(raw)
+    else:
+        candidates.extend([raw.with_suffix(".yaml"), raw.with_suffix(".yml")])
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    searched = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(f"生成规格不存在: {spec_path}. 已查找: {searched}")
+
+
+def _default_output_name(spec_path: str | Path) -> str:
+    path = Path(spec_path)
+    return path.stem if path.suffix else path.name
 
 
 def _load_spec(spec_path: str | Path) -> dict[str, Any]:
@@ -85,6 +122,17 @@ def _validate_spec_project_scope(
         )
 
     parts = Path(spec_path).parts
+    if "test_data" in parts:
+        test_data_index = parts.index("test_data")
+        if test_data_index + 2 < len(parts):
+            scoped_project = parts[test_data_index + 1]
+            scoped_kind = parts[test_data_index + 2]
+            if scoped_kind == "generation" and scoped_project != project:
+                raise ValueError(
+                    f"生成规格目录 test_data/{scoped_project}/generation 与 --project {project} 不一致"
+                )
+        return
+
     if "generation_specs" not in parts:
         return
     spec_root_index = parts.index("generation_specs")

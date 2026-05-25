@@ -1,0 +1,9 @@
+elements:
+  username_input: '#user-name'
+  password_input: '#password'
+  login_btn: '#login-button'
+  backpack_add_cart_btn: "[data-test='add-to-cart-sauce-labs-backpack']"
+  cart_badge: .shopping_cart_badge
+  login_error_msg: "[data-test='error']"
+  cart_icon: .shopping_cart_link
+  cart_page_container: '#cart_contents_container'

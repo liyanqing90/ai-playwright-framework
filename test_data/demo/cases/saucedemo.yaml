@@ -1,4 +1,0 @@
-test_cases:
-  - name: test_saucedemo_login_success
-  - name: test_saucedemo_locked_user_login_error
-  - name: test_saucedemo_checkout_order

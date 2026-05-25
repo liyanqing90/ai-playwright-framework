@@ -8,7 +8,16 @@ requires-python = ">=3.12,<4.0"
 dynamic = ["dependencies"]
 
 [tool.poetry]
-package-mode = false
+package-mode = true
+packages = [
+  { include = "src" },
+  { include = "utils" },
+  { include = "page_objects" },
+]
+
+[tool.poetry.scripts]
+gen = "src.cli.generate_case:cli"
+run_case = "src.cli.run_case:cli"
 
 [tool.poetry.dependencies]
 python = "^3.12"

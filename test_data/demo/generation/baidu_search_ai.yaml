@@ -5,7 +5,7 @@ cases:
   - name: baidu_search_keyword
     description: "百度搜索关键词"
     steps:
-      - "打开百度网页"
+      - "打开 https://www.baidu.com/ 网页"
       - "点击搜索输入框"
       - "输入百度"
       - "点击搜索按钮"

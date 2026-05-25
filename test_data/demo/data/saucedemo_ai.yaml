@@ -1,37 +1,55 @@
 test_data:
-  test_saucedemo_standard_user_add_backpack_to_cart:
-    description: 标准用户登录后添加单个Sauce Labs Backpack到购物车
-    mode: smart
-    steps:
-      - use_module: saucedemo_login
-      - action: click
-        selector: saucedemo_backpack_add
-      - action: assert_text
-        selector: saucedemo_cart_badge
-        value: '1'
-  test_saucedemo_locked_user_login_verify_locked_out_error:
-    description: 锁定用户登录失败，验证错误提示包含locked out
+  test_saucedemo_backpack_cart:
+    description: 标准用户添加单个商品到购物车
     mode: smart
     steps:
       - action: goto
-        value: ${saucedemo_url}
+        value: https://www.saucedemo.com/
       - action: fill
-        selector: saucedemo_username
-        value: ${saucedemo_locked_user}
+        selector: username_input
+        value: ${standard_username}
       - action: fill
-        selector: saucedemo_password
-        value: ${saucedemo_password_value}
+        selector: password_input
+        value: ${common_password}
       - action: click
-        selector: saucedemo_login_button
-      - action: assert_text_contains
-        selector: saucedemo_error_message
-        value: locked out
-  test_saucedemo_standard_user_open_cart_page_verify_elements:
-    description: 标准用户登录后打开购物车页面，验证购物车页面关键元素可见
+        selector: login_btn
+      - action: click
+        selector: backpack_add_cart_btn
+      - action: assert_text
+        selector: cart_badge
+        value: '1'
+  test_saucedemo_locked_user_error:
+    description: 锁定用户登录失败提示
     mode: smart
     steps:
-      - use_module: saucedemo_login
+      - action: goto
+        value: https://www.saucedemo.com/
+      - action: fill
+        selector: username_input
+        value: ${locked_username}
+      - action: fill
+        selector: password_input
+        value: ${common_password}
       - action: click
-        selector: saucedemo_cart_link
+        selector: login_btn
+      - action: assert_text_contains
+        selector: login_error_msg
+        value: locked out
+  test_saucedemo_open_cart:
+    description: 标准用户打开购物车页面
+    mode: smart
+    steps:
+      - action: goto
+        value: https://www.saucedemo.com/
+      - action: fill
+        selector: username_input
+        value: ${standard_username}
+      - action: fill
+        selector: password_input
+        value: ${common_password}
+      - action: click
+        selector: login_btn
+      - action: click
+        selector: cart_icon
       - action: assert_visible
-        selector: saucedemo_checkout_button
+        selector: cart_page_container

@@ -19,6 +19,7 @@ class GenerationHarness:
 
     def normalize(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = self._normalize_top_level(payload)
+        payload["elements"] = self._normalize_elements(payload.get("elements") or {})
         self._normalize_cases_and_data(payload)
         for case_data in payload["data"].values():
             if isinstance(case_data, dict):
@@ -132,8 +133,20 @@ class GenerationHarness:
             action = str(item.get("action") or "").lower()
             if action:
                 item["action"] = _ACTION_ALIASES.get(action, item.get("action"))
+                item = _normalize_action_fields(item)
                 item = _normalize_verify_step(item)
+            item = _normalize_variable_syntax(item)
             normalized.append(item)
+        return normalized
+
+    @staticmethod
+    def _normalize_elements(elements: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
+        for key, value in elements.items():
+            if isinstance(value, dict) and value.get("selector"):
+                normalized[key] = value["selector"]
+            else:
+                normalized[key] = value
         return normalized
 
     @staticmethod
@@ -312,6 +325,37 @@ def _normalize_verify_step(step: dict[str, Any]) -> dict[str, Any]:
     return step
 
 
+def _normalize_action_fields(step: dict[str, Any]) -> dict[str, Any]:
+    action = str(step.get("action") or "").lower()
+    if action in _lower_actions(StepAction.NAVIGATE):
+        _move_first_present(step, aliases=("url", "href", "link"), target="value")
+    if action in _lower_actions(StepAction.FILL, StepAction.TYPE):
+        _move_first_present(step, aliases=("text", "input"), target="value")
+    return step
+
+
+def _move_first_present(
+    step: dict[str, Any], *, aliases: tuple[str, ...], target: str
+) -> None:
+    if step.get(target) is None:
+        for alias in aliases:
+            if step.get(alias) is not None:
+                step[target] = step[alias]
+                break
+    for alias in aliases:
+        step.pop(alias, None)
+
+
+def _normalize_variable_syntax(value: Any) -> Any:
+    if isinstance(value, str):
+        return re.sub(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}", r"${\1}", value)
+    if isinstance(value, list):
+        return [_normalize_variable_syntax(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_variable_syntax(item) for key, item in value.items()}
+    return value
+
+
 def _has_explicit_steps(spec: dict[str, Any]) -> bool:
     if _has_structured_steps(spec.get("steps")):
         return True
@@ -332,7 +376,8 @@ def _has_structured_steps(steps: Any) -> bool:
 
 def _safe_case_name(value: str) -> str:
     name = re.sub(r"[^A-Za-z0-9_\u4e00-\u9fff]+", "_", value.strip()).strip("_")
-    return name or "test_generated"
+    name = name or "generated"
+    return name if name.startswith("test_") else f"test_{name}"
 
 
 def _looks_raw_selector(value: str) -> bool:
