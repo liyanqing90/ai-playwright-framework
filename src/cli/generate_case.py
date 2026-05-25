@@ -44,15 +44,26 @@ def main(
         },
     )
     try:
-        result = generate_case_files(
-            project=project.value,
-            env=context_env.value,
-            spec_path=spec,
-            output_name=None,
-            dry_run=dry_run,
-            overwrite=not no_overwrite,
-            use_ai=True,
+        console.print(
+            f"[cyan][gen][/cyan] project={project.value} spec={spec} "
+            f"dry_run={dry_run} overwrite={not no_overwrite}"
         )
+
+        with console.status("[cyan][gen] 准备生成...[/cyan]", spinner="dots") as status:
+            def report(message: str) -> None:
+                status.update(f"[cyan][gen] {message}[/cyan]")
+                console.print(f"[dim][gen] {message}[/dim]")
+
+            result = generate_case_files(
+                project=project.value,
+                env=context_env.value,
+                spec_path=spec,
+                output_name=None,
+                dry_run=dry_run,
+                overwrite=not no_overwrite,
+                use_ai=True,
+                progress=report,
+            )
         display_generation_result(result, dry_run=dry_run)
         display_token_usage_summary(
             tracker.finish_run(

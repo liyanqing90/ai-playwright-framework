@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -41,22 +42,34 @@ def generate_case_files(
     dry_run: bool = False,
     overwrite: bool = False,
     use_ai: bool = True,
+    progress: Callable[[str], None] | None = None,
 ) -> CaseGenerationResult:
+    _emit(progress, f"加载项目上下文: project={project}, env={env}")
     context = load_project_context(project, env=env)
     spec_ref = Path(spec_path)
+    _emit(progress, f"解析生成规格: {spec_ref}")
     spec_path = resolve_generation_spec_path(context, spec_ref)
     resolved_output_name = output_name or _default_output_name(spec_ref)
+    _emit(progress, f"读取生成规格: {spec_path}")
     spec = _load_spec(spec_path)
+    _emit(progress, "校验生成规格与项目匹配")
     _validate_spec_project_scope(project=project, spec_path=spec_path, spec=spec)
-    payload = _build_payload(context, spec, use_ai=use_ai)
+    payload = _build_payload(context, spec, use_ai=use_ai, progress=progress)
+    _emit(progress, "Harness归一化生成结果")
     harness = GenerationHarness(
         context=context, spec=spec, output_name=resolved_output_name
     )
     payload = harness.normalize(payload)
+    _emit(progress, "Harness校验生成结果")
     warnings = harness.validate(payload)
+    _emit(progress, f"准备输出文件: {resolved_output_name}")
     result = _result_paths(context, payload, output_name=resolved_output_name)
     if not dry_run:
+        _emit(progress, "写入生成文件")
         _write_payload(result, overwrite=overwrite)
+    else:
+        _emit(progress, "dry-run模式，跳过写入")
+    _emit(progress, "生成完成")
     return CaseGenerationResult(
         project=project,
         case_file=result["case_file"],
@@ -67,6 +80,11 @@ def generate_case_files(
         payload=payload,
         warnings=warnings,
     )
+
+
+def _emit(progress: Callable[[str], None] | None, message: str) -> None:
+    if progress:
+        progress(message)
 
 
 def resolve_generation_spec_path(
@@ -148,9 +166,14 @@ def _validate_spec_project_scope(
 
 
 def _build_payload(
-    context: ProjectContext, spec: dict[str, Any], *, use_ai: bool
+    context: ProjectContext,
+    spec: dict[str, Any],
+    *,
+    use_ai: bool,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     if _has_explicit_steps(spec):
+        _emit(progress, "检测到结构化 action steps，跳过模型调用")
         return _payload_from_explicit_spec(spec)
     if not use_ai:
         raise ValueError("规格没有显式steps，关闭AI时无法从自然语言生成用例")
@@ -163,6 +186,7 @@ def _build_payload(
     prompt_version = str(prompts_cfg.get("generation_version", "generation-v1"))
     schema_version = str(llm_cfg.get("schema_version", "ui-ai-schema-v1"))
     provider = ChatCompletionProvider()
+    _emit(progress, "调用模型生成用例，等待模型响应...")
     result = provider.complete_model(
         [
             {
