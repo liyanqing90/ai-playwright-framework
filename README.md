@@ -16,7 +16,6 @@
 - [最佳实践](#最佳实践)
 - [常用命令](#常用命令)
 - [元素定位技巧](#元素定位技巧)
-- [贡献指南](#贡献指南)
 - [常见问题](#常见问题)
 - [相关资源](#相关资源)
 
@@ -57,7 +56,9 @@
 
 **主要文件**:
 
-- `test_runner.py`: 主入口文件，负责解析命令行参数和启动测试
+- `src/cli/run_case.py`: 推荐测试执行入口，对应 `poetry run run_case`
+- `src/cli/generate_case.py`: 推荐用例生成入口，对应 `poetry run gen`
+- `test_runner.py`: 兼容旧命令入口，保留运行和生成能力，但新流程优先使用 Poetry scripts
 - `src/runner.py`: 核心运行器实现，负责测试用例的加载和执行
 
 ### 2. 测试用例执行器 (TestCaseExecutor)
@@ -142,7 +143,7 @@
 
 3. **有头模式运行**
    ```bash
-   python test_runner.py --project demo --headed
+   poetry run run_case -p demo --headed
    ```
 
 4. **使用 AI/Smart 执行模式运行**
@@ -150,7 +151,7 @@
    poetry run run_case -p demo -f saucedemo_ai -m smart
    ```
 
-   `--ai-mode` 只作为默认执行模式使用。若 `data` 层用例或单个步骤已经声明 `mode`，则优先使用 YAML 中的配置。
+   `-m/--ai-mode` 只作为默认执行模式使用。若 `data` 层用例或单个步骤已经声明 `mode`，则优先使用 YAML 中的配置。
 
 ### 生成用例
 
@@ -198,81 +199,109 @@ allure serve reports/allure-results
 
 ## AI 用例生成与智能执行
 
-### 设计边界
+### 最新架构
 
-AI 能力是对现有框架的增强，不替代原有 YAML 三层结构：
+AI 能力是当前框架的原生增强层，不是单独 runner，也不替代已有三层测试数据结构。执行仍然走原来的链路：
 
-1. `cases` 目录只组织用例执行顺序，只允许声明 `name`。
-2. `data` 目录存储用例说明、执行模式和步骤。
-3. `elements` 目录存储元素定位。
-4. `modules` 目录存储公共组件，生成用例应优先复用。
-5. `vars` 目录存储项目变量，生成用例应优先引用变量而不是硬编码数据。
+```text
+poetry run run_case
+→ pytest 动态收集 cases/*.yaml
+→ CaseExecutor
+→ StepExecutor
+→ command executor
+→ page_objects/BasePage
+→ Playwright
+```
 
-生成链路由 `GenerationHarness` 做结构门禁：
+AI 只介入两个阶段：
 
-- `cases` 层不能写入 `description`、`mode`、`steps`。
+1. 用例生成阶段：读取项目上下文，生成符合当前项目结构的 YAML。
+2. 用例执行阶段：在 selector/target 解析失败或需要自然语言步骤时，提供智能定位、视觉兜底和自愈。
+
+当前核心目录职责固定如下：
+
+| 目录 | 职责 | AI 生成/执行要求 |
+|---|---|---|
+| `cases/` | 只组织用例顺序 | 只写 `test_cases[].name`，不写步骤、模式、描述 |
+| `data/` | 存储用例描述、模式和步骤 | `description`、`mode`、`steps` 都在这里 |
+| `elements/` | 存储元素 key 和 selector | 自愈成功后只回写已有 key |
+| `modules/` | 存储公共组件/复用流程 | 生成用例优先复用，例如登录组件 |
+| `vars/` | 存储项目变量 | 生成用例优先引用变量，不硬编码测试数据 |
+
+生成链路由 `GenerationHarness` 统一门禁：
+
+- `cases` 层不能写 `description`、`mode`、`steps`。
 - `data.<case>.mode` 只允许 `strict`、`smart`、`ai`。
-- 每条生成用例必须至少包含一个项目已有格式的断言步骤。
-- 断言必须使用项目已有 `assert_*` 格式，例如 `assert_text`、`assert_text_contains`、`assert_visible`。
-- 元素、模块引用必须能在当前项目资产或本次生成资产中找到。
+- 生成用例必须有项目格式的断言步骤，例如 `assert_text`、`assert_text_contains`、`assert_visible`。
+- 元素、模块、变量引用必须存在于当前项目资产或本次生成资产中。
+- 模型输出会经过规范化、校验、必要时修复，再落盘。
 
 ### 环境配置
 
-在项目根目录创建或维护 `.env`，用于放置模型服务配置。不要把真实私钥写入文档或提交到公共仓库。
+项目根目录 `.env` 只使用通用字段，不再读取厂商专用字段：
 
 ```env
-LLM_API_KEY=
 LLM_BASE_URL=http://10.168.78.49:4000/v1
+LLM_API_KEY=
 LLM_MODEL=ep-xxxxxxxx
 LLM_REASONING_EFFORT=medium
+
 UI_VISION_BASE_URL=http://10.168.78.49:5100
+UI_VISION_API_KEY=
 BASE_URL=
 ```
 
-大模型接口地址只读取 `LLM_BASE_URL`。框架会自动请求 `{LLM_BASE_URL}/chat/completions`，不再读取厂商专用或其他兼容 URL 字段。
-`UI_VISION_BASE_URL` 用于局域网 UI Vision Service，默认不做鉴权；如果 `config/ai_config.yaml` 中 `vision.enabled=false`，历史执行不会调用该服务。
+说明：
 
-AI 默认配置在 `config/ai_config.yaml`：
+- `LLM_BASE_URL` 会自动拼接为 `{LLM_BASE_URL}/chat/completions`。
+- `LLM_MODEL` 是模型或私有 endpoint ID。
+- `UI_VISION_BASE_URL` 指向同级部署的 UI Vision Service。
+- 本地/内网模型场景默认不做脱敏，DOM 候选会保留真实 UI 文本和属性。
 
-- `runtime.default_mode`: 默认执行模式，默认 `strict`。
-- `runtime.allow_ai_in_smart`: `smart` 模式无法通过显式选择器、历史定位、规则定位解析时，是否允许 AI 兜底。
-- `runtime.ai_enabled`: 是否启用 AI 定位和 AI 生成。
-- `selector_registry.sqlite_path`: 智能定位结果缓存库，默认 `.ui_auto/selectors.db`。
-- `vision.enabled`: 是否启用 UI Vision 兜底。demo 默认启用；稳定 selector 会先通过，不会触发视觉服务。
-- `vision.service_url`: UI Vision Service 局域网地址，也可用 `.env` 中的 `UI_VISION_BASE_URL` 覆盖。
-- `vision.allow_coordinate_fallback`: 是否允许在无法映射 DOM selector 时使用坐标点击/输入兜底。默认 `false`，推荐先保持关闭。
-- `vision.send_dom_candidates`: 调用视觉服务时是否发送 DOM 候选及坐标，默认 `true`，用于让视觉结果优先回落到可复用 selector。
-- `prompts.ai_step_version`: 原生 AI 步骤编译提示词版本。
+`config/ai_config.yaml` 是 AI 行为开关：
 
-### 生成规格
+| 配置 | 作用 |
+|---|---|
+| `runtime.default_mode` | 默认执行模式，建议保持 `strict` |
+| `runtime.allow_ai_in_smart` | `smart` 定位失败后是否允许 LLM DOM 兜底 |
+| `runtime.ai_enabled` | 是否启用 AI 定位、AI 步骤和生成 |
+| `runtime.max_ai_calls_per_test` | 单用例 AI 调用上限 |
+| `selector_registry.sqlite_path` | selector 自愈和历史定位缓存库 |
+| `self_healing.persist_elements` | 自愈成功后是否异步回写 `elements/*.yaml` |
+| `vision.enabled` | 是否启用 UI Vision 标准兜底 |
+| `vision.service_url` | UI Vision Service 地址，可被 `.env` 覆盖 |
+| `vision.allow_coordinate_fallback` | 是否允许无法映射 DOM 时使用坐标兜底，默认建议 `false` |
+| `vision.send_dom_candidates` | 调用视觉服务时是否发送 DOM 候选和坐标 |
 
-生成规格只写业务意图，不把元素、变量、公共组件复用要求写到用例描述里。复用策略由系统提示词、项目上下文和 `GenerationHarness` 负责：
+### 用例生成
 
-- 规格目录必须和 `--project` 对应，例如 `test_data/demo/generation/*.yaml` 只能配合 `-p demo`。
-- `project` 字段如果存在，必须和命令行 `--project` 一致。
-- 推荐每个用例写成对象，并用 `steps` 的 `-` 列表表达自然语言步骤；不要把多个步骤塞进一个长字符串里让模型靠标点拆分。
-- 模型会读取当前项目已有 `elements`、`modules`、`vars` 和历史用例。
-- Prompt 要求优先复用已有公共组件、元素 key 和变量 key。
-- Harness 会校验输出仍符合三层结构、断言格式、元素/模块引用合法性。
+生成规格放在：
 
-自然语言步骤规格示例：
-
-```yaml
-project: demo
-description: "生成百度搜索流程用例"
-mode: smart
-cases:
-  - name: baidu_search_keyword
-    description: "百度搜索关键词"
-    steps:
-      - "打开 https://www.baidu.com/ 网页"
-      - "点击搜索输入框"
-      - "输入百度"
-      - "点击搜索按钮"
-      - "断言搜索结果页打开成功"
+```text
+test_data/<project>/generation/*.yaml
 ```
 
-业务场景规格示例：
+推荐命令：
+
+```powershell
+poetry run gen -p demo saucedemo_ai
+```
+
+预览但不写文件：
+
+```powershell
+poetry run gen -p demo saucedemo_ai --dry-run
+```
+
+生成规则：
+
+1. 命令中的 `-p demo` 决定读取 `test_data/demo/generation/saucedemo_ai.yaml`。
+2. 输出文件名默认和规格名一致，并默认覆盖对应生成文件。
+3. 规格只写业务意图和自然语言步骤，不在描述里硬塞“必须复用某元素/某组件”。
+4. 复用 `elements/modules/vars` 是系统提示词、项目上下文和 Harness 的职责。
+5. 生成完成后会写入 `cases/`、`data/`，必要时写入 `elements/`、`modules/`、`vars/`。
+
+规格示例：
 
 ```yaml
 project: demo
@@ -286,81 +315,78 @@ cases:
       - "使用标准用户登录"
       - "添加 Sauce Labs Backpack 到购物车"
       - "断言购物车数量为 1"
-  - name: saucedemo_locked_user_error
-    description: "锁定用户登录失败提示"
-    steps:
-      - "打开 https://www.saucedemo.com/ 登录页"
-      - "使用锁定用户登录"
-      - "断言页面展示 locked out 错误提示"
 ```
 
-输出文件仍然遵守项目三层结构：
+生成后的结构示例：
 
 ```yaml
 # test_data/demo/cases/saucedemo_ai.yaml
 test_cases:
-  - name: test_saucedemo_standard_user_add_backpack_to_cart
+  - name: test_saucedemo_backpack_cart
 ```
 
 ```yaml
 # test_data/demo/data/saucedemo_ai.yaml
 test_data:
-  test_saucedemo_standard_user_add_backpack_to_cart:
-    description: 标准用户登录后添加单个Sauce Labs Backpack到购物车
+  test_saucedemo_backpack_cart:
+    description: 标准用户添加单个商品到购物车
     mode: smart
     steps:
       - use_module: saucedemo_login
+        params:
+          username: ${standard_username}
       - action: click
-        selector: saucedemo_backpack_add
+        selector: add_to_cart_backpack_btn
       - action: assert_text
-        selector: saucedemo_cart_badge
-        value: "1"
+        selector: shopping_cart_badge
+        value: '1'
 ```
 
 ### 执行模式
 
-执行模式可以配置在命令行、用例数据层或步骤层。优先级如下：
+模式可以配置在命令行、用例数据层或步骤层。优先级从高到低：
 
 1. 单个步骤的 `mode`。
 2. `data.<case>.mode`。
-3. `--ai-mode` 或 `UI_AI_MODE` 环境变量。
-4. `config/ai_config.yaml` 中的 `runtime.default_mode`。
+3. `-m/--ai-mode` 或 `UI_AI_MODE`。
+4. `config/ai_config.yaml` 的 `runtime.default_mode`。
 
-三种模式说明：
+三种模式：
 
-- `strict`: 历史默认模式，只使用明确 selector，不做智能定位。
-- `smart`: 先验证显式 selector；失效时依次尝试历史定位、规则定位；配置允许时再调用 AI 兜底。
-- `ai`: 保留确定性定位优先级，但允许使用 AI 解析语义目标。
+| 模式 | 行为 | 适合场景 |
+|---|---|---|
+| `strict` | 只使用明确 selector，不做智能定位 | 历史稳定用例、回归主链路 |
+| `smart` | 先验证 selector，失败或只有 target 时进入智能兜底 | 大多数需要自愈的业务用例 |
+| `ai` | 仍优先确定性定位，但允许更积极使用 AI 语义定位 | 探索性用例、目标描述多于 selector 的用例 |
 
-AI/Smart 是框架原生执行模式，不是独立 runner。用例仍然走 `StepExecutor -> command -> page_object` 的执行链路，只是在 selector/target 解析阶段增加智能能力。
-
-步骤级 AI 适合只让某个不稳定步骤进入智能定位：
+步骤级 smart：
 
 ```yaml
 - action: click
-  target: "登录按钮"
+  target: "Sauce Labs Backpack add to cart button"
   mode: smart
 ```
 
-用例级 `mode` 适合作为该用例所有步骤的默认模式：
+用例级 smart/ai：
 
 ```yaml
 test_data:
   test_login:
     description: 登录流程
-    mode: smart
+    mode: ai
     steps:
-      - action: fill
-        selector: username_input
-        value: "${username}"
+      - action: click
+        target: Open Menu
 ```
 
-自然语言 AI 步骤适合页面探索、低频维护或原型用例。它是框架原生 action，会先编译成已有原子动作，再进入统一命令执行链路：
+原生 AI 步骤：
 
 ```yaml
 - action: ai_step
-  instruction: "打开购物车"
+  instruction: "Click the shopping cart link in the top-right header."
 ```
+
+`ai_step` 不是直接操作浏览器。它会先由模型编译为框架已有原子动作，例如 `click`、`fill`、`press_key`、`wait`，然后继续走统一 command executor。
 
 兼容别名：
 
@@ -369,76 +395,90 @@ test_data:
   instruction: "点击登录按钮"
 ```
 
-推荐优先级：
+建议使用顺序：
 
-1. 稳定业务用例优先写明确 `action + selector`。
-2. selector 不稳定但目标明确时写 `action + target + mode: smart/ai`。
-3. 需要自然语言探索时才使用 `ai_step`。
+1. 稳定业务用例优先写 `action + selector`。
+2. selector 不稳定但目标明确时写 `action + target + mode: smart`。
+3. 整个用例多处需要语义定位时，在 `data.<case>.mode` 写 `smart` 或 `ai`。
+4. 只有页面探索、低频维护、原型验证时使用 `ai_step`。
+
+### 标准定位与兜底顺序
+
+当前执行时的 selector 解析顺序：
+
+```text
+明确 selector 验证
+→ selector registry 历史定位
+→ DOM 规则/语义候选
+→ UI Vision 截图理解 + DOM 候选映射
+→ LLM DOM selector 选择
+→ 可选坐标兜底
+```
+
+关键点：
+
+- 稳定 selector 会直接通过，不调用 AI 或 Vision。
+- DOM 规则和 registry 比模型便宜，优先执行。
+- UI Vision 是标准兜底能力，不是新的 YAML action。
+- LLM DOM selector 更省 token、模型要求更低；UI Vision 更适合 DOM 不可靠、OCR、图标、遮挡、视觉布局判断。
+- `vision.allow_coordinate_fallback=false` 时，Vision 结果必须能映射回 selector，否则继续后续兜底或失败。
 
 ### Selector 自愈与 elements 回写
 
-`smart`/`ai` 模式下，如果已有 element key 对应的 selector 失效，框架会先验证失败原因，再按历史定位、规则定位、UI Vision、LLM DOM 选择的顺序寻找新 selector。
+当 `smart/ai` 模式发现已有 element key 的 selector 失效时，会触发自愈：
 
-自愈成功后的处理规则：
+1. 记录原 selector 和失败原因。
+2. 找到并验证新 selector。
+3. 当前步骤立即使用新 selector 继续执行。
+4. 如果原步骤写的是 `selector: element_key`，后台异步回写该 key 所在的 `elements/*.yaml`。
+5. 回写失败只记录日志，不阻塞已经自愈成功的用例。
 
-1. 当前步骤立即使用已验证的新 selector 继续执行。
-2. 如果原步骤写的是 `selector: element_key`，框架会异步回写 `test_data/<project>/elements/*.yaml` 中该 key 的 selector。
-3. 未显式写 `target` 时，默认用 element key 作为语义目标，例如 `add_to_cart_backpack_btn`。
-4. 回写只更新已有 key，不自动新增未知 key。
-5. 回写失败只记录错误日志，不阻塞当前用例执行；pytest 会话结束时会短暂等待后台回写完成。
+回写边界：
 
-可通过配置关闭持久化回写：
+- 只更新已有 element key，不新增未知 key。
+- 只有新 selector 已通过 Playwright 验证才会回写。
+- 未写 `target` 时，默认用 element key 作为语义目标，例如 `add_to_cart_backpack_btn`。
+
+关闭持久化回写：
 
 ```yaml
 self_healing:
   persist_elements: false
 ```
 
-或临时关闭：
+临时关闭：
 
 ```powershell
 $env:UI_AI_PERSIST_HEALED_SELECTORS="false"
 ```
 
-### UI Vision 兜底链路
+### UI Vision Service
 
-UI Vision 不是新的 YAML 操作类型，而是 `smart`/`ai` 模式下 DOM/规则无法定位后的标准兜底能力：
+UI Vision Service 独立部署在当前项目同级目录：
 
 ```text
-显式 selector
-→ selector registry
-→ 规则定位
-→ UI Vision 截图理解 + DOM 候选映射
-→ LLM DOM 候选选择
-→ 可选坐标兜底
+D:\project\ui_vision_service
 ```
 
-关键规则：
+它只负责视觉识别，不负责执行点击、输入、断言流程：
 
-- 用例仍然写在 `cases`、`data`、`elements` 三层结构中，不写 `vision_click` 之类的新 action。
-- UI Vision Service 通过 `UI_VISION_BASE_URL` 局域网访问，框架发送当前截图、目标描述、页面 URL 和 DOM 候选坐标。
-- 服务如果能返回 `selector`、`selected_candidate_index` 或可映射到 DOM 候选的 `box/center`，框架会继续用 Playwright selector 执行并写入 selector registry。
-- 只有 `vision.allow_coordinate_fallback=true` 且视觉结果无法映射 DOM 时，才会使用坐标点击/输入兜底；默认关闭，避免掩盖真实 selector 质量问题。
-- 本地大模型场景默认不脱敏，DOM 候选会保留真实 UI 文本和属性，便于模型理解页面。
+```text
+UI 自动化执行机
+→ 截图 + DOM candidates
+→ UI Vision Service
+→ OCR + 视觉模型
+→ 返回 selector / candidate / box / center / reason
+→ Playwright 执行
+```
 
-服务端代码位于当前项目同级目录 `D:\project\ui_vision_service`，按独立虚拟环境或 Docker 安装，避免 OCR/Paddle 重依赖影响主 UI 自动化运行环境：
+Docker 启动：
 
 ```powershell
 cd D:\project\ui_vision_service
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5100
-```
-
-Docker 部署：
-
-```powershell
-cd D:\project\ui_vision_service
-copy .env.example .env
 docker compose up -d --build
 ```
 
-服务启动后可用以下命令验证健康状态：
+健康检查：
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5100/health
@@ -450,33 +490,59 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5100/health
 poetry run run_case -p demo -f vision_showcase
 ```
 
-### 日志输出
+日志中应能看到类似：
 
-为了兼容历史用例日志，主步骤日志保持原格式：
+```text
+AI执行模式: smart | 定位来源: UI Vision DOM兜底 | 选择器: #login-button | vision_reason: ...
+```
+
+### Demo 覆盖用例
+
+当前 demo 已提供以下 AI 能力样例：
+
+| 文件 | 覆盖能力 | 执行命令 |
+|---|---|---|
+| `saucedemo_ai` | 生成用例、模块复用、smart 稳定执行 | `poetry run run_case -p demo -f saucedemo_ai` |
+| `ai_modes_showcase` | 步骤级 smart、原生 `ai_step`、case 级 `mode: ai` | `poetry run run_case -p demo -f ai_modes_showcase` |
+| `vision_showcase` | 标准 UI Vision DOM 兜底 | `poetry run run_case -p demo -f vision_showcase` |
+
+全量 demo 验证：
+
+```powershell
+poetry run run_case -p demo
+```
+
+### 日志与排查
+
+主步骤日志保持原格式，兼容历史用例：
 
 ```text
 执行步骤: click | 选择器: #login-button | 值: None
 ```
 
-AI/Smart 模式会追加一行辅助日志：
+AI/Smart 会追加定位说明：
 
 ```text
-AI执行模式: smart | 定位来源: 显式选择器 | 选择器: #login-button | AI兜底: 否
+AI执行模式: smart | 定位来源: 规则定位 | 目标: Open Menu | 选择器: #react-burger-menu-btn | AI兜底: 否
 ```
 
-模型 I/O 追踪用于排查生成或 AI 执行失败：
+断言成功日志会输出预期和实际：
+
+```text
+断言通过: action=assert_text | selector=.shopping_cart_badge | 预期结果=1 | 实际结果=1
+```
+
+模型 I/O 追踪：
 
 ```text
 logs/model_io/<run_id>/*.json
 ```
 
-其中会保存模型请求 payload，包括生成规格、项目上下文、运行时页面 URL、DOM 候选、response_format，以及模型原始响应。run 成功后自动清理；run 失败时保留，并在 token usage summary 中写入 `model_io_dir`。
+规则：
 
-断言成功会输出项目统一断言日志：
-
-```text
-断言通过: action=assert_text | selector=.shopping_cart_badge | 预期结果=1 | 实际结果=1
-```
+- 成功 run 自动清理模型 I/O 明细。
+- 失败 run 保留模型请求和原始响应，并在 token usage summary 中写入 `model_io_dir`。
+- 用例生成失败会保留 `logs/generation_runs/<timestamp>_<project>_<spec>/`，用于查看模型输入、模型原始输出、Harness 修复输入和失败原因。
 
 ## 项目结构
 
@@ -523,7 +589,7 @@ zhijia_ui/
 ├── pyproject.toml           # Poetry项目配置
 ├── pytest.ini               # Pytest配置文件
 ├── README.md                # 项目文档
-└── test_runner.py           # 测试运行器与用例生成入口
+└── test_runner.py           # 兼容旧命令入口，新流程优先使用 poetry run run_case / poetry run gen
 ```
 
 ## 测试开发指南
@@ -945,7 +1011,7 @@ $ poetry run gen -p demo saucedemo_ai
 - **Chrome插件**: SelectorsHub
 - **PyCharm插件**: Test Automation
 - **Playwright录制功能**: 自动生成元素定位符
-- **AI辅助**: 使用ChatGPT或DeepSeek分析HTML并生成定位符
+- **AI辅助**: 优先使用框架内置 smart/ai 模式、selector 自愈和 UI Vision 兜底，不建议在用例中手工复制模型生成的临时 selector
 
 ### 元素定位最佳实践
 
@@ -1002,12 +1068,12 @@ A: 可能的原因和解决方案：
 A: 使用以下方法：
 
 1. 添加 `page.pause()` 暂停浏览器
-2. 使用有头模式运行: `python test_runner.py --project demo --headed`
+2. 使用有头模式运行: `poetry run run_case -p demo --headed`
 3. 检查生成的日志和截图
 
 **Q: smart 模式会不会影响历史用例？**
 
-A: 默认执行模式仍是 `strict`。只有命令行指定 `--ai-mode smart/ai`，或 `data`/步骤中声明 `mode: smart`、`mode: ai` 时才会启用智能定位。历史用例没有声明 mode 时按 strict 执行。
+A: 默认执行模式仍是 `strict`。只有命令行指定 `-m/--ai-mode smart/ai`，或 `data`/步骤中声明 `mode: smart`、`mode: ai` 时才会启用智能定位。历史用例没有声明 mode 时按 strict 执行。
 
 **Q: 生成用例为什么必须有断言？**
 
