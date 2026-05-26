@@ -3,12 +3,12 @@ from __future__ import annotations
 import os
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from src.ai_runtime.config import load_ai_config
-from src.ai_runtime.contracts import ObservedOperationDecision, SelectorDecision
+from src.ai_runtime.contracts import AiStepDecision, SelectorDecision
 from src.ai_runtime.playwright_selectors import (
     collect_candidates,
     heuristic_selectors,
@@ -34,6 +34,9 @@ class ResolvedSelector:
     selector: str | None
     source: str
     healed: bool = False
+    healing_attempted: bool = False
+    original_selector: str | None = None
+    original_error: str | None = None
     ai_called: bool = False
     confidence: float | None = None
     prompt_version: str | None = None
@@ -47,13 +50,13 @@ class ResolvedSelector:
 
 
 @dataclass(frozen=True)
-class ObservedOperation:
+class AiStepOperation:
     action: str
     selector: str | None = None
     value: str | None = None
     key: str | None = None
     wait_ms: int | None = None
-    source: str = "ai_observe"
+    source: str = "ai_step"
     prompt_version: str | None = None
     schema_version: str | None = None
     model: str | None = None
@@ -87,8 +90,10 @@ class SmartResolver:
         self.selector_prompt_version = str(
             prompts_cfg.get("selector_version", "selector-v1")
         )
-        self.observe_prompt_version = str(
-            prompts_cfg.get("observe_version", "observe-v1")
+        self.ai_step_prompt_version = str(
+            prompts_cfg.get("ai_step_version")
+            or prompts_cfg.get("observe_version")
+            or "ai-step-v1"
         )
         self.vision_prompt_version = str(prompts_cfg.get("vision_version", "vision-v1"))
         self.schema_version = str(llm_cfg.get("schema_version", "ui-ai-schema-v1"))
@@ -106,6 +111,8 @@ class SmartResolver:
         normalized_selector = normalize_selector(selector) if selector else None
         target_text = target or selector
         page_key = self._page_key()
+        healing_attempted = False
+        original_error: str | None = None
 
         if normalized_selector:
             try:
@@ -118,12 +125,21 @@ class SmartResolver:
                     raise ValueError(
                         f"explicit selector semantic mismatch: target={target_text}, selector={normalized_selector}"
                     )
-                return ResolvedSelector(selector=normalized_selector, source="explicit")
+                return ResolvedSelector(
+                    selector=normalized_selector,
+                    source="explicit",
+                    original_selector=normalized_selector,
+                )
             except Exception as exc:
                 if mode == "strict" or not target_text:
                     raise
-                logger.warning(
-                    f"显式selector失效，进入智能定位: {normalized_selector} - {exc}"
+                healing_attempted = True
+                original_error = str(exc)
+                self._log_heal_start(
+                    action=action,
+                    selector=normalized_selector,
+                    target=target_text,
+                    error=original_error,
                 )
 
         if mode == "strict":
@@ -156,7 +172,22 @@ class SmartResolver:
                         )
                         raise ValueError("registry selector semantic mismatch")
                     self.registry.mark_success(record.id)
-                    return ResolvedSelector(selector=record.selector, source="registry")
+                    self._log_heal_success(
+                        source="registry",
+                        selector=record.selector,
+                        confidence=record.confidence,
+                        healing_attempted=healing_attempted,
+                    )
+                    return self._with_healing_context(
+                        ResolvedSelector(
+                            selector=record.selector,
+                            source="registry",
+                            confidence=record.confidence,
+                        ),
+                        healing_attempted=healing_attempted,
+                        original_selector=normalized_selector,
+                        original_error=original_error,
+                    )
                 except Exception as exc:
                     if str(exc) != "registry selector semantic mismatch":
                         self.registry.mark_failed(
@@ -164,6 +195,12 @@ class SmartResolver:
                             unstable_threshold=self.unstable_threshold,
                             last_error="registry selector verification failed",
                         )
+                    self._log_heal_rejected(
+                        source="registry",
+                        selector=record.selector,
+                        reason=str(exc),
+                        healing_attempted=healing_attempted,
+                    )
 
         selector_candidates = semantic_selectors(
             self.page, target_text, action, limit=self.candidate_limit
@@ -187,14 +224,51 @@ class SmartResolver:
                     source="heuristic",
                     confidence=0.8,
                 )
-                return ResolvedSelector(selector=stable, source="heuristic")
-            except Exception:
+                self._log_heal_success(
+                    source="heuristic",
+                    selector=stable,
+                    confidence=0.8,
+                    healing_attempted=healing_attempted,
+                )
+                return self._with_healing_context(
+                    ResolvedSelector(
+                        selector=stable,
+                        source="heuristic",
+                        confidence=0.8,
+                    ),
+                    healing_attempted=healing_attempted,
+                    original_selector=normalized_selector,
+                    original_error=original_error,
+                )
+            except Exception as exc:
+                self._log_heal_rejected(
+                    source="heuristic",
+                    selector=candidate,
+                    reason=str(exc),
+                    healing_attempted=healing_attempted,
+                )
                 continue
 
         if mode == "smart" and not self.allow_ai_in_smart:
-            raise ValueError(f"smart模式未解析到元素，且配置禁止AI兜底: {target_text}")
+            message = f"smart模式未解析到元素，且配置禁止AI兜底: {target_text}"
+            self._log_heal_failed(
+                action=action,
+                target=target_text,
+                selector=normalized_selector,
+                errors=[message],
+                healing_attempted=healing_attempted,
+            )
+            raise ValueError(message)
         if not self.ai_enabled:
-            raise ValueError(f"AI定位未启用，无法解析目标: {target_text}")
+            message = f"AI定位未启用，无法解析目标: {target_text}"
+            self._log_heal_failed(
+                action=action,
+                target=target_text,
+                selector=normalized_selector,
+                errors=[message],
+                healing_attempted=healing_attempted,
+            )
+            raise ValueError(message)
 
         errors: list[str] = []
         try:
@@ -204,6 +278,13 @@ class SmartResolver:
         except Exception as exc:
             errors.append(f"llm={exc}")
             if not self.vision_settings.enabled:
+                self._log_heal_failed(
+                    action=action,
+                    target=target_text,
+                    selector=normalized_selector,
+                    errors=errors,
+                    healing_attempted=healing_attempted,
+                )
                 raise
             try:
                 resolved = self._resolve_with_vision(
@@ -212,6 +293,14 @@ class SmartResolver:
             except (VisionConfigurationError, VisionServiceUnavailable) as vision_exc:
                 logger.warning(
                     f"UI Vision服务不可用，跳过视觉兜底并保持原有定位失败: {vision_exc}"
+                )
+                errors.append(f"vision={vision_exc}")
+                self._log_heal_failed(
+                    action=action,
+                    target=target_text,
+                    selector=normalized_selector,
+                    errors=errors,
+                    healing_attempted=healing_attempted,
                 )
                 raise exc
 
@@ -235,15 +324,33 @@ class SmartResolver:
                 candidate_count=resolved.candidate_count,
                 replace_active=True,
             )
+            self._log_heal_success(
+                source=resolved.source,
+                selector=resolved.selector,
+                confidence=resolved.confidence,
+                healing_attempted=healing_attempted,
+            )
         elif not resolved.coordinate:
             detail = "; ".join(errors) if errors else target_text
+            self._log_heal_failed(
+                action=action,
+                target=target_text,
+                selector=normalized_selector,
+                errors=[detail],
+                healing_attempted=healing_attempted,
+            )
             raise ValueError(f"智能定位未返回可执行目标: {detail}")
-        return resolved
+        return self._with_healing_context(
+            resolved,
+            healing_attempted=healing_attempted,
+            original_selector=normalized_selector,
+            original_error=original_error,
+        )
 
-    def observe_operation(self, *, instruction: str, timeout: int) -> ObservedOperation:
+    def resolve_ai_step(self, *, instruction: str, timeout: int) -> AiStepOperation:
         if not self.ai_enabled:
-            raise ValueError("AI observe未启用")
-        self._claim_ai_call("observe")
+            raise ValueError("AI步骤未启用")
+        self._claim_ai_call("ai_step")
         candidates = collect_candidates(self.page, limit=self.candidate_limit)
         provider = ChatCompletionProvider()
         decision = provider.complete_model(
@@ -251,9 +358,10 @@ class SmartResolver:
                 {
                     "role": "system",
                     "content": (
-                        "你是受控的UI自动化观察器。只能从候选元素中选择一个操作，"
-                        "返回JSON对象，不要解释。字段: action(click/fill/press/wait/skip), "
-                        "selector, value, key, wait_ms。"
+                        "你是UI自动化原生AI步骤编译器。根据用户指令从候选元素中选择一个框架支持的原子动作，"
+                        "只返回JSON对象，不要解释。action只允许click/fill/press/wait/skip。"
+                        "click/fill/press必须返回候选元素中的selector；fill返回value；press返回key；"
+                        "wait返回wait_ms。不要直接执行浏览器操作。"
                     ),
                 },
                 {
@@ -261,7 +369,7 @@ class SmartResolver:
                     "content": self._json_payload(
                         {
                             "url": self.page.url,
-                            "prompt_version": self.observe_prompt_version,
+                            "prompt_version": self.ai_step_prompt_version,
                             "schema_version": self.schema_version,
                             "instruction": instruction,
                             "candidates": candidates,
@@ -269,21 +377,20 @@ class SmartResolver:
                     ),
                 },
             ],
-            ObservedOperationDecision,
-            schema_name="ObservedOperationDecision",
-            usage_operation="runtime.observe_operation",
+            AiStepDecision,
+            schema_name="AiStepDecision",
+            usage_operation="runtime.ai_step",
             usage_metadata={
-                "schema_name": "ObservedOperationDecision",
-                "prompt_version": self.observe_prompt_version,
+                "schema_name": "AiStepDecision",
+                "prompt_version": self.ai_step_prompt_version,
                 "page_url": self.page.url,
             },
         )
-        action = decision.action
-        if action in {"skip", "wait"}:
-            return ObservedOperation(
-                action=action,
+        if decision.action in {"skip", "wait"}:
+            return AiStepOperation(
+                action=decision.action,
                 wait_ms=decision.wait_ms or 1000,
-                prompt_version=self.observe_prompt_version,
+                prompt_version=self.ai_step_prompt_version,
                 schema_version=self.schema_version,
                 model=provider.settings.model,
                 candidate_count=len(candidates),
@@ -291,38 +398,25 @@ class SmartResolver:
             )
         selector = normalize_selector(str(decision.selector or ""))
         if not selector:
-            raise ValueError("AI observe未返回selector")
-        verify_action = "fill" if action == "fill" else "click"
+            raise ValueError("AI步骤未返回selector")
+        verify_action = "fill" if decision.action == "fill" else "click"
         verify_selector(self.page, selector, action=verify_action, timeout=timeout)
-        return ObservedOperation(
-            action=action,
+        return AiStepOperation(
+            action=decision.action,
             selector=selector,
             value=decision.value,
             key=decision.key,
-            prompt_version=self.observe_prompt_version,
+            prompt_version=self.ai_step_prompt_version,
             schema_version=self.schema_version,
             model=provider.settings.model,
             candidate_count=len(candidates),
             candidate_hash=self._candidate_hash(candidates),
         )
 
-    def apply_operation(self, operation: ObservedOperation, *, timeout: int) -> None:
-        if operation.action == "skip":
-            return
-        if operation.action == "wait":
-            self.page.wait_for_timeout(operation.wait_ms or 1000)
-            return
-        if not operation.selector:
-            raise ValueError(f"AI操作 {operation.action} 缺少selector")
-        locator = self.page.locator(operation.selector).first
-        if operation.action == "click":
-            locator.click(timeout=timeout)
-        elif operation.action == "fill":
-            locator.fill(operation.value or "", timeout=timeout)
-        elif operation.action == "press":
-            locator.press(operation.key or "Enter", timeout=timeout)
-        else:
-            raise ValueError(f"不支持的AI操作: {operation.action}")
+    # Backward-compatible method name. The execution layer now compiles this
+    # result back into the normal command pipeline instead of applying it here.
+    def observe_operation(self, *, instruction: str, timeout: int) -> AiStepOperation:
+        return self.resolve_ai_step(instruction=instruction, timeout=timeout)
 
     def _resolve_with_ai(
         self, *, action: str, target: str, timeout: int
@@ -376,7 +470,7 @@ class SmartResolver:
             )
         return ResolvedSelector(
             selector=selector,
-            source="ai_observe",
+            source="ai_selector",
             healed=True,
             ai_called=True,
             confidence=decision.confidence,
@@ -455,6 +549,78 @@ class SmartResolver:
             candidate_hash=candidate_hash,
             candidate_count=candidate_count,
             replace_active=replace_active,
+        )
+
+    @staticmethod
+    def _with_healing_context(
+        resolved: ResolvedSelector,
+        *,
+        healing_attempted: bool,
+        original_selector: str | None,
+        original_error: str | None,
+    ) -> ResolvedSelector:
+        return replace(
+            resolved,
+            healed=resolved.healed or healing_attempted,
+            healing_attempted=healing_attempted,
+            original_selector=original_selector,
+            original_error=original_error,
+        )
+
+    @staticmethod
+    def _log_heal_start(
+        *, action: str, selector: str, target: str | None, error: str
+    ) -> None:
+        logger.warning(
+            "selector自愈开始: "
+            f"action={action} | selector={selector} | target={target}"
+        )
+        logger.warning(f"原selector失败: {error}")
+
+    @staticmethod
+    def _log_heal_success(
+        *,
+        source: str,
+        selector: str,
+        confidence: float | None,
+        healing_attempted: bool,
+    ) -> None:
+        if not healing_attempted:
+            return
+        parts = [f"source={source}", f"selector={selector}"]
+        if confidence is not None:
+            parts.append(f"confidence={confidence}")
+        logger.info("自愈验证通过: " + " | ".join(parts))
+
+    @staticmethod
+    def _log_heal_rejected(
+        *,
+        source: str,
+        selector: str,
+        reason: str,
+        healing_attempted: bool,
+    ) -> None:
+        if not healing_attempted:
+            return
+        logger.debug(
+            "自愈候选失败: " f"source={source} | selector={selector} | reason={reason}"
+        )
+
+    @staticmethod
+    def _log_heal_failed(
+        *,
+        action: str,
+        target: str | None,
+        selector: str | None,
+        errors: list[str],
+        healing_attempted: bool,
+    ) -> None:
+        if not healing_attempted:
+            return
+        detail = "; ".join(errors)
+        logger.error(
+            "selector自愈失败: "
+            f"action={action} | selector={selector} | target={target} | errors={detail}"
         )
 
     def _claim_ai_call(self, purpose: str) -> None:

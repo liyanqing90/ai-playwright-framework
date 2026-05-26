@@ -82,7 +82,7 @@ class StepAction:
     KEYBOARD_SHORTCUT = ["keyboard_shortcut", "键盘快捷键"]
     KEYBOARD_PRESS = ["keyboard_press", "全局按键"]
     KEYBOARD_TYPE = ["keyboard_type", "全局输入"]
-    OBSERVE = ["observe", "AI操作", "智能操作"]
+    AI_STEP = ["ai_step", "observe", "AI操作", "智能操作"]
 
     # 流程控制操作
     USE_MODULE = ["use_module", "使用模块"]
@@ -116,7 +116,7 @@ class StepAction:
         + KEYBOARD_SHORTCUT
         + KEYBOARD_PRESS
         + KEYBOARD_TYPE
-        + OBSERVE
+        + AI_STEP
         + USE_MODULE
         + IF_CONDITION
         + FOR_EACH

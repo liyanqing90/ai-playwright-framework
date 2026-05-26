@@ -3,53 +3,32 @@ test_data:
     description: 标准用户添加单个商品到购物车
     mode: smart
     steps:
-      - action: goto
-        value: https://www.saucedemo.com/
-      - action: fill
-        selector: username_input
-        value: ${standard_username}
-      - action: fill
-        selector: password_input
-        value: ${common_password}
+      - use_module: saucedemo_login
+        params:
+          username: ${standard_username}
       - action: click
-        selector: login_btn
-      - action: click
-        selector: backpack_add_cart_btn
+        selector: add_to_cart_backpack_btn
       - action: assert_text
-        selector: cart_badge
+        selector: shopping_cart_badge
         value: '1'
   test_saucedemo_locked_user_error:
     description: 锁定用户登录失败提示
     mode: smart
     steps:
-      - action: goto
-        value: https://www.saucedemo.com/
-      - action: fill
-        selector: username_input
-        value: ${locked_username}
-      - action: fill
-        selector: password_input
-        value: ${common_password}
-      - action: click
-        selector: login_btn
+      - use_module: saucedemo_login
+        params:
+          username: ${locked_username}
       - action: assert_text_contains
-        selector: login_error_msg
+        selector: login_error_message
         value: locked out
   test_saucedemo_open_cart:
     description: 标准用户打开购物车页面
     mode: smart
     steps:
-      - action: goto
-        value: https://www.saucedemo.com/
-      - action: fill
-        selector: username_input
-        value: ${standard_username}
-      - action: fill
-        selector: password_input
-        value: ${common_password}
+      - use_module: saucedemo_login
+        params:
+          username: ${standard_username}
       - action: click
-        selector: login_btn
-      - action: click
-        selector: cart_icon
+        selector: shopping_cart_link
       - action: assert_visible
-        selector: cart_page_container
+        selector: cart_title

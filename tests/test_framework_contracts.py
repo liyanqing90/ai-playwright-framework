@@ -6,19 +6,22 @@ from pathlib import Path
 import pytest
 
 from src.ai_generation.case_generator import (
+    _GenerationArtifacts,
     _has_explicit_steps,
     _validate_spec_project_scope,
+    _write_payload,
     resolve_generation_spec_path,
 )
 from src.ai_generation.harness import GenerationHarness
 from src.ai_generation.harness import _safe_case_name
 from src.ai_generation.project_context import ProjectContext
 from src.ai_runtime.contracts import (
+    AiStepDecision,
     GeneratedCasePayload,
-    ObservedOperationDecision,
     SelectorDecision,
     VisionFindResult,
 )
+from src.ai_runtime.element_store import ElementDefinitionStore
 from src.ai_runtime.playwright_selectors import heuristic_selectors, redact_value
 from src.ai_runtime.provider import (
     ChatCompletionProvider,
@@ -29,14 +32,20 @@ from src.ai_runtime.provider import (
     parse_model_response,
 )
 from src.ai_runtime.selector_registry import SelectorRegistry
-from src.ai_runtime.smart_resolver import SmartResolver
+from src.ai_runtime.smart_resolver import (
+    AiStepOperation,
+    ResolvedSelector,
+    SmartResolver,
+)
 from src.ai_runtime.vision_client import (
     VisionClient,
     VisionServiceUnavailable,
     VisionSettings,
 )
 from src.ai_runtime.vision_resolver import VisionResolution, VisionResolver
+from src.step_actions.commands import assertion_commands as assertion_commands_module
 from src.step_actions.safe_expression import SafeExpressionError, safe_eval_expression
+from src.step_actions.step_executor import StepExecutor
 from src.step_actions.utils import _resolve_allowed_script_path
 from src.yaml_schema import (
     ValidationContext,
@@ -47,6 +56,311 @@ from src.yaml_schema import (
 from utils.variable_manager import VariableManager
 from utils.yaml_handler import YamlHandler
 from utils.token_usage import TokenUsageTracker, normalize_token_usage
+
+
+def test_assertion_success_log_contains_expected_and_actual(monkeypatch):
+    messages: list[str] = []
+
+    class FakeLogger:
+        def info(self, message: str):
+            messages.append(message)
+
+    monkeypatch.setattr(assertion_commands_module, "logger", FakeLogger())
+
+    assertion_commands_module._log_assertion_success(
+        "assert_text",
+        selector="#title",
+        expected="Products",
+        actual="Products",
+    )
+
+    assert messages == [
+        "断言通过: action=assert_text | selector=#title | 预期结果=Products | 实际结果=Products"
+    ]
+
+
+def test_assert_text_command_logs_resolved_expected_and_dom_actual(monkeypatch):
+    messages: list[str] = []
+
+    class FakeLogger:
+        def info(self, message: str):
+            messages.append(message)
+
+    class FakeVariableManager:
+        def replace_variables_refactored(self, value):
+            return "Products" if value == "${expected_title}" else value
+
+    class FakeFirstLocator:
+        def inner_text(self):
+            return "Products"
+
+    class FakeLocator:
+        first = FakeFirstLocator()
+
+    class FakePage:
+        def locator(self, selector: str):
+            assert selector == "#title"
+            return FakeLocator()
+
+    class FakeUiHelper:
+        page = FakePage()
+        variable_manager = FakeVariableManager()
+
+        def assert_text(self, selector: str, expected: str):
+            assert selector == "#title"
+            assert expected == "${expected_title}"
+
+    monkeypatch.setattr(assertion_commands_module, "logger", FakeLogger())
+
+    assertion_commands_module.AssertTextCommand().execute(
+        FakeUiHelper(),
+        "#title",
+        None,
+        {"expected": "${expected_title}"},
+    )
+
+    assert "预期结果=Products" in messages[0]
+    assert "实际结果=Products" in messages[0]
+
+
+def test_native_ai_step_executes_through_command_pipeline(monkeypatch):
+    calls: list[tuple[str, str, str | None]] = []
+
+    class FakeResolver:
+        def resolve_ai_step(self, *, instruction: str, timeout: int):
+            assert instruction == "打开购物车"
+            return AiStepOperation(
+                action="click",
+                selector="#cart",
+                prompt_version="ai-step-v1",
+                schema_version="schema-v1",
+                model="test-model",
+                candidate_count=3,
+                candidate_hash="abc123",
+            )
+
+    class FakePage:
+        url = "https://example.test"
+
+    class FakeUiHelper:
+        pass
+
+    def fake_execute_action_with_command(ui_helper, action, selector, value, step):
+        calls.append((action, selector, value))
+
+    monkeypatch.setattr(
+        "src.step_actions.step_executor.execute_action_with_command",
+        fake_execute_action_with_command,
+    )
+
+    executor = StepExecutor(FakePage(), FakeUiHelper(), elements={})
+    executor.smart_resolver = FakeResolver()
+    executor.execute_step({"action": "ai_step", "instruction": "打开购物车"})
+
+    assert calls == [("click", "#cart", None)]
+
+
+def test_case_and_step_ai_modes_are_native_executor_defaults():
+    executor = StepExecutor(page=None, ui_helper=None, elements={}, default_mode="ai")
+
+    assert executor._resolve_mode({}) == "ai"
+    assert executor._resolve_mode({"mode": "smart"}) == "smart"
+
+
+def test_element_definition_store_updates_last_effective_elements_file(
+    tmp_path: Path,
+):
+    project_dir = tmp_path / "demo"
+    elements_dir = project_dir / "elements"
+    elements_dir.mkdir(parents=True)
+    base_file = elements_dir / "base.yaml"
+    override_file = elements_dir / "override.yaml"
+    base_file.write_text(
+        "elements:\n  login_button: '#old-base'\n",
+        encoding="utf-8",
+    )
+    override_file.write_text(
+        "elements:\n  login_button: '#old-override'\n",
+        encoding="utf-8",
+    )
+
+    result = ElementDefinitionStore(project_dir).update_selector(
+        "login_button",
+        "#new-login",
+    )
+
+    assert result.updated is True
+    assert result.path == override_file
+    assert "login_button: '#old-base'" in base_file.read_text(encoding="utf-8")
+    assert "#new-login" in override_file.read_text(encoding="utf-8")
+
+
+def test_smart_resolver_marks_selector_self_healing_metadata():
+    class FakeLocator:
+        def __init__(self, selector):
+            self.selector = selector
+
+        @property
+        def first(self):
+            return self
+
+        def wait_for(self, state, timeout):
+            if self.selector != "#login-button":
+                raise TimeoutError("not found")
+
+        def is_enabled(self):
+            return True
+
+        def evaluate(self, script):
+            return self.selector
+
+    class FakePage:
+        url = "https://example.test/login"
+
+        def locator(self, selector):
+            return FakeLocator(selector)
+
+        def evaluate(self, script, limit):
+            return []
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = None
+
+    resolved = resolver.resolve(
+        action="click",
+        selector="#old-login",
+        target="登录按钮",
+        mode="smart",
+        timeout=1000,
+    )
+
+    assert resolved.selector == "#login-button"
+    assert resolved.source == "heuristic"
+    assert resolved.healed is True
+    assert resolved.healing_attempted is True
+    assert resolved.original_selector == "#old-login"
+    assert "not found" in (resolved.original_error or "")
+
+
+def test_step_executor_persists_healed_element_selector(
+    monkeypatch,
+    tmp_path: Path,
+):
+    project_dir = tmp_path / "demo"
+    elements_dir = project_dir / "elements"
+    elements_dir.mkdir(parents=True)
+    elements_file = elements_dir / "login.yaml"
+    elements_file.write_text(
+        "elements:\n  login_button: '#old-login'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TEST_DIR", str(project_dir))
+    calls: list[tuple[str, str, str | None]] = []
+
+    class FakeResolver:
+        def resolve(self, **kwargs):
+            assert kwargs["target"] == "login_button"
+            return ResolvedSelector(
+                selector="#login-button",
+                source="heuristic",
+                healed=True,
+                healing_attempted=True,
+                original_selector="#old-login",
+                original_error="not found",
+                confidence=0.8,
+            )
+
+    class FakePage:
+        url = "https://example.test/login"
+
+    class FakeUiHelper:
+        pass
+
+    def fake_execute_action_with_command(ui_helper, action, selector, value, step):
+        calls.append((action, selector, value))
+
+    monkeypatch.setattr(
+        "src.step_actions.step_executor.execute_action_with_command",
+        fake_execute_action_with_command,
+    )
+
+    executor = StepExecutor(
+        FakePage(),
+        FakeUiHelper(),
+        elements={"login_button": "#old-login"},
+    )
+    executor.smart_resolver = FakeResolver()
+
+    executor.execute_step(
+        {
+            "action": "click",
+            "selector": "login_button",
+            "mode": "smart",
+        }
+    )
+    for thread in executor._healing_threads:
+        thread.join(timeout=3)
+
+    assert calls == [("click", "#login-button", None)]
+    assert executor.elements["login_button"] == "#login-button"
+    assert "#login-button" in elements_file.read_text(encoding="utf-8")
+
+
+def test_step_executor_does_not_block_when_healed_element_persist_fails(
+    monkeypatch,
+):
+    calls: list[tuple[str, str, str | None]] = []
+
+    class FakeResolver:
+        def resolve(self, **kwargs):
+            assert kwargs["target"] == "login_button"
+            return ResolvedSelector(
+                selector="#login-button",
+                source="heuristic",
+                healed=True,
+                healing_attempted=True,
+                original_selector="#old-login",
+                original_error="not found",
+            )
+
+    class FailingStore:
+        def update_selector(self, key, new_selector):
+            raise RuntimeError("disk denied")
+
+    class FakePage:
+        url = "https://example.test/login"
+
+    class FakeUiHelper:
+        pass
+
+    def fake_execute_action_with_command(ui_helper, action, selector, value, step):
+        calls.append((action, selector, value))
+
+    monkeypatch.setattr(
+        "src.step_actions.step_executor.execute_action_with_command",
+        fake_execute_action_with_command,
+    )
+
+    executor = StepExecutor(
+        FakePage(),
+        FakeUiHelper(),
+        elements={"login_button": "#old-login"},
+    )
+    executor.smart_resolver = FakeResolver()
+    executor.element_store = FailingStore()
+
+    executor.execute_step(
+        {
+            "action": "click",
+            "selector": "login_button",
+            "mode": "smart",
+        }
+    )
+    for thread in executor._healing_threads:
+        thread.join(timeout=3)
+
+    assert calls == [("click", "#login-button", None)]
+    assert executor.elements["login_button"] == "#old-login"
 
 
 def test_missing_variable_reference_fails_fast():
@@ -121,7 +435,7 @@ def test_ai_structured_response_format_uses_json_schema_when_enabled():
 
 
 def test_openai_strict_schema_requires_object_fields_and_removes_defaults():
-    schema = openai_strict_schema(ObservedOperationDecision)
+    schema = openai_strict_schema(AiStepDecision)
 
     assert schema["additionalProperties"] is False
     assert set(schema["required"]) == {
@@ -218,6 +532,46 @@ def test_chat_completion_provider_records_token_usage(monkeypatch, tmp_path: Pat
     assert snapshot["totals"]["uncached_input_tokens"] == 80
     assert snapshot["events"][0]["operation"] == "runtime.resolve_selector"
     assert snapshot["events"][0]["metadata"]["schema_name"] == "SelectorDecision"
+    model_io_dir = tmp_path.parent / "model_io" / snapshot["run_id"]
+    model_io_files = list(model_io_dir.glob("*.json"))
+    assert len(model_io_files) == 1
+    model_io = json.loads(model_io_files[0].read_text(encoding="utf-8"))
+    assert model_io["operation"] == "runtime.resolve_selector"
+    assert model_io["request"]["messages"][0]["content"] == "hello"
+    assert (
+        model_io["response"]["choices"][0]["message"]["content"]
+        == '{"selector":"#submit","selector_type":"css","confidence":0.9}'
+    )
+
+
+def test_token_usage_cleans_model_io_on_success_and_keeps_on_failure(tmp_path: Path):
+    tracker = TokenUsageTracker(tmp_path / "token_usage")
+    run_id = tracker.start_run(run_kind="generate_case")
+    kept_path = Path(
+        tracker.record_model_io(
+            operation="generation.case_generation",
+            request_payload={"messages": ["prompt"]},
+            response_payload={"content": "{}"},
+        )
+    )
+    assert kept_path.exists()
+
+    summary = tracker.finish_run(status="failed")
+    assert kept_path.exists()
+    assert summary["model_io_dir"] == str(tmp_path / "model_io" / run_id)
+
+    run_id = tracker.start_run(run_kind="generate_case")
+    cleaned_path = Path(
+        tracker.record_model_io(
+            operation="generation.case_generation",
+            request_payload={"messages": ["prompt"]},
+            response_payload={"content": "{}"},
+        )
+    )
+    assert cleaned_path.exists()
+
+    tracker.finish_run(status="passed")
+    assert not (tmp_path / "model_io" / run_id).exists()
 
 
 def test_ai_pydantic_contracts_reject_invalid_payloads():
@@ -236,12 +590,10 @@ def test_ai_pydantic_contracts_reject_invalid_payloads():
         )
 
     with pytest.raises(ValueError):
-        ObservedOperationDecision.model_validate({"action": "click"})
+        AiStepDecision.model_validate({"action": "click"})
 
     with pytest.raises(ValueError):
-        ObservedOperationDecision.model_validate(
-            {"action": "press", "selector": "#submit"}
-        )
+        AiStepDecision.model_validate({"action": "press", "selector": "#submit"})
 
 
 def test_generated_case_payload_contract_normalizes_defaults():
@@ -437,6 +789,223 @@ def test_generation_harness_rejects_empty_assertion_expected(tmp_path: Path):
     )
 
     with pytest.raises(ValueError, match="断言期望值不能为空"):
+        harness.validate(payload)
+
+
+def test_generation_harness_normalizes_module_steps_and_params(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"username": "#user-name", "title": ".title"},
+            modules={},
+            variables={"standard_username": "standard_user"},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {
+                            "use_module": "login",
+                            "params": {"username": "${standard_username}"},
+                        },
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                }
+            },
+            "modules": {
+                "login": {
+                    "steps": [
+                        {"action": "open", "url": "https://example.test"},
+                        {
+                            "action": "input",
+                            "selector": "username",
+                            "value": "${username}",
+                        },
+                    ]
+                }
+            },
+        }
+    )
+
+    assert payload["modules"]["login"][0] == {
+        "action": "goto",
+        "value": "https://example.test",
+    }
+    assert payload["modules"]["login"][1]["action"] == "fill"
+    assert payload["data"]["test_generated"]["steps"][0]["params"] == {
+        "username": "${standard_username}"
+    }
+    assert harness.validate(payload) == []
+
+
+def test_generation_harness_normalizes_model_dict_scalar_fields(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"title": ".title"},
+            modules={"login": [{"action": "click", "selector": "title"}]},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {"use_module": {"name": "login"}},
+                        {
+                            "action": {"action": "assert_visible"},
+                            "selector": {"key": "title", "selector": ".title"},
+                        },
+                    ],
+                }
+            },
+        }
+    )
+
+    assert payload["data"]["test_generated"]["steps"][0] == {"use_module": "login"}
+    assert payload["data"]["test_generated"]["steps"][1] == {
+        "action": "assert_visible",
+        "selector": "title",
+    }
+    assert harness.validate(payload) == []
+
+
+def test_generation_write_payload_restores_files_when_post_verify_fails(tmp_path: Path):
+    case_file = tmp_path / "cases" / "generated.yaml"
+    data_file = tmp_path / "data" / "generated.yaml"
+    case_file.parent.mkdir(parents=True)
+    data_file.parent.mkdir(parents=True)
+    case_file.write_text("old cases\n", encoding="utf-8")
+    data_file.write_text("old data\n", encoding="utf-8")
+
+    result = {
+        "case_file": case_file,
+        "data_file": data_file,
+        "payload": {
+            "cases": [{"name": "test_generated"}],
+            "data": {"test_generated": {"steps": []}},
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="post verify failed"):
+        _write_payload(
+            result,
+            overwrite=True,
+            verify=lambda: (_ for _ in ()).throw(RuntimeError("post verify failed")),
+        )
+
+    assert case_file.read_text(encoding="utf-8") == "old cases\n"
+    assert data_file.read_text(encoding="utf-8") == "old data\n"
+
+
+def test_generation_artifacts_store_debug_data_and_cleanup(monkeypatch, tmp_path: Path):
+    monkeypatch.chdir(tmp_path)
+    artifacts = _GenerationArtifacts(project="demo", spec_name="saucedemo ai")
+
+    artifacts.write_json("payload.json", {"selector": {"key": "login_button"}})
+    artifacts.write_text("error.txt", "failed")
+
+    assert (artifacts.path / "payload.json").exists()
+    assert (artifacts.path / "error.txt").read_text(encoding="utf-8") == "failed"
+
+    artifacts.cleanup()
+
+    assert not artifacts.path.exists()
+
+
+def test_generation_harness_rejects_missing_module_params(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"username": "#user-name", "title": ".title"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {"use_module": "login"},
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                }
+            },
+            "modules": {
+                "login": [
+                    {"action": "fill", "selector": "username", "value": "${username}"}
+                ]
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="params: username"):
+        harness.validate(payload)
+
+
+def test_generation_harness_rejects_undefined_variables(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"username": "#user-name", "title": ".title"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {
+                            "action": "fill",
+                            "selector": "username",
+                            "value": "${username_var}",
+                        },
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                }
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="username_var"):
         harness.validate(payload)
 
 
@@ -826,7 +1395,7 @@ def test_selector_registry_persists_ai_decision_metadata(tmp_path: Path):
             action="click",
             target="submit",
             selector="#submit",
-            source="ai_observe",
+            source="ai_selector",
             confidence=0.73,
             prompt_version="selector-v1",
             schema_version="schema-v1",
@@ -916,13 +1485,13 @@ def test_yaml_schema_allows_smart_target_without_selector(tmp_path: Path):
     validate_project(project)
 
 
-def test_yaml_schema_allows_observe_instruction(tmp_path: Path):
+def test_yaml_schema_allows_native_ai_step_instruction(tmp_path: Path):
     project = _write_schema_project(
         tmp_path,
         case_data={
-            "description": "observe instruction",
+            "description": "native ai step instruction",
             "mode": "ai",
-            "steps": [{"action": "observe", "instruction": "打开购物车"}],
+            "steps": [{"action": "ai_step", "instruction": "打开购物车"}],
         },
     )
 

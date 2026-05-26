@@ -242,6 +242,7 @@ AI 默认配置在 `config/ai_config.yaml`：
 - `vision.service_url`: UI Vision Service 局域网地址，也可用 `.env` 中的 `UI_VISION_BASE_URL` 覆盖。
 - `vision.allow_coordinate_fallback`: 是否允许在无法映射 DOM selector 时使用坐标点击/输入兜底。默认 `false`，推荐先保持关闭。
 - `vision.send_dom_candidates`: 调用视觉服务时是否发送 DOM 候选及坐标，默认 `true`，用于让视觉结果优先回落到可复用 selector。
+- `prompts.ai_step_version`: 原生 AI 步骤编译提示词版本。
 
 ### 生成规格
 
@@ -331,6 +332,8 @@ test_data:
 - `smart`: 先验证显式 selector；失效时依次尝试历史定位、规则定位；配置允许时再调用 AI 兜底。
 - `ai`: 保留确定性定位优先级，但允许使用 AI 解析语义目标。
 
+AI/Smart 是框架原生执行模式，不是独立 runner。用例仍然走 `StepExecutor -> command -> page_object` 的执行链路，只是在 selector/target 解析阶段增加智能能力。
+
 步骤级 AI 适合只让某个不稳定步骤进入智能定位：
 
 ```yaml
@@ -350,6 +353,51 @@ test_data:
       - action: fill
         selector: username_input
         value: "${username}"
+```
+
+自然语言 AI 步骤适合页面探索、低频维护或原型用例。它是框架原生 action，会先编译成已有原子动作，再进入统一命令执行链路：
+
+```yaml
+- action: ai_step
+  instruction: "打开购物车"
+```
+
+兼容别名：
+
+```yaml
+- action: observe
+  instruction: "点击登录按钮"
+```
+
+推荐优先级：
+
+1. 稳定业务用例优先写明确 `action + selector`。
+2. selector 不稳定但目标明确时写 `action + target + mode: smart/ai`。
+3. 需要自然语言探索时才使用 `ai_step`。
+
+### Selector 自愈与 elements 回写
+
+`smart`/`ai` 模式下，如果已有 element key 对应的 selector 失效，框架会先验证失败原因，再按历史定位、规则定位、LLM DOM 选择、UI Vision 的顺序寻找新 selector。
+
+自愈成功后的处理规则：
+
+1. 当前步骤立即使用已验证的新 selector 继续执行。
+2. 如果原步骤写的是 `selector: element_key`，框架会异步回写 `test_data/<project>/elements/*.yaml` 中该 key 的 selector。
+3. 未显式写 `target` 时，默认用 element key 作为语义目标，例如 `add_to_cart_backpack_btn`。
+4. 回写只更新已有 key，不自动新增未知 key。
+5. 回写失败只记录错误日志，不阻塞当前用例执行；pytest 会话结束时会短暂等待后台回写完成。
+
+可通过配置关闭持久化回写：
+
+```yaml
+self_healing:
+  persist_elements: false
+```
+
+或临时关闭：
+
+```powershell
+$env:UI_AI_PERSIST_HEALED_SELECTORS="false"
 ```
 
 ### UI Vision 兜底链路
@@ -419,10 +467,18 @@ AI/Smart 模式会追加一行辅助日志：
 AI执行模式: smart | 定位来源: 显式选择器 | 选择器: #login-button | AI兜底: 否
 ```
 
+模型 I/O 追踪用于排查生成或 AI 执行失败：
+
+```text
+logs/model_io/<run_id>/*.json
+```
+
+其中会保存模型请求 payload，包括生成规格、项目上下文、运行时页面 URL、DOM 候选、response_format，以及模型原始响应。run 成功后自动清理；run 失败时保留，并在 token usage summary 中写入 `model_io_dir`。
+
 断言成功会输出项目统一断言日志：
 
 ```text
-断言通过: action=assert_text | selector=.shopping_cart_badge | expected=1
+断言通过: action=assert_text | selector=.shopping_cart_badge | 预期结果=1 | 实际结果=1
 ```
 
 ## 项目结构

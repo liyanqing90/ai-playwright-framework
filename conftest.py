@@ -13,6 +13,7 @@ from playwright.sync_api import Page, Browser, sync_playwright
 
 from config.constants import DEFAULT_TIMEOUT
 from page_objects.base_page import BasePage
+from src.ai_runtime.element_store import wait_for_pending_element_updates
 from src.case_utils import run_test_data, load_test_cases, load_modules
 from src.runner import TestCaseGenerator
 from src.test_step_executor import StepExecutor
@@ -327,6 +328,7 @@ def current_test_name(request):
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
+    wait_for_pending_element_updates(timeout_seconds=2.0)
     get_token_usage_tracker().finish_run(
         status="passed" if exitstatus == 0 else "failed",
         metadata={

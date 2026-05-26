@@ -20,6 +20,7 @@ class GenerationHarness:
     def normalize(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = self._normalize_top_level(payload)
         payload["elements"] = self._normalize_elements(payload.get("elements") or {})
+        payload["modules"] = self._normalize_modules(payload.get("modules") or {})
         self._normalize_cases_and_data(payload)
         for case_data in payload["data"].values():
             if isinstance(case_data, dict):
@@ -44,6 +45,29 @@ class GenerationHarness:
 
         known_elements = set(self.context.elements) | set(payload.get("elements") or {})
         known_modules = set(self.context.modules) | set(payload.get("modules") or {})
+        known_variables = set(self.context.variables) | set(payload.get("vars") or {})
+        generated_module_refs = {
+            module_name: _extract_variable_refs(module_steps)
+            for module_name, module_steps in (payload.get("modules") or {}).items()
+        }
+
+        for module_name, module_steps in (payload.get("modules") or {}).items():
+            if not isinstance(module_steps, list) or not module_steps:
+                raise ValueError(f"modules.{module_name} 必须是非空steps列表")
+            for index, step in enumerate(module_steps, start=1):
+                self._validate_step(
+                    case_name=f"modules.{module_name}",
+                    index=index,
+                    step=step,
+                    case_mode=str(self.spec.get("mode") or "strict").lower(),
+                    valid_actions=valid_actions,
+                    known_elements=known_elements,
+                    known_modules=known_modules,
+                    warnings=warnings,
+                    known_variables=known_variables
+                    | generated_module_refs.get(module_name, set()),
+                    generated_module_refs=generated_module_refs,
+                )
 
         for case_name, case_data in (payload.get("data") or {}).items():
             if not isinstance(case_data, dict):
@@ -65,6 +89,8 @@ class GenerationHarness:
                     known_elements=known_elements,
                     known_modules=known_modules,
                     warnings=warnings,
+                    known_variables=known_variables,
+                    generated_module_refs=generated_module_refs,
                 ):
                     has_assertion = True
             if not has_assertion:
@@ -99,11 +125,19 @@ class GenerationHarness:
         for raw_case in payload["cases"]:
             if not isinstance(raw_case, dict):
                 raise ValueError(f"cases条目必须是对象: {raw_case}")
-            raw_name = raw_case.get("name")
+            original_name = raw_case.get("name")
+            raw_name = _coerce_generated_string(
+                original_name,
+                field_path="cases[].name",
+                preferred_keys=("name", "case_name", "id", "value"),
+            )
             if not raw_name:
                 raise ValueError(f"cases条目缺少name: {raw_case}")
             name = _safe_case_name(str(raw_name))
-            raw_data = payload.get("data", {}).get(raw_name)
+            raw_data = None
+            if isinstance(original_name, str):
+                raw_data = payload.get("data", {}).get(original_name)
+            raw_data = raw_data or payload.get("data", {}).get(raw_name)
             case_data = dict(raw_data) if isinstance(raw_data, dict) else {}
             case_data.setdefault(
                 "description",
@@ -126,9 +160,15 @@ class GenerationHarness:
             if not isinstance(step, dict):
                 raise ValueError(f"生成结果中的step必须是对象: {step}")
             item = dict(step)
+            item = _normalize_step_scalar_fields(item)
             module_name = self._module_name(item)
             if module_name:
-                normalized.append({"use_module": module_name})
+                module_step: dict[str, Any] = {"use_module": module_name}
+                if "params" in item:
+                    module_step["params"] = _normalize_variable_syntax(item["params"])
+                if "description" in item:
+                    module_step["description"] = item["description"]
+                normalized.append(module_step)
                 continue
 
             action = str(item.get("action") or "").lower()
@@ -144,10 +184,38 @@ class GenerationHarness:
     def _normalize_elements(elements: dict[str, Any]) -> dict[str, Any]:
         normalized: dict[str, Any] = {}
         for key, value in elements.items():
+            normalized_key = _coerce_generated_string(
+                key,
+                field_path="elements key",
+                preferred_keys=("key", "name", "id", "value"),
+            )
             if isinstance(value, dict) and value.get("selector"):
-                normalized[key] = value["selector"]
+                normalized[normalized_key] = _coerce_generated_string(
+                    value["selector"],
+                    field_path=f"elements.{normalized_key}.selector",
+                    preferred_keys=("selector", "css", "xpath", "value", "text"),
+                )
             else:
-                normalized[key] = value
+                normalized[normalized_key] = value
+        return normalized
+
+    def _normalize_modules(self, modules: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
+        for module_name, raw_module in modules.items():
+            module_name = _coerce_generated_string(
+                module_name,
+                field_path="modules key",
+                preferred_keys=("name", "module", "key", "value"),
+            )
+            if isinstance(raw_module, dict) and "steps" in raw_module:
+                raw_steps = raw_module.get("steps") or []
+            elif isinstance(raw_module, list):
+                raw_steps = raw_module
+            else:
+                raise ValueError(
+                    f"modules.{module_name} 必须是steps列表，或包含steps字段的对象"
+                )
+            normalized[module_name] = self._normalize_steps(raw_steps)
         return normalized
 
     @staticmethod
@@ -186,6 +254,8 @@ class GenerationHarness:
         known_elements: set[str],
         known_modules: set[str],
         warnings: list[str],
+        known_variables: set[str],
+        generated_module_refs: dict[str, set[str]],
     ) -> bool:
         if not isinstance(step, dict):
             raise ValueError(f"{case_name} step {index} 必须是对象")
@@ -193,6 +263,14 @@ class GenerationHarness:
         if module_name:
             if module_name not in known_modules:
                 raise ValueError(f"{case_name} 引用了不存在的公共组件: {module_name}")
+            GenerationHarness._validate_module_params(
+                case_name=case_name,
+                index=index,
+                step=step,
+                module_name=module_name,
+                known_variables=known_variables,
+                generated_module_refs=generated_module_refs,
+            )
             return False
 
         action = str(step.get("action") or "").lower()
@@ -229,6 +307,13 @@ class GenerationHarness:
             GenerationHarness._validate_assertion_fields(
                 case_name=case_name, index=index, step=step, action=action
             )
+        GenerationHarness._validate_variable_refs(
+            case_name=case_name,
+            index=index,
+            value=step,
+            known_variables=known_variables,
+        )
+        if action in _ASSERTION_ACTIONS:
             return True
         return False
 
@@ -276,6 +361,50 @@ class GenerationHarness:
                     f"{case_name} step {index} 断言格式错误: {action} 需要 selector/target 和 value/expected_values"
                 )
 
+    @staticmethod
+    def _validate_module_params(
+        *,
+        case_name: str,
+        index: int,
+        step: dict[str, Any],
+        module_name: str,
+        known_variables: set[str],
+        generated_module_refs: dict[str, set[str]],
+    ) -> None:
+        params = step.get("params") or {}
+        if "params" in step and not isinstance(params, dict):
+            raise ValueError(f"{case_name} step {index} params 必须是对象")
+        for param_value in params.values():
+            GenerationHarness._validate_variable_refs(
+                case_name=case_name,
+                index=index,
+                value=param_value,
+                known_variables=known_variables,
+            )
+        required_params = (
+            generated_module_refs.get(module_name, set()) - known_variables
+        )
+        missing = sorted(required_params - set(params))
+        if missing:
+            raise ValueError(
+                f"{case_name} step {index} 引用模块 {module_name} 缺少params: {', '.join(missing)}"
+            )
+
+    @staticmethod
+    def _validate_variable_refs(
+        *,
+        case_name: str,
+        index: int,
+        value: Any,
+        known_variables: set[str],
+    ) -> None:
+        refs = _extract_variable_refs(value)
+        unknown = sorted(ref for ref in refs if ref not in known_variables)
+        if unknown:
+            raise ValueError(
+                f"{case_name} step {index} 引用了未定义变量: {', '.join(unknown)}"
+            )
+
 
 _ACTION_ALIASES = {
     "assert_contain_text": "assert_text_contains",
@@ -300,6 +429,73 @@ def _lower_actions(*groups: list[str]) -> set[str]:
 
 def _is_empty_expected(value: Any) -> bool:
     return value is not None and isinstance(value, str) and not value.strip()
+
+
+def _normalize_step_scalar_fields(step: dict[str, Any]) -> dict[str, Any]:
+    field_keys: dict[str, tuple[str, ...]] = {
+        "action": ("action", "type", "name", "value"),
+        "selector": (
+            "key",
+            "element_key",
+            "name",
+            "selector",
+            "css",
+            "xpath",
+            "value",
+            "text",
+            "id",
+        ),
+        "target": ("target", "name", "text", "value", "description"),
+        "mode": ("mode", "value", "name"),
+        "attribute": ("attribute", "name", "value"),
+        "use_module": ("use_module", "module", "name", "key", "value"),
+        "module": ("module", "use_module", "name", "key", "value"),
+    }
+    for field, preferred_keys in field_keys.items():
+        if field in step and step[field] is not None:
+            step[field] = _coerce_generated_string(
+                step[field],
+                field_path=f"step.{field}",
+                preferred_keys=preferred_keys,
+            )
+    return step
+
+
+def _coerce_generated_string(
+    value: Any, *, field_path: str, preferred_keys: tuple[str, ...]
+) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, dict):
+        for key in preferred_keys:
+            candidate = value.get(key)
+            if isinstance(candidate, (str, int, float, bool)):
+                return str(candidate)
+        raise ValueError(
+            f"{field_path} 必须是字符串，模型返回对象缺少可用字段: {value}"
+        )
+    raise ValueError(f"{field_path} 必须是字符串，实际类型: {type(value).__name__}")
+
+
+def _extract_variable_refs(value: Any) -> set[str]:
+    refs: set[str] = set()
+    if isinstance(value, str):
+        refs.update(
+            match.group(1) or match.group(2)
+            for match in re.finditer(r"\$\{([^{}]+)\}|\$<([^<>]+)>", value)
+        )
+        return {ref.strip() for ref in refs if ref and ref.strip()}
+    if isinstance(value, list):
+        for item in value:
+            refs.update(_extract_variable_refs(item))
+    elif isinstance(value, dict):
+        for item in value.values():
+            refs.update(_extract_variable_refs(item))
+    return refs
 
 
 _NO_SELECTOR_ACTIONS = _lower_actions(StepAction.NO_SELECTOR_ACTIONS)

@@ -2,6 +2,8 @@
 步骤执行器的核心实现
 """
 
+import os
+import threading
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
@@ -11,6 +13,10 @@ import allure
 
 from constants import DEFAULT_TIMEOUT
 from src.ai_runtime.config import load_ai_config, runtime_mode
+from src.ai_runtime.element_store import (
+    ElementDefinitionStore,
+    register_element_update_thread,
+)
 from src.ai_runtime.smart_resolver import SmartResolver
 from src.step_actions.action_types import StepAction
 
@@ -45,6 +51,8 @@ class StepExecutor:
         self.default_mode = default_mode
         self.ai_config = load_ai_config()
         self.smart_resolver = None
+        self.element_store = None
+        self._healing_threads: list[threading.Thread] = []
         self.start_time = None
         self.step_has_error = False  # 步骤错误状态
         self._log_buffer = StringIO()  # 步骤日志缓存
@@ -109,22 +117,38 @@ class StepExecutor:
                 return
 
             action = step.get("action", "").lower()
-            if action in {"observe", "ai操作", "智能操作"}:
-                self._execute_observe(step)
+            if action in {"ai_step", "observe", "ai操作", "智能操作"}:
+                self._execute_ai_step(step)
                 return
 
             mode = self._resolve_mode(step)
             pre_selector = step.get("selector")
-            raw_selector = self.elements.get(pre_selector, pre_selector)
+            element_key = (
+                pre_selector
+                if isinstance(pre_selector, str) and pre_selector in self.elements
+                else None
+            )
+            raw_selector = (
+                self.elements.get(pre_selector, pre_selector)
+                if element_key
+                else pre_selector
+            )
             selector = self.variable_manager.replace_variables_refactored(raw_selector)
             target = self.variable_manager.replace_variables_refactored(
                 step.get("target")
             )
-            if mode != "strict" and not target and pre_selector not in self.elements:
+            if mode != "strict" and not target and pre_selector:
                 target = self.variable_manager.replace_variables_refactored(
                     pre_selector
                 )
-            selector = self._resolve_selector(action, selector, target, mode, step)
+            selector = self._resolve_selector(
+                action,
+                selector,
+                target,
+                mode,
+                step,
+                element_key=element_key,
+            )
             selector = self._apply_nth(selector, step)
             value = self.variable_manager.replace_variables_refactored(
                 step.get("value")
@@ -155,7 +179,9 @@ class StepExecutor:
         finally:
             self._finalize_step()
 
-    def _validate_step(self, action, selector, step: Dict[str, Any] | None = None) -> None:
+    def _validate_step(
+        self, action, selector, step: Dict[str, Any] | None = None
+    ) -> None:
         if not action:
             raise ValueError("步骤缺少必要参数: action", f"原始输入: {action}")
         # 操作类型白名单校验
@@ -163,7 +189,11 @@ class StepExecutor:
             raise ValueError(f"不支持的操作类型: {action}")
         # 必要参数校验
         has_coordinate = bool((step or {}).get("_resolved_coordinate"))
-        if action not in self._NO_SELECTOR_ACTIONS and not selector and not has_coordinate:
+        if (
+            action not in self._NO_SELECTOR_ACTIONS
+            and not selector
+            and not has_coordinate
+        ):
             raise ValueError(f"操作 {action} 需要提供selector参数")
 
     def _execute_action(
@@ -239,6 +269,8 @@ class StepExecutor:
         target: str | None,
         mode: str,
         step: Dict[str, Any],
+        *,
+        element_key: str | None = None,
     ) -> str | None:
         if action in self._NO_SELECTOR_ACTIONS:
             return selector
@@ -263,7 +295,122 @@ class StepExecutor:
         step["_resolved_coordinate"] = resolved.coordinate
         step["_resolved_vision_method"] = resolved.vision_method
         step["_resolved_vision_reason"] = resolved.vision_reason
+        if element_key:
+            step["_resolved_element_key"] = element_key
+        if resolved.healed:
+            step["_resolved_healed"] = True
+        if resolved.healing_attempted:
+            step["_resolved_healing_attempted"] = True
+        if resolved.original_selector:
+            step["_resolved_original_selector"] = resolved.original_selector
+        if resolved.original_error:
+            step["_resolved_original_error"] = resolved.original_error
+        self._persist_healed_selector(
+            element_key=element_key,
+            original_selector=selector,
+            resolved_selector=resolved.selector,
+            healing_attempted=resolved.healing_attempted,
+            step=step,
+        )
         return resolved.selector
+
+    def _persist_healed_selector(
+        self,
+        *,
+        element_key: str | None,
+        original_selector: str | None,
+        resolved_selector: str | None,
+        healing_attempted: bool,
+        step: Dict[str, Any],
+    ) -> None:
+        if not healing_attempted or not element_key:
+            return
+        if not resolved_selector:
+            logger.warning(
+                "selector自愈未回写elements: "
+                f"key={element_key} | reason=resolved_selector为空，可能使用坐标兜底"
+            )
+            return
+        if original_selector == resolved_selector:
+            return
+        if not self._persist_healed_elements_enabled():
+            logger.info(
+                "selector自愈未回写elements: "
+                f"key={element_key} | reason=配置关闭 | selector={resolved_selector}"
+            )
+            return
+
+        step["_resolved_persist_scheduled"] = True
+        thread = threading.Thread(
+            target=self._persist_healed_selector_worker,
+            kwargs={
+                "element_key": element_key,
+                "resolved_selector": resolved_selector,
+                "old_selector": original_selector,
+                "step": step,
+            },
+            name=f"selector-heal-{element_key}",
+            daemon=True,
+        )
+        thread.start()
+        self._healing_threads.append(thread)
+        register_element_update_thread(thread)
+        logger.info(
+            "selector自愈回写elements已提交: "
+            f"key={element_key} | old={original_selector} | new={resolved_selector}"
+        )
+
+    def _persist_healed_selector_worker(
+        self,
+        *,
+        element_key: str,
+        resolved_selector: str,
+        old_selector: str | None,
+        step: Dict[str, Any],
+    ) -> None:
+        try:
+            result = self._get_element_store().update_selector(
+                element_key,
+                resolved_selector,
+            )
+            if not result.updated and result.reason != "unchanged":
+                logger.error(
+                    "selector自愈回写elements失败，不阻塞执行: "
+                    f"key={element_key} | selector={resolved_selector} | reason={result.reason}"
+                )
+                return
+
+            self.elements[element_key] = resolved_selector
+            if result.path:
+                step["_resolved_persisted_element_file"] = str(result.path)
+
+            if result.updated:
+                logger.info(
+                    "selector自愈已回写elements: "
+                    f"key={element_key} | file={result.path} | old={result.old_selector} | new={resolved_selector}"
+                )
+            else:
+                logger.info(
+                    "selector自愈回写elements无需变更: "
+                    f"key={element_key} | file={result.path} | selector={resolved_selector}"
+                )
+        except Exception as exc:
+            logger.exception(
+                "selector自愈回写elements异常，不阻塞执行: "
+                f"key={element_key} | old={old_selector} | new={resolved_selector} | error={exc}"
+            )
+
+    def _persist_healed_elements_enabled(self) -> bool:
+        override = os.environ.get("UI_AI_PERSIST_HEALED_SELECTORS")
+        if override is not None:
+            return override.strip().lower() not in {"0", "false", "no", "off"}
+        cfg = self.ai_config.get("self_healing", {})
+        return bool(cfg.get("persist_elements", True))
+
+    def _get_element_store(self) -> ElementDefinitionStore:
+        if self.element_store is None:
+            self.element_store = ElementDefinitionStore()
+        return self.element_store
 
     @staticmethod
     def _apply_nth(selector: str | None, step: Dict[str, Any]) -> str | None:
@@ -274,38 +421,81 @@ class StepExecutor:
             return selector
         return f"{selector} >> nth={int(nth)}"
 
-    def _execute_observe(self, step: Dict[str, Any]) -> None:
+    def _execute_ai_step(self, step: Dict[str, Any]) -> None:
         instruction = self.variable_manager.replace_variables_refactored(
             step.get("instruction") or step.get("value") or step.get("target")
         )
         if not instruction:
-            raise ValueError("observe步骤需要instruction、value或target")
+            raise ValueError("AI步骤需要instruction、value或target")
         timeout = int(step.get("timeout", DEFAULT_TIMEOUT))
-        resolver = self._get_smart_resolver()
-        operation = resolver.observe_operation(instruction=instruction, timeout=timeout)
-        value = operation.value or operation.key or operation.wait_ms
-        self._log_step_execution(
-            action=operation.action, selector=operation.selector, value=value
+        operation = self._get_smart_resolver().resolve_ai_step(
+            instruction=instruction,
+            timeout=timeout,
         )
-        parts = [
-            "AI执行模式: observe",
-            "定位来源: AI观察",
-            f"指令: {instruction}",
-            f"解析动作: {operation.action}",
-        ]
-        parts.extend(
-            self._ai_metadata_parts(
-                {
-                    "_resolved_prompt_version": operation.prompt_version,
-                    "_resolved_schema_version": operation.schema_version,
-                    "_resolved_model": operation.model,
-                    "_resolved_candidate_count": operation.candidate_count,
-                    "_resolved_candidate_hash": operation.candidate_hash,
-                }
-            )
+        compiled_step = self._compile_ai_step(operation, timeout=timeout)
+        if compiled_step is None:
+            logger.debug(f"AI步骤跳过: 指令: {instruction}")
+            return
+
+        action = str(compiled_step["action"]).lower()
+        selector = compiled_step.get("selector")
+        value = self.variable_manager.replace_variables_refactored(
+            compiled_step.get("value")
         )
-        logger.debug(" | ".join(parts))
-        resolver.apply_operation(operation, timeout=timeout)
+        logger.debug(
+            "AI步骤编译: "
+            f"指令: {instruction} | action={action} | selector={selector} | value={value}"
+        )
+        self._log_step_execution(action=action, selector=selector, value=value)
+        step.update(
+            {
+                "_resolved_selector_source": operation.source,
+                "_resolved_by_ai": True,
+                "_resolved_prompt_version": operation.prompt_version,
+                "_resolved_schema_version": operation.schema_version,
+                "_resolved_model": operation.model,
+                "_resolved_candidate_count": operation.candidate_count,
+                "_resolved_candidate_hash": operation.candidate_hash,
+            }
+        )
+        self._log_ai_mode(
+            mode="ai",
+            action=action,
+            target=instruction,
+            selector=selector,
+            step=step,
+        )
+        self._validate_step(action, selector, compiled_step)
+        self._execute_action(action, selector, value, compiled_step)
+
+    @staticmethod
+    def _compile_ai_step(operation, *, timeout: int) -> Dict[str, Any] | None:
+        if operation.action == "skip":
+            return None
+        if operation.action == "wait":
+            return {
+                "action": "wait",
+                "value": str((operation.wait_ms or 1000) / 1000),
+                "timeout": timeout,
+            }
+        if operation.action == "press":
+            return {
+                "action": "press_key",
+                "selector": operation.selector,
+                "key": operation.key or "Enter",
+                "value": operation.key or "Enter",
+                "timeout": timeout,
+            }
+        if operation.action in {"click", "fill"}:
+            compiled = {
+                "action": operation.action,
+                "selector": operation.selector,
+                "timeout": timeout,
+            }
+            if operation.action == "fill":
+                compiled["value"] = operation.value or ""
+            return compiled
+        raise ValueError(f"AI步骤返回了不支持的动作: {operation.action}")
 
     def _get_smart_resolver(self) -> SmartResolver:
         if self.smart_resolver is None:
@@ -345,6 +535,10 @@ class StepExecutor:
     @staticmethod
     def _ai_metadata_parts(source: Dict[str, Any]) -> List[str]:
         metadata = [
+            ("healed", "_resolved_healed"),
+            ("healing_attempted", "_resolved_healing_attempted"),
+            ("element_key", "_resolved_element_key"),
+            ("original_selector", "_resolved_original_selector"),
             ("confidence", "_resolved_confidence"),
             ("prompt_version", "_resolved_prompt_version"),
             ("schema_version", "_resolved_schema_version"),
@@ -354,6 +548,8 @@ class StepExecutor:
             ("coordinate", "_resolved_coordinate"),
             ("vision_method", "_resolved_vision_method"),
             ("vision_reason", "_resolved_vision_reason"),
+            ("persist_scheduled", "_resolved_persist_scheduled"),
+            ("persisted_element_file", "_resolved_persisted_element_file"),
         ]
         parts: List[str] = []
         for label, key in metadata:
@@ -368,7 +564,8 @@ class StepExecutor:
             "explicit": "显式选择器",
             "registry": "历史定位",
             "heuristic": "规则定位",
-            "ai_observe": "AI定位",
+            "ai_step": "AI原生步骤",
+            "ai_selector": "AI selector兜底",
             "vision_dom": "UI Vision DOM兜底",
             "vision_coordinate": "UI Vision坐标兜底",
         }

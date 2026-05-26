@@ -10,6 +10,9 @@ selector_registry:
   sqlite_path: .ui_auto/selectors.db
   unstable_threshold: 3
 
+self_healing:
+  persist_elements: true
+
 generation:
   output_prefix: generated
   max_context_items: 160
@@ -35,6 +38,6 @@ vision:
 
 prompts:
   selector_version: selector-v1
-  observe_version: observe-v1
+  ai_step_version: ai-step-v1
   generation_version: generation-v1
   vision_version: vision-v1

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import atexit
 import json
+import re
+import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -118,7 +120,8 @@ class TokenUsageTracker:
                 return self._active_run["run_id"]
             current_time = _now()
             self._active_run = {
-                "run_id": run_id or f"{run_kind}_{current_time.strftime('%Y%m%d_%H%M%S_%f')}",
+                "run_id": run_id
+                or f"{run_kind}_{current_time.strftime('%Y%m%d_%H%M%S_%f')}",
                 "run_kind": run_kind,
                 "started_at": current_time.isoformat(timespec="seconds"),
                 "metadata": dict(metadata or {}),
@@ -160,6 +163,37 @@ class TokenUsageTracker:
             _merge_usage_totals(self._active_run["totals"], usage)
             return json.loads(json.dumps(event, ensure_ascii=False))
 
+    def record_model_io(
+        self,
+        *,
+        operation: str,
+        request_payload: Mapping[str, Any] | None = None,
+        response_payload: Mapping[str, Any] | None = None,
+        error: str | None = None,
+    ) -> str:
+        with self._lock:
+            self.ensure_run()
+            assert self._active_run is not None
+            self._active_run["model_io_count"] = (
+                self._active_run.get("model_io_count", 0) + 1
+            )
+            sequence = self._active_run["model_io_count"]
+            path = self._model_io_path(self._active_run["run_id"], sequence, operation)
+            payload = {
+                "timestamp": _now().isoformat(timespec="seconds"),
+                "run_id": self._active_run["run_id"],
+                "operation": operation,
+                "request": request_payload,
+                "response": response_payload,
+                "error": error,
+            }
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+            return str(path)
+
     def snapshot(self) -> dict[str, Any] | None:
         with self._lock:
             if self._active_run is None:
@@ -197,6 +231,11 @@ class TokenUsageTracker:
                 "events": list(self._active_run["events"]),
                 "summary_file": str(summary_path),
             }
+            model_io_dir = self._model_io_dir(self._active_run["run_id"])
+            if status == "passed":
+                shutil.rmtree(model_io_dir, ignore_errors=True)
+            elif model_io_dir.exists():
+                summary["model_io_dir"] = str(model_io_dir)
             self._write_summary(summary_path, summary)
             self._write_summary(self.base_dir / "latest.json", summary)
             self._last_summary = summary
@@ -211,6 +250,14 @@ class TokenUsageTracker:
 
     def _summary_path(self, run_id: str) -> Path:
         return self.base_dir / f"{run_id}.json"
+
+    def _model_io_dir(self, run_id: str) -> Path:
+        return self.base_dir.parent / "model_io" / run_id
+
+    def _model_io_path(self, run_id: str, sequence: int, operation: str) -> Path:
+        safe_operation = re.sub(r"[^A-Za-z0-9_.-]+", "_", operation).strip("._")
+        safe_operation = safe_operation or "llm"
+        return self._model_io_dir(run_id) / f"{sequence:03d}_{safe_operation}.json"
 
     def _write_summary(self, path: Path, summary: Mapping[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -285,4 +332,3 @@ def _now() -> datetime:
 
 _TRACKER: TokenUsageTracker | None = None
 atexit.register(lambda: get_token_usage_tracker().flush_at_exit())
-

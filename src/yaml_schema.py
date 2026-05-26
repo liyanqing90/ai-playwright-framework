@@ -189,7 +189,7 @@ _allow(
 _allow(_action_set(StepAction.KEYBOARD_SHORTCUT), {"key_combination"})
 _allow(_action_set(StepAction.KEYBOARD_PRESS), {"key"})
 _allow(_action_set(StepAction.KEYBOARD_TYPE), {"text", "delay"})
-_allow(_action_set(StepAction.OBSERVE), {"instruction"})
+_allow(_action_set(StepAction.AI_STEP), {"instruction"})
 _allow(
     _action_set(StepAction.MONITOR_REQUEST, StepAction.MONITOR_RESPONSE),
     {
@@ -492,7 +492,7 @@ def _validate_action_step(
         _require_any(context, path, raw_step, ("key", "value"))
     elif action in _action_set(StepAction.KEYBOARD_TYPE):
         _require_any(context, path, raw_step, ("text", "value"))
-    elif action in _action_set(StepAction.OBSERVE):
+    elif action in _action_set(StepAction.AI_STEP):
         _require_any(context, path, raw_step, ("instruction", "value", "target"))
     elif action in _action_set(StepAction.MONITOR_REQUEST, StepAction.MONITOR_RESPONSE):
         _require_any(context, path, raw_step, ("url_pattern", "value"))

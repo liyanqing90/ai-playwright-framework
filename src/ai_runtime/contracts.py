@@ -15,7 +15,7 @@ class SelectorDecision(StrictModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
-class ObservedOperationDecision(StrictModel):
+class AiStepDecision(StrictModel):
     action: Literal["click", "fill", "press", "wait", "skip"]
     selector: str | None = None
     value: str | None = None
@@ -31,6 +31,10 @@ class ObservedOperationDecision(StrictModel):
         if self.action == "wait" and self.wait_ms is None:
             raise ValueError("wait action requires wait_ms")
         return self
+
+
+# Backward-compatible contract name for existing tests/config references.
+ObservedOperationDecision = AiStepDecision
 
 
 class GeneratedCase(StrictModel):

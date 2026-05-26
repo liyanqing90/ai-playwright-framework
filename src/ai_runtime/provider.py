@@ -99,24 +99,59 @@ class ChatCompletionProvider:
         if not self.settings.omit_temperature:
             payload["temperature"] = 0.2
 
-        response = requests.post(
-            self.settings.url,
-            headers={
-                "Authorization": f"Bearer {self.settings.api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=self.settings.timeout_seconds,
-        )
+        tracker = get_token_usage_tracker()
+        try:
+            response = requests.post(
+                self.settings.url,
+                headers={
+                    "Authorization": f"Bearer {self.settings.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=self.settings.timeout_seconds,
+            )
+        except Exception as exc:
+            tracker.record_model_io(
+                operation=usage_operation,
+                request_payload=payload,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
         try:
             response.raise_for_status()
         except requests.HTTPError as exc:
             message = response.text.strip()[:1000]
+            tracker.record_model_io(
+                operation=usage_operation,
+                request_payload=payload,
+                response_payload={
+                    "status_code": response.status_code,
+                    "text": response.text,
+                },
+                error=f"HTTP {response.status_code}: {message}",
+            )
             raise RuntimeError(
                 f"模型请求失败: HTTP {response.status_code} {message}"
             ) from exc
-        raw = response.json()
-        get_token_usage_tracker().record_event(
+        try:
+            raw = response.json()
+        except Exception as exc:
+            tracker.record_model_io(
+                operation=usage_operation,
+                request_payload=payload,
+                response_payload={
+                    "status_code": response.status_code,
+                    "text": response.text,
+                },
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        tracker.record_model_io(
+            operation=usage_operation,
+            request_payload=payload,
+            response_payload=raw,
+        )
+        tracker.record_event(
             operation=usage_operation,
             provider="chat_completions",
             model=self.settings.model,
@@ -152,7 +187,16 @@ class ChatCompletionProvider:
             usage_operation=usage_operation,
             usage_metadata=usage_metadata,
         )
-        return parse_model_response(content, response_model)
+        try:
+            return parse_model_response(content, response_model)
+        except Exception as exc:
+            get_token_usage_tracker().record_model_io(
+                operation=f"{usage_operation}.parse_error",
+                request_payload={"schema_name": schema_name or response_model.__name__},
+                response_payload={"content": content},
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
 
 
 def _chat_completions_url(base_url: str) -> str:
