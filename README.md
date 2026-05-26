@@ -238,7 +238,7 @@ AI 默认配置在 `config/ai_config.yaml`：
 - `runtime.allow_ai_in_smart`: `smart` 模式无法通过显式选择器、历史定位、规则定位解析时，是否允许 AI 兜底。
 - `runtime.ai_enabled`: 是否启用 AI 定位和 AI 生成。
 - `selector_registry.sqlite_path`: 智能定位结果缓存库，默认 `.ui_auto/selectors.db`。
-- `vision.enabled`: 是否启用 UI Vision 兜底。默认 `false`，避免影响历史用例。
+- `vision.enabled`: 是否启用 UI Vision 兜底。demo 默认启用；稳定 selector 会先通过，不会触发视觉服务。
 - `vision.service_url`: UI Vision Service 局域网地址，也可用 `.env` 中的 `UI_VISION_BASE_URL` 覆盖。
 - `vision.allow_coordinate_fallback`: 是否允许在无法映射 DOM selector 时使用坐标点击/输入兜底。默认 `false`，推荐先保持关闭。
 - `vision.send_dom_candidates`: 调用视觉服务时是否发送 DOM 候选及坐标，默认 `true`，用于让视觉结果优先回落到可复用 selector。
@@ -377,7 +377,7 @@ test_data:
 
 ### Selector 自愈与 elements 回写
 
-`smart`/`ai` 模式下，如果已有 element key 对应的 selector 失效，框架会先验证失败原因，再按历史定位、规则定位、LLM DOM 选择、UI Vision 的顺序寻找新 selector。
+`smart`/`ai` 模式下，如果已有 element key 对应的 selector 失效，框架会先验证失败原因，再按历史定位、规则定位、UI Vision、LLM DOM 选择的顺序寻找新 selector。
 
 自愈成功后的处理规则：
 
@@ -402,14 +402,14 @@ $env:UI_AI_PERSIST_HEALED_SELECTORS="false"
 
 ### UI Vision 兜底链路
 
-UI Vision 不是新的 YAML 操作类型，而是 `smart`/`ai` 模式下的最后一层定位兜底：
+UI Vision 不是新的 YAML 操作类型，而是 `smart`/`ai` 模式下 DOM/规则无法定位后的标准兜底能力：
 
 ```text
 显式 selector
 → selector registry
 → 规则定位
-→ LLM DOM 候选选择
 → UI Vision 截图理解 + DOM 候选映射
+→ LLM DOM 候选选择
 → 可选坐标兜底
 ```
 
@@ -444,13 +444,10 @@ docker compose up -d --build
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:5100/health
 ```
 
-临时启用真实视觉兜底执行：
+执行 demo 视觉兜底用例：
 
 ```powershell
-$env:UI_VISION_ENABLED="true"
-$env:UI_VISION_BASE_URL="http://127.0.0.1:5100"
-$env:UI_VISION_API_KEY="sk-ui-vision-local"  # 如果服务端配置了 UI_VISION_API_KEY
-poetry run run_case -p demo -f vision_probe -m smart
+poetry run run_case -p demo -f vision_showcase
 ```
 
 ### 日志输出

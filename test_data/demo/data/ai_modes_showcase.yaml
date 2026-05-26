@@ -1,0 +1,39 @@
+test_data:
+  test_saucedemo_step_smart_target_add_cart:
+    description: step级smart通过自然语言目标添加背包到购物车
+    mode: strict
+    steps:
+      - use_module: saucedemo_login
+        params:
+          username: ${standard_username}
+      - action: click
+        target: Sauce Labs Backpack add to cart button
+        mode: smart
+      - action: assert_text
+        selector: shopping_cart_badge
+        value: '1'
+
+  test_saucedemo_native_ai_step_open_cart:
+    description: 原生AI步骤编译为点击购物车入口
+    mode: strict
+    steps:
+      - use_module: saucedemo_login
+        params:
+          username: ${standard_username}
+      - action: ai_step
+        instruction: Click the shopping cart link in the top-right header. Choose the DOM candidate for the cart link.
+      - action: assert_text
+        selector: sauce_page_title
+        value: Your Cart
+
+  test_saucedemo_case_ai_target_open_menu:
+    description: case级ai模式使用target打开侧边菜单
+    mode: ai
+    steps:
+      - use_module: saucedemo_login
+        params:
+          username: ${standard_username}
+      - action: click
+        target: Open Menu
+      - action: assert_visible
+        selector: logout_sidebar_link

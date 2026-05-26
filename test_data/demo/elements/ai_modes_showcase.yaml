@@ -1,0 +1,3 @@
+elements:
+  sauce_page_title: .title
+  logout_sidebar_link: '#logout_sidebar_link'

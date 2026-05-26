@@ -26,7 +26,7 @@ llm:
   schema_version: ui-ai-schema-v1
 
 vision:
-  enabled: false
+  enabled: true
   service_url: http://10.168.78.49:5100
   timeout_seconds: 30
   min_confidence: 0.85

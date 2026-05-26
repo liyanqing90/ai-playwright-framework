@@ -1145,6 +1145,70 @@ def test_vision_resolver_maps_visual_center_back_to_dom_selector():
     assert resolved.source == "vision_dom"
 
 
+def test_smart_resolver_prefers_enabled_vision_before_llm(monkeypatch):
+    class FakeLocator:
+        @property
+        def first(self):
+            return self
+
+        def wait_for(self, state, timeout):
+            return None
+
+        def is_enabled(self):
+            return True
+
+    class FakePage:
+        url = "http://example.test/form"
+
+        def locator(self, selector):
+            return FakeLocator()
+
+        def evaluate(self, script, limit):
+            return []
+
+    class ForbiddenProvider:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("LLM should not be called before enabled vision")
+
+    class FakeVisionResolver:
+        def __init__(self, page, *, settings):
+            self.page = page
+            self.settings = settings
+
+        def resolve(self, **kwargs):
+            return VisionResolution(
+                selector="#submit",
+                source="vision_dom",
+                confidence=0.9,
+                method="mock",
+                reason="visual matched",
+            )
+
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.load_vision_settings",
+        lambda config: VisionSettings(enabled=True, service_url="http://vision.test"),
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.ChatCompletionProvider", ForbiddenProvider
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.VisionResolver", FakeVisionResolver
+    )
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = None
+    resolved = resolver.resolve(
+        action="click",
+        target="primary action",
+        selector=None,
+        mode="smart",
+        timeout=1000,
+    )
+
+    assert resolved.selector == "#submit"
+    assert resolved.source == "vision_dom"
+
+
 def test_smart_resolver_rejects_registry_semantic_mismatch(tmp_path: Path):
     snapshots = {
         "#user-name": {

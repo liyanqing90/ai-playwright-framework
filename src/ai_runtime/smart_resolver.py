@@ -271,13 +271,25 @@ class SmartResolver:
             raise ValueError(message)
 
         errors: list[str] = []
-        try:
-            resolved = self._resolve_with_ai(
-                action=action, target=target_text, timeout=timeout
-            )
-        except Exception as exc:
-            errors.append(f"llm={exc}")
-            if not self.vision_settings.enabled:
+        resolved: ResolvedSelector | None = None
+        if self.vision_settings.enabled:
+            try:
+                resolved = self._resolve_with_vision(
+                    action=action, target=target_text, timeout=timeout
+                )
+            except (VisionConfigurationError, VisionServiceUnavailable) as vision_exc:
+                logger.warning(f"UI Vision服务不可用，继续LLM兜底: {vision_exc}")
+                errors.append(f"vision={vision_exc}")
+            except Exception as vision_exc:
+                errors.append(f"vision={vision_exc}")
+
+        if resolved is None:
+            try:
+                resolved = self._resolve_with_ai(
+                    action=action, target=target_text, timeout=timeout
+                )
+            except Exception as exc:
+                errors.append(f"llm={exc}")
                 self._log_heal_failed(
                     action=action,
                     target=target_text,
@@ -286,23 +298,6 @@ class SmartResolver:
                     healing_attempted=healing_attempted,
                 )
                 raise
-            try:
-                resolved = self._resolve_with_vision(
-                    action=action, target=target_text, timeout=timeout
-                )
-            except (VisionConfigurationError, VisionServiceUnavailable) as vision_exc:
-                logger.warning(
-                    f"UI Vision服务不可用，跳过视觉兜底并保持原有定位失败: {vision_exc}"
-                )
-                errors.append(f"vision={vision_exc}")
-                self._log_heal_failed(
-                    action=action,
-                    target=target_text,
-                    selector=normalized_selector,
-                    errors=errors,
-                    healing_attempted=healing_attempted,
-                )
-                raise exc
 
         if resolved.selector:
             if not selector_matches_target(
