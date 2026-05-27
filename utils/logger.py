@@ -29,6 +29,7 @@ try:
         rotation="10 MB",
         retention="10 days",
         encoding="utf-8",
+        delay=True,
     )
 except Exception as e:
     print(f"Error adding file logger: {e}")

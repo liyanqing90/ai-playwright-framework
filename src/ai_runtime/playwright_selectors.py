@@ -108,7 +108,12 @@ def collect_candidates(page, *, limit: int = 120) -> list[dict[str, Any]]:
                 return labels.join(' ').trim().slice(0, 180);
             };
             const ancestorText = el => {
-                const ancestor = el.closest('.inventory_item, .cart_item, li, tr, form, section, article, [data-test], [data-testid]');
+                const ancestor = el.closest([
+                    '[data-test]', '[data-testid]', '[data-qa]',
+                    'li', 'tr', 'form', 'section', 'article', 'fieldset',
+                    '[role="row"]', '[role="listitem"]',
+                    '[class*="card" i]', '[class*="item" i]', '[class*="row" i]'
+                ].join(','));
                 if (!ancestor || ancestor === el) return '';
                 return (ancestor.innerText || ancestor.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 300);
             };
@@ -138,8 +143,7 @@ def collect_candidates(page, *, limit: int = 120) -> list[dict[str, Any]]:
                 '[class*="cancel" i]', '[class*="popup" i]',
                 '[class*="modal" i]', '[class*="dialog" i]',
                 '[data-test]', '[data-testid]', '[data-qa]',
-                '[class*="cart" i]', '[class*="badge" i]',
-                '[class*="error" i]', '[class*="inventory" i]'
+                '[class*="badge" i]', '[class*="error" i]'
             ].join(',')));
             return nodes
                 .filter(el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length))
@@ -213,7 +217,7 @@ def semantic_selectors(
 def selector_matches_target(
     page, selector: str, target: str | None, action: str
 ) -> bool:
-    """Reject high-risk semantic mismatches such as password target -> username input."""
+    """Reject high-risk semantic mismatches before self-healing is trusted."""
     if not target:
         return True
     target_l = str(target).lower()
@@ -222,7 +226,16 @@ def selector_matches_target(
         target_l,
         ["用户名", "账号", "帐号", "用户", "username", "user name", "user-name"],
     )
-    if not is_password_target and not is_username_target:
+    is_login_target = _contains_any(target_l, ["登录", "登陆", "login", "sign in"])
+    is_title_target = _contains_any(target_l, ["标题", "title"])
+    if not any(
+        (
+            is_password_target,
+            is_username_target,
+            is_login_target,
+            is_title_target,
+        )
+    ):
         return True
 
     try:
@@ -249,12 +262,25 @@ def selector_matches_target(
     except Exception:
         return True
 
+    if not isinstance(snapshot, dict):
+        snapshot = {"selector": selector}
     snapshot["selector"] = selector
     score = _candidate_semantic_score(snapshot, target, action)
+    tag = str(snapshot.get("tag") or "").lower()
+    input_type = str(snapshot.get("type") or "").lower()
+    selector_l = str(selector or "").lower()
     if is_password_target:
         return score >= 6
     if is_username_target:
         return score >= 4
+    if is_login_target and action in {"click", "assert_visible"}:
+        return (
+            tag in {"button", "a"}
+            or (tag == "input" and input_type in {"submit", "button"})
+            or "login-button" in selector_l
+        )
+    if is_title_target:
+        return score >= 1.5
     return True
 
 
@@ -287,10 +313,10 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
         selectors.extend(
             [
                 'input[type="password"]',
-                "#password",
                 'input[name*="password" i]',
                 'input[id*="password" i]',
                 'input[placeholder*="Password" i]',
+                'input[autocomplete*="current-password" i]',
             ]
         )
     if (
@@ -303,11 +329,12 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
     ):
         selectors.extend(
             [
-                "#user-name",
                 'input[name*="user" i]',
                 'input[id*="user" i]',
                 'input[placeholder*="User" i]',
                 'input[autocomplete*="username" i]',
+                'input[name*="account" i]',
+                'input[id*="account" i]',
             ]
         )
     if (
@@ -318,7 +345,6 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
     ):
         selectors.extend(
             [
-                "#login-button",
                 'input[type="submit"]',
                 'button[data-test*="login" i]',
                 'input[data-test*="login" i]',
@@ -329,55 +355,16 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
     if "error" in target_l or "错误" in target or "提示" in target:
         selectors.extend(
             [
-                '[data-test="error"]',
-                'h3[data-test="error"]',
+                '[role="alert"]',
                 '[class*="error" i]',
+                '[data-test*="error" i]',
+                '[data-testid*="error" i]',
             ]
         )
-    if "购物车" in target or "cart" in target_l:
-        if (
-            "角标" in target
-            or "数量" in target
-            or "badge" in target_l
-            or "count" in target_l
-        ):
-            selectors.extend(
-                [
-                    '[data-test="shopping-cart-badge"]',
-                    ".shopping_cart_badge",
-                    '[class*="cart_badge" i]',
-                ]
-            )
-        if "入口" in target or "图标" in target or "link" in target_l:
-            selectors.extend(
-                [
-                    '[data-test="shopping-cart-link"]',
-                    ".shopping_cart_link",
-                    '[class*="shopping_cart_link" i]',
-                ]
-            )
-        if "列表" in target or "区域" in target or "list" in target_l:
-            selectors.extend(
-                [
-                    '[data-test="cart-list"]',
-                    ".cart_list",
-                    '[class*="cart_list" i]',
-                ]
-            )
-    if ("backpack" in target_l or "sauce labs backpack" in target_l) and (
-        "添加" in target or "add" in target_l
-    ):
-        selectors.extend(
-            [
-                '[data-test="add-to-cart-sauce-labs-backpack"]',
-                "#add-to-cart-sauce-labs-backpack",
-            ]
-        )
+    selectors.extend(_target_attribute_selectors(target, action))
     if "搜索" in target or "search" in target_l:
         selectors.extend(
             [
-                'textarea[name="q"]',
-                'input[name="q"]',
                 'textarea[aria-label*="Search"]',
                 'input[aria-label*="Search"]',
                 'textarea[placeholder*="搜索"]',
@@ -413,6 +400,64 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
         if selector and selector not in deduped:
             deduped.append(selector)
     return deduped
+
+
+def _target_attribute_selectors(target: str, action: str) -> list[str]:
+    tokens = _target_tokens(target)
+    selectors: list[str] = []
+    attrs = ("data-test", "data-testid", "data-qa", "id", "name", "aria-label", "title")
+    tags = ("input", "textarea") if action == "fill" else ("button", "a", "input", "textarea", "select")
+    for token in tokens[:5]:
+        quoted = _css_attr(token)
+        for attr in attrs:
+            selectors.append(f'[{attr}*="{quoted}" i]')
+            for tag in tags:
+                selectors.append(f'{tag}[{attr}*="{quoted}" i]')
+    if len(tokens) >= 2:
+        primary = [_css_attr(token) for token in tokens[:3]]
+        for attr in ("data-test", "data-testid", "id", "name"):
+            selectors.append("".join(f'[{attr}*="{token}" i]' for token in primary))
+    return selectors
+
+
+def _target_tokens(target: str) -> list[str]:
+    stop_words = {
+        "button",
+        "link",
+        "input",
+        "field",
+        "text",
+        "click",
+        "fill",
+        "press",
+        "assert",
+        "visible",
+        "page",
+        "header",
+        "footer",
+        "按钮",
+        "链接",
+        "输入框",
+        "点击",
+        "输入",
+        "断言",
+        "可见",
+        "页面",
+    }
+    raw = str(target or "").replace("_", " ").replace("-", " ")
+    tokens = re.findall(r"[A-Za-z0-9]{2,}|[\u4e00-\u9fff]{2,}", raw)
+    result: list[str] = []
+    for token in tokens:
+        normalized = token.lower()
+        if normalized in stop_words:
+            continue
+        if normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def _css_attr(value: str) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _candidate_semantic_score(
@@ -467,38 +512,13 @@ def _candidate_semantic_score(
         if _contains_any(blob, ["login", "sign in", "登录", "登陆"]):
             score += 5
 
-    if _contains_any(target_l, ["购物车", "cart"]):
-        if _contains_any(blob, ["cart", "shopping-cart", "购物车"]):
-            score += 4
-        if _contains_any(
-            target_l, ["角标", "数量", "badge", "count"]
-        ) and _contains_any(
-            blob, ["badge", "count", "shopping-cart-badge", "shopping-cart-badge"]
-        ):
-            score += 5
-        if _contains_any(target_l, ["入口", "图标", "link"]) and _contains_any(
-            blob, ["shopping-cart-link", "cart link"]
-        ):
-            score += 5
-        if _contains_any(target_l, ["列表", "区域", "list"]) and _contains_any(
-            blob, ["cart-list", "cart item", "inventory"]
-        ):
-            score += 4
-
     if _contains_any(target_l, ["错误", "提示", "error"]):
         if _contains_any(blob, ["error", "sadface", "错误"]):
             score += 5
 
     if _contains_any(target_l, ["添加", "加入", "add"]):
-        if _contains_any(blob, ["add-to-cart", "add to cart", "添加"]):
+        if _contains_any(blob, ["add", "添加", "加入"]):
             score += 4
-
-    if "backpack" in target_l and "backpack" in blob:
-        score += 4
-    if "sauce" in target_l and "sauce" in blob:
-        score += 1
-    if "labs" in target_l and "labs" in blob:
-        score += 1
 
     if selector and looks_like_raw_selector(selector) and selector in blob:
         score += 0.25

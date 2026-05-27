@@ -12,9 +12,7 @@ from faker import Faker
 def generate_faker_data(data_type, **kwargs):
     """
     生成Faker数据的辅助函数
-    这个函数只是为了兼容旧代码，实际调用BasePage中的方法
     """
-    # 兼容旧的简单数据类型
     if data_type == "name":
         faker = Faker()
         return "新零售" + faker.uuid4().replace("-", "")[:6]

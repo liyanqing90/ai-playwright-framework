@@ -19,12 +19,13 @@ app = typer.Typer(add_completion=False, help="Generate project test cases.")
 
 @app.command()
 def main(
-    spec: str = typer.Argument(..., help="生成规格名，例如 saucedemo_ai"),
+    spec: str = typer.Argument(..., help="生成规格名，例如 smoke"),
     project: Project = typer.Option(Project.DEMO, "-p", "--project", help="项目"),
     dry_run: bool = typer.Option(False, "--dry-run", help="只预览生成结果，不写文件"),
     no_overwrite: bool = typer.Option(
         False, "--no-overwrite", help="不覆盖已存在的生成文件"
     ),
+    no_verify: bool = typer.Option(False, "--no-verify", help="生成后不自动执行验证"),
     context_env: Environment = typer.Option(
         Environment.PROD,
         "--context-env",
@@ -41,6 +42,7 @@ def main(
             "spec": spec,
             "dry_run": dry_run,
             "overwrite": not no_overwrite,
+            "verify": not no_verify,
         },
     )
     try:
@@ -62,6 +64,7 @@ def main(
                 dry_run=dry_run,
                 overwrite=not no_overwrite,
                 use_ai=True,
+                verify=not no_verify,
                 progress=report,
             )
         display_generation_result(result, dry_run=dry_run)

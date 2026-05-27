@@ -11,6 +11,7 @@ import requests
 from dotenv import load_dotenv
 
 from src.ai_runtime.config import load_ai_config
+from utils.logger import logger
 from utils.token_usage import get_token_usage_tracker
 
 
@@ -18,6 +19,8 @@ LLM_BASE_URL_ENV = "LLM_BASE_URL"
 LLM_API_KEY_ENV = "LLM_API_KEY"
 LLM_MODEL_ENV = "LLM_MODEL"
 LLM_REASONING_EFFORT_ENV = "LLM_REASONING_EFFORT"
+LLM_RESPONSE_FORMAT_ENV = "LLM_RESPONSE_FORMAT"
+LLM_TIMEOUT_SECONDS_ENV = "LLM_TIMEOUT_SECONDS"
 
 
 @dataclass(frozen=True)
@@ -27,7 +30,7 @@ class LLMSettings:
     model: str
     reasoning_effort: str | None = None
     omit_temperature: bool = True
-    response_format: Literal["json_object", "json_schema"] = "json_object"
+    response_format: Literal["json_object", "json_schema", "text", "none"] = "json_object"
     timeout_seconds: int = 60
     schema_version: str = "ui-ai-schema-v1"
 
@@ -47,14 +50,30 @@ def load_llm_settings() -> LLMSettings:
     api_key = os.environ.get(LLM_API_KEY_ENV)
     model = os.environ.get(LLM_MODEL_ENV)
     reasoning_effort = os.environ.get(LLM_REASONING_EFFORT_ENV)
+    timeout_seconds = int(
+        os.environ.get(LLM_TIMEOUT_SECONDS_ENV)
+        or llm_cfg.get("timeout_seconds", 60)
+    )
+    is_gguf_model = bool(model and model.lower().endswith(".gguf"))
+    if is_gguf_model and timeout_seconds < 180:
+        timeout_seconds = 180
+    if is_gguf_model:
+        reasoning_effort = None
     if not base_url or not api_key or not model:
         raise LLMConfigurationError(
             "AI模型未配置。需要设置 LLM_BASE_URL、LLM_API_KEY、LLM_MODEL。"
         )
-    response_format = str(llm_cfg.get("response_format", "json_object")).lower()
-    if response_format not in {"json_object", "json_schema"}:
+    response_format = str(
+        os.environ.get(LLM_RESPONSE_FORMAT_ENV)
+        or llm_cfg.get("response_format", "json_object")
+    ).lower()
+    if response_format == "auto":
+        response_format = "text" if model.lower().endswith(".gguf") else "json_object"
+    elif response_format == "json_object" and model.lower().endswith(".gguf"):
+        response_format = "text"
+    if response_format not in {"json_object", "json_schema", "text", "none"}:
         raise LLMConfigurationError(
-            "llm.response_format 只支持 json_object 或 json_schema"
+            "llm.response_format 只支持 auto/json_object/json_schema/text/none"
         )
     return LLMSettings(
         url=_chat_completions_url(base_url),
@@ -63,7 +82,7 @@ def load_llm_settings() -> LLMSettings:
         reasoning_effort=reasoning_effort,
         omit_temperature=bool(llm_cfg.get("omit_temperature", True)),
         response_format=response_format,
-        timeout_seconds=int(llm_cfg.get("timeout_seconds", 60)),
+        timeout_seconds=timeout_seconds,
         schema_version=str(llm_cfg.get("schema_version", "ui-ai-schema-v1")),
     )
 
@@ -116,23 +135,61 @@ class ChatCompletionProvider:
                 request_payload=payload,
                 error=f"{type(exc).__name__}: {exc}",
             )
+            if isinstance(exc, requests.exceptions.ReadTimeout):
+                raise RuntimeError(
+                    "模型请求超时: "
+                    f"model={self.settings.model} | timeout_seconds={self.settings.timeout_seconds}。"
+                    "本地GGUF模型通常需要更长超时或更小上下文，可设置 "
+                    "LLM_TIMEOUT_SECONDS，或在 config/ai_config.yaml 调整 llm.timeout_seconds。"
+                ) from exc
             raise
         try:
             response.raise_for_status()
         except requests.HTTPError as exc:
-            message = response.text.strip()[:1000]
-            tracker.record_model_io(
-                operation=usage_operation,
-                request_payload=payload,
-                response_payload={
-                    "status_code": response.status_code,
-                    "text": response.text,
-                },
-                error=f"HTTP {response.status_code}: {message}",
-            )
-            raise RuntimeError(
-                f"模型请求失败: HTTP {response.status_code} {message}"
-            ) from exc
+            if _should_retry_with_text_response_format(response, payload):
+                logger.warning(
+                    "模型端不支持当前 response_format，自动切换为 text 重试一次"
+                )
+                payload["response_format"] = {"type": "text"}
+                try:
+                    response = requests.post(
+                        self.settings.url,
+                        headers={
+                            "Authorization": f"Bearer {self.settings.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                        timeout=self.settings.timeout_seconds,
+                    )
+                    response.raise_for_status()
+                except requests.HTTPError as retry_exc:
+                    message = response.text.strip()[:1000]
+                    tracker.record_model_io(
+                        operation=usage_operation,
+                        request_payload=payload,
+                        response_payload={
+                            "status_code": response.status_code,
+                            "text": response.text,
+                        },
+                        error=f"HTTP {response.status_code}: {message}",
+                    )
+                    raise RuntimeError(
+                        f"模型请求失败: HTTP {response.status_code} {message}"
+                    ) from retry_exc
+            else:
+                message = response.text.strip()[:1000]
+                tracker.record_model_io(
+                    operation=usage_operation,
+                    request_payload=payload,
+                    response_payload={
+                        "status_code": response.status_code,
+                        "text": response.text,
+                    },
+                    error=f"HTTP {response.status_code}: {message}",
+                )
+                raise RuntimeError(
+                    f"模型请求失败: HTTP {response.status_code} {message}"
+                ) from exc
         try:
             raw = response.json()
         except Exception as exc:
@@ -206,6 +263,21 @@ def _chat_completions_url(base_url: str) -> str:
     return f"{base_url}/chat/completions"
 
 
+def _should_retry_with_text_response_format(
+    response: requests.Response,
+    payload: dict[str, Any],
+) -> bool:
+    response_format = payload.get("response_format")
+    if not isinstance(response_format, dict):
+        return False
+    if response_format.get("type") == "text":
+        return False
+    if response.status_code != 400:
+        return False
+    message = response.text.lower()
+    return "response_format.type" in message and "text" in message
+
+
 def build_response_format(
     *,
     settings: LLMSettings,
@@ -215,6 +287,10 @@ def build_response_format(
 ) -> dict[str, Any] | None:
     if not response_json and response_model is None:
         return None
+    if settings.response_format == "none":
+        return None
+    if settings.response_format == "text":
+        return {"type": "text"}
     if response_model is not None and settings.response_format == "json_schema":
         return {
             "type": "json_schema",

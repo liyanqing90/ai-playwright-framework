@@ -30,7 +30,7 @@
 - **Page Object模式**：完整的Page Object模式实现，提高代码复用性
 - **详细日志与报告**：详细的操作日志、失败截图和Allure测试报告
 - **AI用例生成**：支持基于 YAML 规格生成当前项目三层结构用例，并优先复用既有元素、变量和公共组件
-- **AI/Smart执行模式**：在不破坏历史用例的前提下，支持 strict、smart、ai 三种执行模式
+- **AI/Smart执行体系**：原生支持 strict、smart、agent_case steps 和 agent_case intent/explore；用例生成统一走 `gen`
 
 ### 高级特性
 
@@ -58,7 +58,7 @@
 
 - `src/cli/run_case.py`: 推荐测试执行入口，对应 `poetry run run_case`
 - `src/cli/generate_case.py`: 推荐用例生成入口，对应 `poetry run gen`
-- `test_runner.py`: 兼容旧命令入口，保留运行和生成能力，但新流程优先使用 Poetry scripts
+- `test_runner.py`: 根命令入口；日常推荐使用 Poetry scripts
 - `src/runner.py`: 核心运行器实现，负责测试用例的加载和执行
 
 ### 2. 测试用例执行器 (TestCaseExecutor)
@@ -75,7 +75,7 @@
 
 **主要文件**:
 
-- `src/test_step_executor.py`: 测试步骤执行器入口（兼容性保留）
+- `src/test_step_executor.py`: 测试步骤执行器入口
 - `src/step_actions/step_executor.py`: 测试步骤执行器核心实现
 - `src/step_actions/action_types.py`: 操作类型定义
 - `src/step_actions/commands/`: 命令模式实现目录
@@ -223,7 +223,7 @@ AI 只介入两个阶段：
 | 目录 | 职责 | AI 生成/执行要求 |
 |---|---|---|
 | `cases/` | 只组织用例顺序 | 只写 `test_cases[].name`，不写步骤、模式、描述 |
-| `data/` | 存储用例描述、模式和步骤 | `description`、`mode`、`steps` 都在这里 |
+| `data/` | 存储用例主体 | 结构化用例写 `mode/steps`；Agent 用例写 `type: agent_case` 和 `intent/steps/inputs/checkpoints/final` |
 | `elements/` | 存储元素 key 和 selector | 自愈成功后只回写已有 key |
 | `modules/` | 存储公共组件/复用流程 | 生成用例优先复用，例如登录组件 |
 | `vars/` | 存储项目变量 | 生成用例优先引用变量，不硬编码测试数据 |
@@ -231,7 +231,7 @@ AI 只介入两个阶段：
 生成链路由 `GenerationHarness` 统一门禁：
 
 - `cases` 层不能写 `description`、`mode`、`steps`。
-- `data.<case>.mode` 只允许 `strict`、`smart`、`ai`。
+- 普通结构化用例的 `mode` 只允许 `strict`、`smart`；`agent_case` 不声明 `mode`。
 - 生成用例必须有项目格式的断言步骤，例如 `assert_text`、`assert_text_contains`、`assert_visible`。
 - 元素、模块、变量引用必须存在于当前项目资产或本次生成资产中。
 - 模型输出会经过规范化、校验、必要时修复，再落盘。
@@ -266,12 +266,36 @@ BASE_URL=
 | `runtime.allow_ai_in_smart` | `smart` 定位失败后是否允许 LLM DOM 兜底 |
 | `runtime.ai_enabled` | 是否启用 AI 定位、AI 步骤和生成 |
 | `runtime.max_ai_calls_per_test` | 单用例 AI 调用上限 |
+| `runtime.ai_step_candidate_limit` | `ai_step` 发送给模型的候选元素上限 |
+| `runtime.llm_selector_candidate_scan_limit` | selector 兜底前从页面扫描的候选上限 |
+| `runtime.llm_selector_candidate_limit` | selector 兜底实际发送给 LLM 的候选上限 |
+| `runtime.agent_candidate_scan_limit` | Agent 每轮从页面扫描的候选上限 |
+| `runtime.agent_candidate_limit` | Agent 每轮实际发送给 LLM 的候选上限 |
+| `runtime.agent_context_items` | Agent 每轮发送的项目资产摘要上限 |
+| `runtime.agent_history_limit` | Agent 每轮发送的最近执行历史上限 |
+| `runtime.agent_reasoning_effort` | Agent 运行时模型调用的专用推理强度，建议低于全局 `LLM_REASONING_EFFORT` |
+| `runtime.agent_timeout_seconds` | Agent 运行时模型调用的专用超时时间 |
+| `runtime.ai_cache_sqlite_path` | 统一 AI 缓存 SQLite 库，默认 `.ui_auto/ai_cache.sqlite3` |
+| `runtime.agent_case_cache_enabled` | 是否启用 `agent_case` advisory trace 缓存 |
+| `generation.generation_cache_enabled` | 是否启用 `gen` 生成结果缓存 |
+| `generation.verify_after_generate` | `gen` 写入后是否默认执行生成用例验证 |
+| `agent_policy.limits.max_steps` | `agent_case` 单用例最大运行时动作数 |
+| `agent_policy.limits.max_model_calls` | `agent_case` 单用例最大模型决策次数 |
+| `agent_policy.limits.max_duration_seconds` | `agent_case` 单用例最大执行时长 |
+| `agent_policy.guardrails.*` | `agent_case` 全局安全边界，单条用例不声明 |
+| `llm.response_format` | 模型响应格式，默认 `auto`；GGUF 模型会自动降级为 `text` |
 | `selector_registry.sqlite_path` | selector 自愈和历史定位缓存库 |
 | `self_healing.persist_elements` | 自愈成功后是否异步回写 `elements/*.yaml` |
+| `self_healing.min_persist_confidence` | 自愈 selector 写回元素文件的最低置信度 |
+| `self_healing.persist_assertion_selectors` | 是否允许断言步骤的自愈 selector 写回元素文件，默认建议关闭 |
 | `vision.enabled` | 是否启用 UI Vision 标准兜底 |
 | `vision.service_url` | UI Vision Service 地址，可被 `.env` 覆盖 |
 | `vision.allow_coordinate_fallback` | 是否允许无法映射 DOM 时使用坐标兜底，默认建议 `false` |
 | `vision.send_dom_candidates` | 调用视觉服务时是否发送 DOM 候选和坐标 |
+
+AI 缓存统一写入 `runtime.ai_cache_sqlite_path`，按 namespace 隔离 `agent_trace` 和 `generation` 产物。两类缓存共用作用域规则：`project + env + normalized_entry_url + 业务规格 fingerprint + 资产 key fingerprint + model + prompt/schema version`。`normalized_entry_url` 按就近原则从规格 URL、公共模块 `goto/open/navigate`、项目 `base_url` 解析，并去掉 query/hash，避免跨项目或跨入口误命中。
+
+`agent_trace` 只作为 advisory 回放提示，回放失败会切回实时观察；`generation` 缓存的是已经通过 Harness 校验且执行验证通过的生成 payload，不直接复用运行时产物。日志中 `cache_hit=True` 且 token usage `calls=0` 表示本次没有调用大模型。
 
 ### 用例生成
 
@@ -293,28 +317,81 @@ poetry run gen -p demo saucedemo_ai
 poetry run gen -p demo saucedemo_ai --dry-run
 ```
 
+默认写入后会立即执行生成出的 case 文件做验证；验证通过后，`generation` 缓存会写为 verified。需要只生成不执行时使用：
+
+```powershell
+poetry run gen -p demo saucedemo_ai --no-verify
+```
+
 生成规则：
 
 1. 命令中的 `-p demo` 决定读取 `test_data/demo/generation/saucedemo_ai.yaml`。
 2. 输出文件名默认和规格名一致，并默认覆盖对应生成文件。
-3. 规格只写业务意图和自然语言步骤，不在描述里硬塞“必须复用某元素/某组件”。
+3. 规格可以是“步骤式”或“意图式”，都不在描述里硬塞“必须复用某元素/某组件”。
 4. 复用 `elements/modules/vars` 是系统提示词、项目上下文和 Harness 的职责。
-5. 生成完成后会写入 `cases/`、`data/`，必要时写入 `elements/`、`modules/`、`vars/`。
+5. 入口 URL 遵循就近原则：优先读取自然语言 `steps` 或 `description` 中的 URL；没有则复用已有 `modules` 里的 `goto/open/navigate`；再没有才使用项目环境配置的 `base_url`。
+6. 生成完成后会写入 `cases/`、`data/`，必要时写入 `elements/`、`modules/`、`vars/`。
 
-规格示例：
+当前支持两种生成规格模式。
+
+步骤式规格适合业务流程已经明确、希望模型严格按步骤生成：
 
 ```yaml
 project: demo
-description: "基于当前 demo 项目生成 Saucedemo 补充用例"
+description: "步骤式规格：基于当前 demo 项目生成 Saucedemo 标准用户完整购物车流程用例"
 mode: smart
 cases:
-  - name: saucedemo_backpack_cart
-    description: "标准用户添加单个商品到购物车"
+  - name: saucedemo_standard_user_cart_logout_flow
+    description: "标准用户完成登录、添加Backpack、查看购物车并退出登录"
     steps:
       - "打开 https://www.saucedemo.com/ 登录页"
       - "使用标准用户登录"
+      - "断言登录后进入商品列表页，页面标题为 Products"
       - "添加 Sauce Labs Backpack 到购物车"
-      - "断言购物车数量为 1"
+      - "断言购物车角标数量为 1"
+      - "打开购物车页面"
+      - "断言进入购物车页，页面标题为 Your Cart"
+      - "断言购物车中存在 Sauce Labs Backpack 商品"
+      - "打开左侧菜单"
+      - "断言 Logout 退出登录入口可见"
+      - "点击 Logout 退出登录"
+      - "断言已回到登录页，登录按钮可见"
+    checkpoints:
+      - "商品页标题为 Products"
+      - "购物车角标数量为 1"
+      - "购物车页标题为 Your Cart"
+      - "购物车商品名称为 Sauce Labs Backpack"
+      - "Logout 退出登录入口可见"
+    final:
+      - "退出登录后登录按钮可见"
+```
+
+意图式规格适合只描述业务目标，让模型根据项目上下文自行拆分步骤并补齐断言：
+
+```yaml
+project: demo
+description: "意图式规格：让AI基于业务目标自行拆分 Saucedemo 标准用户完整购物车流程"
+mode: smart
+cases:
+  - name: saucedemo_standard_user_cart_logout_ai_generated
+    intent: "打开 https://www.saucedemo.com/，标准用户登录 Saucedemo 后，添加指定商品到购物车，进入购物车确认商品和数量，然后从左侧菜单退出登录。"
+    inputs:
+      user_type: standard
+      product_name: Sauce Labs Backpack
+    checkpoints:
+      - "登录后进入商品列表页，页面标题为 Products"
+      - "购物车角标数量为 1"
+      - "进入购物车页，页面标题为 Your Cart"
+      - "购物车中存在 Sauce Labs Backpack 商品"
+      - "左侧菜单中 Logout 退出登录入口可见"
+    final:
+      - "退出登录后回到登录页，Login 按钮可见"
+```
+
+意图式示例命令：
+
+```powershell
+poetry run gen -p demo saucedemo_ai_intent
 ```
 
 生成后的结构示例：
@@ -322,14 +399,14 @@ cases:
 ```yaml
 # test_data/demo/cases/saucedemo_ai.yaml
 test_cases:
-  - name: test_saucedemo_backpack_cart
+  - name: test_saucedemo_standard_user_cart_logout_flow
 ```
 
 ```yaml
 # test_data/demo/data/saucedemo_ai.yaml
 test_data:
-  test_saucedemo_backpack_cart:
-    description: 标准用户添加单个商品到购物车
+  test_saucedemo_standard_user_cart_logout_flow:
+    description: 标准用户完成登录、添加Backpack、查看购物车并退出登录
     mode: smart
     steps:
       - use_module: saucedemo_login
@@ -340,24 +417,59 @@ test_data:
       - action: assert_text
         selector: shopping_cart_badge
         value: '1'
+      - action: click
+        selector: shopping_cart_link
+      - action: assert_text
+        selector: sauce_page_title
+        value: Your Cart
+      - action: assert_text
+        selector: cart_item_backpack_name
+        value: Sauce Labs Backpack
+      - action: click
+        selector: menu_button
+      - action: assert_visible
+        selector: logout_sidebar_link
+      - action: click
+        selector: logout_sidebar_link
+      - action: assert_visible
+        selector: sauce_login_btn
 ```
 
-### 执行模式
+### 模式、生成单元与能力边界
 
-模式可以配置在命令行、用例数据层或步骤层。优先级从高到低：
+AI 相关能力按三类概念划分，避免把执行、生成和视觉兜底混成一种“万能 AI 模式”：
+
+| 概念 | 类型 | 作用 |
+|---|---|---|
+| `strict` | Execution Mode | 确定性执行标准 steps |
+| `smart` | Execution Mode | 标准 steps 的智能定位、自愈和兜底执行 |
+| `ai_step` | Step Capability | 单条自然语言意图在执行时解析为一个标准 step |
+| `agent_case` | Runtime Case | 一句话目标或自然语言步骤计划，运行时边观察、边决策、边执行 |
+| `gen` | Asset Generation | 需求/intent/自然语言流程生成正式 `cases/data/elements/modules/vars` 资产 |
+| `vision` | Capability | 截图/OCR/视觉定位能力，只能作为 smart 或 Agent 定位链路的兜底 |
+
+`vision` 不是 YAML action，不允许写 `vision_click`、`vision_fill`、`vision_assert`。最终执行必须落到框架已有的标准 action，例如 `click`、`fill`、`assert_text`、`assert_visible`。
+
+`mode` 可以配置在命令行、用例数据层或步骤层。优先级从高到低：
 
 1. 单个步骤的 `mode`。
 2. `data.<case>.mode`。
 3. `-m/--ai-mode` 或 `UI_AI_MODE`。
 4. `config/ai_config.yaml` 的 `runtime.default_mode`。
 
-三种模式：
+普通结构化用例只支持两个 `mode` 值：
 
-| 模式 | 行为 | 适合场景 |
+| YAML mode | 语义 | 硬边界 |
 |---|---|---|
-| `strict` | 只使用明确 selector，不做智能定位 | 历史稳定用例、回归主链路 |
-| `smart` | 先验证 selector，失败或只有 target 时进入智能兜底 | 大多数需要自愈的业务用例 |
-| `ai` | 仍优先确定性定位，但允许更积极使用 AI 语义定位 | 探索性用例、目标描述多于 selector 的用例 |
+| `strict` | 确定性执行模式，只执行标准结构化 steps | 只允许使用已注册 `selector/element key`；不调用 LLM、Vision、自愈；失败即失败 |
+| `smart` | 增强执行模式，步骤的 `action/target/value/assertion` 已确定 | 只在当前 step 的目标语义范围内修复定位；不改业务流程；不新增运行时资产 |
+
+`agent_case` 是独立用例形态，不写 `mode`；框架内部按 Agent 运行。`mode` 只属于普通结构化 steps。
+
+| YAML type | 语义 |
+|---|---|
+| `standard` 或不写 | 普通结构化用例 |
+| `agent_case` | 运行时智能用例，使用顶层 `intent` 或 `steps`，再配合 `inputs/checkpoints/final`；不提前编译完整 steps |
 
 步骤级 smart：
 
@@ -367,40 +479,98 @@ test_data:
   mode: smart
 ```
 
-用例级 smart/ai：
+用例级 smart：
 
 ```yaml
 test_data:
   test_login:
     description: 登录流程
-    mode: ai
+    mode: smart
     steps:
       - action: click
         target: Open Menu
 ```
 
-原生 AI 步骤：
+原生 AI 步骤只适合单一 UI 动作或单一断言：
 
 ```yaml
 - action: ai_step
   instruction: "Click the shopping cart link in the top-right header."
 ```
 
-`ai_step` 不是直接操作浏览器。它会先由模型编译为框架已有原子动作，例如 `click`、`fill`、`press_key`、`wait`，然后继续走统一 command executor。
+`ai_step` 不是直接操作浏览器。它会先由模型编译为一个框架已有标准 step，然后继续走统一 command executor。允许的结果包括 `click`、`fill`、`press_key`、`wait` 等原子动作。
 
-兼容别名：
+`ai_step` 的硬规则：
+
+1. 一个 `ai_step` 只能编译为一个标准 step。
+2. 如果指令包含两个或更多动作、断言或业务流程，例如“登录并打开购物车”，运行时必须失败。
+3. 多动作需求应拆成多个结构化 steps，或改成 `agent_case`。
+
+Agent 运行时用例用于“边看边做”。它会观察当前页面 DOM 候选和项目资产，每轮让模型返回一个标准动作，再交给已有 StepExecutor 执行；成功后会把已验证轨迹写入 advisory cache，下次先校验回放缓存，失败则自动切回实时观察，不会被历史缓存卡死。
+
+Agent 执行器不内置具体页面业务流程。框架只负责压缩 DOM、提供项目元素/模块/变量资产、约束模型输出为单个标准 action，并把 action 交给 StepExecutor。某个页面的登录、加购、下单、退出等业务顺序必须来自 `data`、`generation`、`elements`、`modules` 或模型运行时决策，不能写进 `src` 通用代码。
+
+步骤式 Agent 用例适合已经知道业务顺序，但希望每一步由 Agent 根据实时页面状态执行：
 
 ```yaml
-- action: observe
-  instruction: "点击登录按钮"
+test_data:
+  test_saucedemo_agent_case_steps_cart_logout_flow:
+    description: Agent运行时steps式
+    type: agent_case
+    steps:
+      - "打开 https://www.saucedemo.com/ 登录页"
+      - "使用标准用户登录 Saucedemo"
+      - "添加 Sauce Labs Backpack 到购物车"
+      - "打开购物车页面"
+      - "打开左侧菜单并点击 Logout 退出登录"
+    inputs:
+      username: ${standard_username}
+      password: ${common_password}
+      product_name: Sauce Labs Backpack
+    checkpoints:
+      - "购物车角标数量为 1"
+      - "购物车页面中存在 Sauce Labs Backpack"
+    final:
+      - "退出登录后回到登录页，Login 按钮可见"
 ```
+
+意图式 Agent 用例适合只给一句目标，让 Agent 自己探索执行路径：
+
+```yaml
+test_data:
+  test_saucedemo_agent_case_cart_checkout_flow:
+    description: Agent运行时用例
+    type: agent_case
+    intent: "标准用户登录 Saucedemo，添加指定商品到购物车，进入购物车确认商品和数量，并完成下单流程。"
+    inputs:
+      user_type: standard
+      username: ${standard_username}
+      password: ${common_password}
+      product_name: Sauce Labs Backpack
+      checkout_info:
+        first_name: Test
+        last_name: User
+        postal_code: "100000"
+    checkpoints:
+      - "登录成功后进入商品列表页，页面标题为 Products"
+      - "购物车页面中存在 Sauce Labs Backpack"
+      - "订单确认页中商品为 Sauce Labs Backpack"
+    final:
+      - "完成下单后进入 checkout-complete 页面"
+      - "页面展示 Thank you for your order"
+```
+
+`agent_case` 的执行策略来自全局 `agent_policy`，不要在单条用例里写 `limits/guardrails`。这样用例文件只描述业务意图、输入数据和验收标准。
 
 建议使用顺序：
 
 1. 稳定业务用例优先写 `action + selector`。
 2. selector 不稳定但目标明确时写 `action + target + mode: smart`。
-3. 整个用例多处需要语义定位时，在 `data.<case>.mode` 写 `smart` 或 `ai`。
-4. 只有页面探索、低频维护、原型验证时使用 `ai_step`。
+3. 单个自然语言动作可以使用 `ai_step`，但不要把它当作多步骤用例。
+4. 已知业务顺序但需要运行时观察执行时，使用 `type: agent_case` + `steps/checkpoints/final`。
+5. 需要执行时边看边探索的一句话流程使用 `type: agent_case` + `intent/checkpoints/final`。
+6. 需求、PRD 或一句话 intent 要沉淀成正式用例时，使用 `poetry run gen -p <project> <spec>`。
+7. DOM 无法稳定定位时由 `smart/agent` 链路自动调用 `vision`，不要在用例中写视觉专用 action。
 
 ### 标准定位与兜底顺序
 
@@ -423,9 +593,122 @@ test_data:
 - LLM DOM selector 更省 token、模型要求更低；UI Vision 更适合 DOM 不可靠、OCR、图标、遮挡、视觉布局判断。
 - `vision.allow_coordinate_fallback=false` 时，Vision 结果必须能映射回 selector，否则继续后续兜底或失败。
 
+### DOM 上下文压缩
+
+运行时传给文本模型的 DOM 信息会经过高质量压缩，不直接发送 Playwright 收集到的原始候选。模型看到的是结构化 `dom_context`，不是 HTML。
+
+压缩原则：
+
+1. 保留稳定定位和语义判断需要的字段：`element_id`、`role`、`name`、`text`、`near_text`、`selector_candidates`、`data_test`、`aria_label`、`placeholder`。
+2. 删除文本模型低价值字段：`class_name`、`bbox`、`center`、`bbox_norm`、`center_norm`。
+3. 根据当前 `intent/steps/target/assertions` 动态提取关键词并对候选打分，优先保留交互元素、`data-test` 元素、可断言文本和与当前任务语义匹配的元素；通用代码不内置具体页面业务关键词。
+4. 文本字段会截断，避免一个商品列表或弹窗把上下文撑爆。
+5. UI Vision 链路仍可使用几何信息；坐标只给视觉服务，不给普通文本 LLM。
+
+标准结构：
+
+```yaml
+dom_context:
+  meta:
+    url: https://www.saucedemo.com/inventory.html
+    title: Swag Labs
+    route_hint: inventory
+  page_summary:
+    main_heading: Products
+    visible_text_summary:
+      - Products
+      - Sauce Labs Backpack
+      - Shopping cart badge: 1
+  forms: []
+  business_objects:
+    cards:
+      - name: Sauce Labs Backpack
+        summary: Sauce Labs Backpack $29.99 Add to cart
+        actions:
+          add:
+            element_id: e12
+            selector_candidates:
+              - button[data-test="add-to-cart-sauce-labs-backpack"]
+  interactive_elements:
+    - id: e12
+      role: button
+      name: Add to cart
+      near_text: Sauce Labs Backpack $29.99
+      selector_candidates:
+        - button[data-test="add-to-cart-sauce-labs-backpack"]
+  assertion_candidates:
+    - id: a18
+      type: badge
+      text: "1"
+      near_text: Shopping cart
+      selector_candidates:
+        - span[data-test="shopping-cart-badge"]
+  compression:
+    raw_element_count: 120
+    kept_element_count: 34
+    context_level: 2
+```
+
+模型原则上只返回 `element_id`。框架负责把 `element_id` 映射到 `selector_candidates` 并通过 Playwright 验证。
+
+默认策略：
+
+```yaml
+runtime:
+  candidate_limit: 120
+  ai_step_candidate_limit: 40
+  llm_selector_candidate_scan_limit: 120
+  llm_selector_candidate_limit: 40
+  agent_candidate_scan_limit: 120
+  agent_candidate_limit: 40
+  agent_context_items: 40
+  agent_history_limit: 10
+```
+
+含义是：框架可以从页面扫描较多候选，但真正发给文本模型的是压缩后的前 40 个高价值候选。这样比简单截取前 N 个 DOM 更稳定，也比全量 DOM 更省 token。
+
+### AI 返回压缩
+
+模型返回也必须压缩、结构化，不能把长篇分析进入下一轮上下文。
+
+Agent 返回协议：
+
+```yaml
+status: ok
+action: click
+element_id: e12
+reason: 点击目标商品加购按钮
+expected: 购物车角标变为 1
+confidence: 0.94
+criteria_update:
+  passed: []
+  failed: []
+  pending:
+    - 购物车页面中存在 Sauce Labs Backpack
+```
+
+Smart Locator 返回协议：
+
+```yaml
+status: ok
+selected_element_id: e12
+reason: 候选元素位于目标商品卡片内
+confidence: 0.96
+```
+
+边界规则：
+
+1. 每次模型只允许返回一个动作或一个元素选择。
+2. `reason`、`expected` 是短摘要，不是完整推理过程。
+3. `reason`、`expected` 会被框架截断到短文本后进入日志和压缩历史。
+4. 原始模型请求/响应只保存到 `logs/model_io/<run_id>/`，默认不进入下一轮上下文。
+5. 下一轮只传 `agent_state`、`recent_actions`、`criteria` 摘要和新的 `dom_context`。
+6. 信息不足时返回 `status: need_more_context`；危险或外部不可控状态返回 `status: blocked`。
+7. 模型返回 `element_id` 后，框架映射 selector 并校验；模型直接返回 selector 只作为兜底。
+
 ### Selector 自愈与 elements 回写
 
-当 `smart/ai` 模式发现已有 element key 的 selector 失效时，会触发自愈：
+当 `smart` 模式发现已有 element key 的 selector 失效时，会触发自愈：
 
 1. 记录原 selector 和失败原因。
 2. 找到并验证新 selector。
@@ -503,7 +786,7 @@ AI执行模式: smart | 定位来源: UI Vision DOM兜底 | 选择器: #login-bu
 | 文件 | 覆盖能力 | 执行命令 |
 |---|---|---|
 | `saucedemo_ai` | 生成用例、模块复用、smart 稳定执行 | `poetry run run_case -p demo -f saucedemo_ai` |
-| `ai_modes_showcase` | 步骤级 smart、原生 `ai_step`、case 级 `mode: ai` | `poetry run run_case -p demo -f ai_modes_showcase` |
+| `ai_modes_showcase` | strict、步骤级 smart、Agent steps、Agent intent/explore 运行时用例 | `poetry run run_case -p demo -f ai_modes_showcase` |
 | `vision_showcase` | 标准 UI Vision DOM 兜底 | `poetry run run_case -p demo -f vision_showcase` |
 
 全量 demo 验证：
@@ -514,7 +797,7 @@ poetry run run_case -p demo
 
 ### 日志与排查
 
-主步骤日志保持原格式，兼容历史用例：
+主步骤日志保持统一格式：
 
 ```text
 执行步骤: click | 选择器: #login-button | 值: None
@@ -523,7 +806,19 @@ poetry run run_case -p demo
 AI/Smart 会追加定位说明：
 
 ```text
-AI执行模式: smart | 定位来源: 规则定位 | 目标: Open Menu | 选择器: #react-burger-menu-btn | AI兜底: 否
+AI执行模式: smart | 定位来源: DOM语义匹配 | 目标: Open Menu | 选择器: ... | AI兜底: 否
+```
+
+Agent 用例会输出观察/决策/缓存轨迹：
+
+```text
+Agent用例执行开始: case=test_saucedemo_agent_case_cart_checkout_flow | max_steps=30 | max_model_calls=18 | input_type=intent | intent=...
+Agent页面观察: case=... | step=4/30 | url=https://www.saucedemo.com/inventory.html | title=Swag Labs | candidates=18 | visible_text=[...]
+Agent用例缓存命中: case=... | cached_steps=9 | mode=advisory
+Agent用例缓存回放失败，切换实时观察: case=... | replayed=3 | error=...
+Agent用例决策: case=... | step=4/30 | action=click | target=Sauce Labs Backpack Add to cart button | reason=...
+Agent执行动作: case=... | step=4/30 | action=click | target=Sauce Labs Backpack Add to cart button
+Agent用例执行完成: case=... | steps_executed=12 | model_calls=6 | cache_replayed_steps=3 | reason=...
 ```
 
 断言成功日志会输出预期和实际：
@@ -549,7 +844,7 @@ logs/model_io/<run_id>/*.json
 ```
 zhijia_ui/
 ├── .env                     # 本地模型和被测系统环境变量，不提交真实密钥
-├── .ui_auto/                # AI/Smart 运行时缓存，例如 selectors.db
+├── .ui_auto/                # AI/Smart 运行时缓存，例如 ai_cache.sqlite3、selectors.db
 ├── config/                  # 配置文件目录
 │   ├── ai_config.yaml       # AI生成与智能执行配置
 │   ├── env_config.yaml      # 环境配置
@@ -566,7 +861,7 @@ zhijia_ui/
 │   ├── ai_runtime/          # AI/Smart执行、定位解析和选择器缓存
 │   ├── runner.py            # 动态用例收集与执行
 │   ├── test_case_executor.py # 测试用例执行器
-│   ├── test_step_executor.py # 测试步骤执行器兼容入口
+│   ├── test_step_executor.py # 测试步骤执行器入口
 │   └── step_actions/        # 步骤操作实现
 ├── test_data/               # 测试数据目录
 │   ├── <project>/           # 各项目的测试数据
@@ -589,7 +884,7 @@ zhijia_ui/
 ├── pyproject.toml           # Poetry项目配置
 ├── pytest.ini               # Pytest配置文件
 ├── README.md                # 项目文档
-└── test_runner.py           # 兼容旧命令入口，新流程优先使用 poetry run run_case / poetry run gen
+└── test_runner.py           # 根命令入口，日常推荐使用 poetry run run_case / poetry run gen
 ```
 
 ## 测试开发指南
@@ -691,7 +986,7 @@ zhijia_ui/
 2. **条件分支执行**：支持在测试用例中使用 if-then-else 条件分支
 3. **循环执行**：支持循环遍历数据列表执行重复操作
 4. **增强的变量管理**：支持全局/测试用例/临时多级作用域变量
-5. **AI 用例生成与智能执行**：支持生成当前项目格式的 YAML 用例，并在执行时按需启用 smart/ai 定位能力
+5. **AI 用例生成与智能执行**：支持生成当前项目格式的 YAML 用例，并在执行时按需启用 smart 定位能力
 
 ### 模块化测试片段
 
@@ -1011,7 +1306,7 @@ $ poetry run gen -p demo saucedemo_ai
 - **Chrome插件**: SelectorsHub
 - **PyCharm插件**: Test Automation
 - **Playwright录制功能**: 自动生成元素定位符
-- **AI辅助**: 优先使用框架内置 smart/ai 模式、selector 自愈和 UI Vision 兜底，不建议在用例中手工复制模型生成的临时 selector
+- **AI辅助**: 优先使用框架内置 smart 模式、selector 自愈和 UI Vision 兜底，不建议在用例中手工复制模型生成的临时 selector
 
 ### 元素定位最佳实践
 
@@ -1073,7 +1368,7 @@ A: 使用以下方法：
 
 **Q: smart 模式会不会影响历史用例？**
 
-A: 默认执行模式仍是 `strict`。只有命令行指定 `-m/--ai-mode smart/ai`，或 `data`/步骤中声明 `mode: smart`、`mode: ai` 时才会启用智能定位。历史用例没有声明 mode 时按 strict 执行。
+A: 默认执行模式仍是 `strict`。只有命令行指定 `-m/--ai-mode smart`，或 `data`/步骤中声明 `mode: smart` 时才会启用智能定位。`run_case` 不再支持运行时 `ai_case` 编译；自然语言探索使用 `agent_case`，正式资产生成使用 `gen`。
 
 **Q: 生成用例为什么必须有断言？**
 

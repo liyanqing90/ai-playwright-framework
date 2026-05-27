@@ -23,4 +23,4 @@ def runtime_mode(default_mode: str = "strict") -> str:
 
 
 def is_ai_mode(mode: str) -> bool:
-    return str(mode).lower() in {"smart", "ai"}
+    return str(mode).lower() == "smart"

@@ -2,12 +2,16 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from src.ai_generation.case_generator import (
     _GenerationArtifacts,
+    _build_payload,
     _has_explicit_steps,
+    _resolve_navigation_context,
+    _save_generation_cache,
     _validate_spec_project_scope,
     _write_payload,
     resolve_generation_spec_path,
@@ -15,18 +19,32 @@ from src.ai_generation.case_generator import (
 from src.ai_generation.harness import GenerationHarness
 from src.ai_generation.harness import _safe_case_name
 from src.ai_generation.project_context import ProjectContext
+from src.ai_runtime.cache_scope import normalize_entry_url
+from src.ai_runtime.agent_case_executor import (
+    AgentCaseAdvisoryCache,
+    AgentCaseExecutor,
+    _remaining_step_hints,
+    _unmet_final_criteria,
+)
 from src.ai_runtime.contracts import (
+    AgentCaseDecision,
     AiStepDecision,
     GeneratedCasePayload,
     SelectorDecision,
     VisionFindResult,
 )
 from src.ai_runtime.element_store import ElementDefinitionStore
+from src.ai_runtime.payload_compactor import (
+    build_dom_context,
+    compact_dom_candidates,
+    selector_for_element_id,
+)
 from src.ai_runtime.playwright_selectors import heuristic_selectors, redact_value
 from src.ai_runtime.provider import (
     ChatCompletionProvider,
     LLMSettings,
     build_response_format,
+    load_llm_settings,
     openai_strict_schema,
     parse_json_object,
     parse_model_response,
@@ -36,6 +54,7 @@ from src.ai_runtime.smart_resolver import (
     AiStepOperation,
     ResolvedSelector,
     SmartResolver,
+    _parse_fill_instruction,
 )
 from src.ai_runtime.vision_client import (
     VisionClient,
@@ -43,6 +62,8 @@ from src.ai_runtime.vision_client import (
     VisionSettings,
 )
 from src.ai_runtime.vision_resolver import VisionResolution, VisionResolver
+from src.runner import build_test_signature
+from src.test_case_executor import CaseExecutor
 from src.step_actions.commands import assertion_commands as assertion_commands_module
 from src.step_actions.safe_expression import SafeExpressionError, safe_eval_expression
 from src.step_actions.step_executor import StepExecutor
@@ -160,11 +181,731 @@ def test_native_ai_step_executes_through_command_pipeline(monkeypatch):
     assert calls == [("click", "#cart", None)]
 
 
-def test_case_and_step_ai_modes_are_native_executor_defaults():
-    executor = StepExecutor(page=None, ui_helper=None, elements={}, default_mode="ai")
+def test_native_ai_step_rejects_multi_action_instruction():
+    class FakeResolver:
+        def resolve_ai_step(self, *, instruction: str, timeout: int):
+            assert instruction == "login and open cart"
+            return AiStepOperation(
+                action="reject",
+                reason="instruction contains multiple UI actions",
+                prompt_version="ai-step-v1",
+                schema_version="schema-v1",
+                model="test-model",
+            )
 
-    assert executor._resolve_mode({}) == "ai"
+    class FakePage:
+        url = "https://example.test"
+
+    class FakeUiHelper:
+        pass
+
+    executor = StepExecutor(FakePage(), FakeUiHelper(), elements={})
+    executor.smart_resolver = FakeResolver()
+
+    with pytest.raises(ValueError, match="ai_step"):
+        executor.execute_step(
+            {"action": "ai_step", "instruction": "login and open cart"}
+        )
+
+
+def test_case_and_step_ai_modes_are_native_executor_defaults():
+    executor = StepExecutor(page=None, ui_helper=None, elements={}, default_mode="smart")
+
+    assert executor._resolve_mode({}) == "smart"
     assert executor._resolve_mode({"mode": "smart"}) == "smart"
+
+
+def test_case_executor_rejects_runtime_ai_case():
+    executor = CaseExecutor(
+        {
+            "description": "runtime ai case",
+            "type": "ai_case",
+            "mode": "smart",
+            "intent": "finish cart flow",
+            "final": ["cart flow done"],
+        },
+        elements={"title": ".title"},
+        case_metadata={"name": "test_ai_case"},
+    )
+
+    with pytest.raises(ValueError, match="run_case"):
+        executor.execute_test_case(page=object(), ui_helper=object())
+
+
+def test_case_executor_routes_agent_case_to_agent_runner(monkeypatch):
+    calls: list[dict] = []
+
+    class FakeAgentRunner:
+        def __init__(self, *, page, ui_helper, elements):
+            calls.append({"page": page, "ui_helper": ui_helper, "elements": elements})
+
+        def run(self, *, case_name, case_data):
+            calls.append({"case_name": case_name, "case_data": case_data})
+            return type(
+                "Result",
+                (),
+                {
+                    "steps_executed": 2,
+                    "model_calls": 1,
+                    "cache_replayed_steps": 0,
+                    "final_reason": "done",
+                },
+            )()
+
+    monkeypatch.setattr("src.test_case_executor.AgentCaseExecutor", FakeAgentRunner)
+
+    CaseExecutor(
+        {
+            "description": "agent case",
+            "type": "agent_case",
+            "intent": "完成购物车流程",
+            "final": ["订单完成"],
+        },
+        elements={"title": ".title"},
+        case_metadata={"name": "test_agent_case"},
+    ).execute_test_case(page="page", ui_helper="ui")
+
+    assert calls[0]["elements"] == {"title": ".title"}
+    assert calls[1]["case_name"] == "test_agent_case"
+    assert calls[1]["case_data"]["intent"] == "完成购物车流程"
+
+
+def test_agent_case_spec_accepts_natural_language_steps(tmp_path: Path):
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://www.saucedemo.com/",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+
+    executor = AgentCaseExecutor(
+        page=object(),
+        ui_helper=object(),
+        elements={},
+        context=context,
+    )
+
+    spec = executor._agent_spec(
+        case_name="test_agent_steps",
+        case_data={
+            "type": "agent_case",
+            "steps": ["打开登录页", "登录标准用户", "打开购物车"],
+            "final": ["购物车页面可见"],
+        },
+    )
+
+    assert spec["input_type"] == "steps"
+    assert spec["steps"] == ["打开登录页", "登录标准用户", "打开购物车"]
+    assert spec["intent"] == "按顺序完成自然语言步骤：打开登录页；登录标准用户；打开购物车"
+
+
+def test_compact_dom_candidates_keeps_semantics_and_drops_geometry():
+    candidates = [
+        {
+            "index": 0,
+            "tag": "div",
+            "selector": ".layout-wrapper",
+            "class_name": "layout-wrapper useless deeply nested classes",
+            "text": "Decorative container",
+            "bbox": [0, 0, 100, 100],
+            "center": [50, 50],
+        },
+        {
+            "index": 1,
+            "tag": "a",
+            "selector": "a[data-test=\"shopping-cart-link\"]",
+            "data_test": "shopping-cart-link",
+            "text": "1",
+            "ancestor_text": "Shopping cart header with a very long text " * 10,
+            "bbox": [1, 2, 3, 4],
+            "center_norm": [0.1, 0.2],
+            "visible": True,
+            "enabled": True,
+        },
+        {
+            "index": 2,
+            "tag": "button",
+            "selector": "#checkout",
+            "text": "Checkout",
+            "class_name": "btn btn-primary btn-large",
+            "bbox_norm": [0.1, 0.1, 0.3, 0.2],
+            "visible": True,
+            "enabled": True,
+        },
+    ]
+
+    compacted = compact_dom_candidates(
+        candidates,
+        limit=2,
+        hints=["open shopping cart"],
+    )
+
+    assert len(compacted) == 2
+    assert any(item["selector"] == 'a[data-test="shopping-cart-link"]' for item in compacted)
+    for item in compacted:
+        assert "bbox" not in item
+        assert "bbox_norm" not in item
+        assert "center" not in item
+        assert "center_norm" not in item
+        assert "class_name" not in item
+    cart = next(item for item in compacted if item["selector"] == 'a[data-test="shopping-cart-link"]')
+    assert len(cart["ancestor_text"]) <= 163
+
+
+def test_dom_context_uses_element_ids_and_selector_candidates():
+    context = build_dom_context(
+        [
+            {
+                "index": 12,
+                "tag": "button",
+                "selector": "#add-to-cart-sauce-labs-backpack",
+                "data_test": "add-to-cart-sauce-labs-backpack",
+                "text": "Add to cart",
+                "ancestor_text": "Sauce Labs Backpack $29.99 Add to cart",
+                "visible": True,
+                "enabled": True,
+            },
+            {
+                "index": 18,
+                "tag": "span",
+                "selector": ".shopping_cart_badge",
+                "text": "1",
+                "ancestor_text": "Shopping cart badge 1",
+                "visible": True,
+                "enabled": True,
+            },
+        ],
+        url="https://www.saucedemo.com/inventory.html",
+        title="Swag Labs",
+        hints=["Sauce Labs Backpack Add to cart"],
+    )
+
+    button = context["interactive_elements"][0]
+    assert button["id"] == "e12"
+    assert button["selector_candidates"][0] == 'button[data-test="add-to-cart-sauce-labs-backpack"]'
+    assert selector_for_element_id(context, "e12") == 'button[data-test="add-to-cart-sauce-labs-backpack"]'
+    assert context["business_objects"]["cards"][0]["name"].startswith("Sauce Labs Backpack")
+    assert context["compression"]["kept_element_count"] == 2
+
+
+def test_agent_case_model_payload_uses_compact_dom_context(monkeypatch, tmp_path: Path):
+    captured: dict[str, Any] = {}
+
+    class FakeStepExecutor:
+        def __init__(self, page, ui_helper, elements, default_mode=None):
+            pass
+
+        def execute_step(self, step):
+            raise AssertionError("done decision should not execute a step")
+
+    class FakeProvider:
+        settings = type("Settings", (), {"model": "test-model"})()
+
+        def complete_model(self, messages, response_model, **kwargs):
+            captured["payload"] = json.loads(messages[1]["content"])
+            return response_model.model_validate({"action": "done", "reason": "done"})
+
+    class FakePage:
+        url = "https://example.test/inventory"
+
+        def title(self):
+            return "Swag Labs"
+
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor.StepExecutor",
+        FakeStepExecutor,
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor.ChatCompletionProvider",
+        FakeProvider,
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor.collect_candidates",
+        lambda page, limit: [
+            {
+                "index": 0,
+                "tag": "button",
+                "selector": "#react-burger-menu-btn",
+                "text": "Open Menu",
+                "class_name": "bm-burger-button",
+                "bbox": [1, 2, 3, 4],
+                "visible": True,
+                "enabled": True,
+            },
+            {
+                "index": 1,
+                "tag": "a",
+                "selector": "a[data-test=\"shopping-cart-link\"]",
+                "data_test": "shopping-cart-link",
+                "text": "1",
+                "center": [10, 10],
+                "visible": True,
+                "enabled": True,
+            },
+            {
+                "index": 2,
+                "tag": "div",
+                "selector": ".inventory_list",
+                "class_name": "inventory_list",
+                "ancestor_text": "large inventory text " * 20,
+                "bbox_norm": [0, 0, 1, 1],
+                "visible": True,
+                "enabled": True,
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor.load_ai_config",
+        lambda: {
+            "runtime": {
+                "agent_case_cache_enabled": False,
+                "agent_candidate_scan_limit": 20,
+                "agent_candidate_limit": 2,
+                "agent_context_items": 2,
+                "agent_history_limit": 1,
+            },
+            "agent_policy": {
+                "limits": {
+                    "max_steps": 2,
+                    "max_model_calls": 1,
+                    "max_duration_seconds": 30,
+                },
+                "guardrails": {"require_checkpoints_or_final": True},
+            },
+            "prompts": {"agent_case_version": "agent-case-test"},
+            "llm": {"schema_version": "schema-test"},
+        },
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor._unmet_final_criteria",
+        lambda **kwargs: [],
+    )
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://example.test/",
+        elements={"login_button": "#login", "cart_link": ".cart", "unused": ".x"},
+        modules={
+            "login": [
+                {"action": "goto", "value": "https://www.saucedemo.com/"},
+                {"action": "fill", "selector": "username", "value": "${user}"},
+            ]
+        },
+        variables={"standard_username": "standard_user", "common_password": "secret"},
+        test_cases=[],
+        test_data={},
+    )
+
+    AgentCaseExecutor(
+        page=FakePage(),
+        ui_helper=object(),
+        elements={},
+        context=context,
+    ).run(
+        case_name="test_agent_compact",
+        case_data={
+            "type": "agent_case",
+            "intent": "打开购物车并完成验证",
+            "final": ["购物车页面可见"],
+        },
+    )
+
+    payload = captured["payload"]
+    assert len(payload["dom_candidates"]) == 2
+    assert payload["dom_context"]["interactive_elements"][0]["id"] == "e0"
+    assert payload["dom_context"]["interactive_elements"][0]["selector_candidates"]
+    assert len(payload["project_context"]["element_keys"]) == 2
+    assert payload["project_context"]["modules"]["login"][0]["action"] == "goto"
+    for item in payload["dom_context"]["interactive_elements"]:
+        assert "class_name" not in item
+        assert "bbox" not in item
+        assert "bbox_norm" not in item
+        assert "center" not in item
+
+
+def test_agent_case_does_not_expose_business_fast_path():
+    assert not hasattr(AgentCaseExecutor, "_fast_path_decision")
+
+
+def test_agent_case_step_hints_keep_full_short_plan():
+    steps = [f"step {index}" for index in range(1, 12)]
+
+    assert _remaining_step_hints(spec={"steps": steps}, history=[]) == steps
+
+
+def test_agent_case_finish_detects_unmet_logout_final_criteria():
+    unmet = _unmet_final_criteria(
+        criteria={"final": ["退出登录后回到登录页，登录按钮可见"]},
+        history=[
+            {"step": {"action": "click", "selector": 'button[data-test="finish"]'}},
+        ],
+        current_url="https://www.saucedemo.com/checkout-complete.html",
+        dom_context={
+            "interactive_elements": [
+                {"selector": 'button[data-test="finish"]', "text": "Finish"}
+            ],
+            "assertion_candidates": [],
+        },
+    )
+
+    assert unmet == ["退出登录后回到登录页，登录按钮可见"]
+
+
+def test_agent_case_decision_accepts_standard_step_mode():
+    decision = AgentCaseDecision.model_validate(
+        {"action": "click", "mode": "smart", "selector": "#continue"}
+    )
+
+    assert decision.mode == "smart"
+    assert decision.selector == "#continue"
+
+
+def test_agent_case_maps_selector_field_element_id_to_real_selector(tmp_path: Path):
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://www.saucedemo.com/",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+    executor = AgentCaseExecutor(
+        page=object(),
+        ui_helper=object(),
+        elements={},
+        context=context,
+    )
+    executor.current_dom_context = build_dom_context(
+        [
+            {
+                "index": 1,
+                "tag": "input",
+                "selector": "#user-name",
+                "id": "user-name",
+                "placeholder": "Username",
+                "visible": True,
+                "enabled": True,
+            }
+        ],
+        url="https://www.saucedemo.com/",
+        title="Swag Labs",
+    )
+
+    step = executor._decision_to_step(
+        AgentCaseDecision.model_validate(
+            {
+                "action": "fill",
+                "selector": "e1",
+                "value": "${standard_username}",
+                "reason": "填写用户名",
+            }
+        )
+    )
+
+    assert step["selector"] == "#user-name"
+
+
+def test_agent_case_maps_target_field_element_id_to_real_selector(tmp_path: Path):
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://example.test/",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+    executor = AgentCaseExecutor(
+        page=object(),
+        ui_helper=object(),
+        elements={},
+        context=context,
+    )
+    executor.current_dom_context = build_dom_context(
+        [
+            {
+                "index": 2,
+                "tag": "input",
+                "selector": "#password",
+                "id": "password",
+                "placeholder": "Password",
+                "visible": True,
+                "enabled": True,
+            }
+        ],
+        url="https://example.test/",
+        title="Example",
+    )
+
+    step = executor._decision_to_step(
+        AgentCaseDecision.model_validate(
+            {
+                "action": "fill",
+                "target": "e2",
+                "value": "${common_password}",
+                "reason": "填写密码",
+            }
+        )
+    )
+
+    assert step["selector"] == "#password"
+    assert "target" not in step
+
+
+def test_agent_case_assert_text_uses_dom_text_selector_without_business_rule(tmp_path: Path):
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://example.test/",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+    executor = AgentCaseExecutor(
+        page=object(),
+        ui_helper=object(),
+        elements={},
+        context=context,
+    )
+    executor.current_dom_context = build_dom_context(
+        [
+            {
+                "index": 5,
+                "tag": "h1",
+                "selector": "[data-test='page-title']",
+                "data_test": "page-title",
+                "text": "Overview",
+                "visible": True,
+                "enabled": True,
+            }
+        ],
+        url="https://example.test/dashboard",
+        title="Example",
+    )
+
+    step = executor._decision_to_step(
+        AgentCaseDecision.model_validate(
+            {
+                "action": "assert_text",
+                "target": "page heading",
+                "value": "Overview",
+                "reason": "assert heading",
+            }
+        )
+    )
+
+    assert step["selector"] == 'h1[data-test="page-title"]'
+    assert step["value"] == "Overview"
+    assert "target" not in step
+
+
+def test_agent_case_rejects_unresolved_internal_target_reference(tmp_path: Path):
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://example.test/",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+    executor = AgentCaseExecutor(
+        page=object(),
+        ui_helper=object(),
+        elements={},
+        context=context,
+    )
+    executor.current_dom_context = build_dom_context(
+        [
+            {
+                "index": 1,
+                "tag": "input",
+                "selector": "#user-name",
+                "id": "user-name",
+                "placeholder": "Username",
+                "visible": True,
+                "enabled": True,
+            }
+        ],
+        url="https://example.test/",
+        title="Example",
+    )
+
+    with pytest.raises(ValueError, match="未解析的内部element_id target: e2"):
+        executor._decision_to_step(
+            AgentCaseDecision.model_validate(
+                {
+                    "action": "fill",
+                    "target": "e2",
+                    "value": "${common_password}",
+                    "reason": "填写密码",
+                }
+            )
+        )
+
+
+def test_parse_fill_instruction_supports_chinese_input_box_phrasing():
+    assert _parse_fill_instruction("在密码输入框中输入secret_sauce") == (
+        "密码输入框",
+        "secret_sauce",
+    )
+    assert _parse_fill_instruction('在用户名输入框输入"standard_user"') == (
+        "用户名输入框",
+        "standard_user",
+    )
+
+
+def test_parse_fill_instruction_preserves_english_field_spacing():
+    assert _parse_fill_instruction("fill password field with secret_sauce") == (
+        "password field",
+        "secret_sauce",
+    )
+
+
+def test_llm_response_format_auto_uses_text_for_gguf(monkeypatch):
+    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:4000/v1")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "Qwen_Qwen3.5-9B-Q6_K.gguf")
+    monkeypatch.delenv("LLM_RESPONSE_FORMAT", raising=False)
+    monkeypatch.setattr(
+        "src.ai_runtime.provider.load_ai_config",
+        lambda: {"llm": {"response_format": "auto"}},
+    )
+
+    settings = load_llm_settings()
+
+    assert settings.response_format == "text"
+    assert settings.timeout_seconds == 180
+    assert settings.reasoning_effort is None
+    assert build_response_format(
+        settings=settings,
+        response_json=True,
+        response_model=AgentCaseDecision,
+        schema_name="AgentCaseDecision",
+    ) == {"type": "text"}
+
+
+def test_agent_case_cache_replay_is_advisory(monkeypatch, tmp_path: Path):
+    executed: list[dict] = []
+
+    class FakeStepExecutor:
+        def __init__(self, page, ui_helper, elements, default_mode=None):
+            self.page = page
+
+        def execute_step(self, step):
+            executed.append(step)
+            if step.get("action") == "goto":
+                self.page.url = step["value"]
+
+    class FakeProvider:
+        settings = type("Settings", (), {"model": "test-model"})()
+
+        def complete_model(self, messages, response_model, **kwargs):
+            assert kwargs["usage_operation"] == "runtime.agent_case"
+            return response_model.model_validate(
+                {"action": "done", "reason": "cached trace already satisfies criteria"}
+            )
+
+    class FakePage:
+        url = "about:blank"
+
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor.StepExecutor",
+        FakeStepExecutor,
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor.ChatCompletionProvider",
+        FakeProvider,
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor.load_ai_config",
+        lambda: {
+            "runtime": {
+                "agent_case_cache_enabled": True,
+                "ai_cache_sqlite_path": str(tmp_path / "ai_cache.sqlite3"),
+                "agent_case_cache_max_replay_steps": 10,
+                "candidate_limit": 5,
+            },
+            "agent_policy": {
+                "limits": {
+                    "max_steps": 5,
+                    "max_model_calls": 2,
+                    "max_duration_seconds": 30,
+                },
+                "guardrails": {"require_checkpoints_or_final": True},
+            },
+            "generation": {"max_context_items": 5},
+            "prompts": {"agent_case_version": "agent-case-test"},
+                "llm": {"schema_version": "schema-test"},
+            },
+        )
+    monkeypatch.setattr(
+        "src.ai_runtime.agent_case_executor._unmet_final_criteria",
+        lambda **kwargs: [],
+    )
+
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://www.saucedemo.com/",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+    executor = AgentCaseExecutor(
+        page=FakePage(),
+        ui_helper=object(),
+        elements={},
+        context=context,
+    )
+    case_data = {
+        "type": "agent_case",
+        "intent": "打开 https://www.saucedemo.com/ 并完成流程",
+        "final": ["完成"],
+    }
+    spec = executor._agent_spec(case_name="test_agent", case_data=case_data)
+    cache_key = executor._cache_key(case_name="test_agent", spec=spec)
+    AgentCaseAdvisoryCache(tmp_path / "ai_cache.sqlite3").save_trace(
+        key=cache_key,
+        project="demo",
+        env="prod",
+        case_name="test_agent",
+        intent=spec["intent"],
+        steps=spec["steps"],
+        inputs=spec["inputs"],
+        trace=[
+            {"step": {"action": "goto", "value": "https://www.saucedemo.com/"}},
+            {"step": {"action": "click", "target": "Login button", "mode": "smart"}},
+        ],
+        final_reason="previous run passed",
+    )
+
+    result = executor.run(case_name="test_agent", case_data=case_data)
+
+    assert result.cache_replayed_steps == 2
+    assert result.model_calls == 1
+    assert executed == [
+        {"action": "goto", "value": "https://www.saucedemo.com/"},
+        {"action": "click", "target": "Login button", "mode": "smart"},
+    ]
+
+
+def test_test_signature_uses_standard_page_fixtures():
+    params = list(build_test_signature([]).parameters)
+
+    assert params[:4] == ["page", "ui_helper", "get_test_name", "value"]
 
 
 def test_element_definition_store_updates_last_effective_elements_file(
@@ -205,13 +946,22 @@ def test_smart_resolver_marks_selector_self_healing_metadata():
             return self
 
         def wait_for(self, state, timeout):
-            if self.selector != "#login-button":
+            if self.selector != 'button[data-test="login"]':
                 raise TimeoutError("not found")
 
         def is_enabled(self):
             return True
 
         def evaluate(self, script):
+            if "cssEscape" in script:
+                return self.selector
+            if "tagName" in script:
+                return {
+                    "tag": "button",
+                    "data_test": "login",
+                    "text": "Login",
+                    "type": "button",
+                }
             return self.selector
 
     class FakePage:
@@ -221,7 +971,17 @@ def test_smart_resolver_marks_selector_self_healing_metadata():
             return FakeLocator(selector)
 
         def evaluate(self, script, limit):
-            return []
+            return [
+                {
+                    "index": 0,
+                    "tag": "button",
+                    "selector": 'button[data-test="login"]',
+                    "data_test": "login",
+                    "text": "Login",
+                    "visible": True,
+                    "enabled": True,
+                }
+            ]
 
     resolver = SmartResolver(FakePage(), project="demo", env="test")
     resolver.registry = None
@@ -234,12 +994,85 @@ def test_smart_resolver_marks_selector_self_healing_metadata():
         timeout=1000,
     )
 
-    assert resolved.selector == "#login-button"
+    assert resolved.selector == 'button[data-test="login"]'
     assert resolved.source == "heuristic"
     assert resolved.healed is True
     assert resolved.healing_attempted is True
     assert resolved.original_selector == "#old-login"
     assert "not found" in (resolved.original_error or "")
+
+
+def test_smart_resolver_can_disable_selector_registry_by_env(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("UI_AI_DISABLE_SELECTOR_REGISTRY", "1")
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.load_ai_config",
+        lambda: {
+            "selector_registry": {
+                "enabled": True,
+                "sqlite_path": str(tmp_path / "selectors.db"),
+            }
+        },
+    )
+
+    resolver = SmartResolver(page=object(), project="demo", env="prod")
+
+    assert resolver.registry_enabled is False
+    assert resolver.registry is None
+
+
+def test_smart_resolver_rejects_unresolved_internal_element_id_target():
+    class FakePage:
+        url = "https://example.test/"
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = None
+
+    with pytest.raises(ValueError, match="未解析的内部element_id不能直接用于语义定位: e2"):
+        resolver.resolve(
+            action="fill",
+            target="e2",
+            selector=None,
+            mode="smart",
+            timeout=1000,
+        )
+
+
+def test_ai_step_fast_path_simplifies_header_position_instruction(monkeypatch):
+    class FakePage:
+        url = "https://example.test/dashboard"
+
+    def fake_semantic_selectors(page, target, action, limit):
+        if target == "primary action link":
+            return ['a[data-test="primary-action"]']
+        return []
+
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.semantic_selectors",
+        fake_semantic_selectors,
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.heuristic_selectors",
+        lambda target, action: [],
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.verify_selector",
+        lambda page, selector, action, timeout: True,
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.smart_resolver.selector_matches_target",
+        lambda page, selector, target, action: True,
+    )
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = None
+    operation = resolver._resolve_ai_step_fast(
+        instruction="Click the primary action link in the top-right header.",
+        timeout=1000,
+    )
+
+    assert operation is not None
+    assert operation.source == "ai_step_fast"
+    assert operation.selector == 'a[data-test="primary-action"]'
 
 
 def test_step_executor_persists_healed_element_selector(
@@ -267,7 +1100,7 @@ def test_step_executor_persists_healed_element_selector(
                 healing_attempted=True,
                 original_selector="#old-login",
                 original_error="not found",
-                confidence=0.8,
+                confidence=0.95,
             )
 
     class FakePage:
@@ -321,6 +1154,7 @@ def test_step_executor_does_not_block_when_healed_element_persist_fails(
                 healing_attempted=True,
                 original_selector="#old-login",
                 original_error="not found",
+                confidence=0.95,
             )
 
     class FailingStore:
@@ -439,11 +1273,16 @@ def test_openai_strict_schema_requires_object_fields_and_removes_defaults():
 
     assert schema["additionalProperties"] is False
     assert set(schema["required"]) == {
+        "status",
         "action",
+        "element_id",
         "selector",
         "value",
         "key",
         "wait_ms",
+        "reason",
+        "expected",
+        "confidence",
     }
     assert "default" not in str(schema)
 
@@ -595,6 +1434,38 @@ def test_ai_pydantic_contracts_reject_invalid_payloads():
     with pytest.raises(ValueError):
         AiStepDecision.model_validate({"action": "press", "selector": "#submit"})
 
+    assert AiStepDecision.model_validate(
+        {"action": "reject", "reason": "multiple actions"}
+    ).action == "reject"
+    assert AiStepDecision.model_validate(
+        {"status": "need_more_context", "reason": "候选不足"}
+    ).status == "need_more_context"
+
+    with pytest.raises(ValueError):
+        AiStepDecision.model_validate({"action": "reject"})
+
+    assert AgentCaseDecision.model_validate(
+        {"action": "click", "target": "Login button"}
+    ).action == "click"
+    assert AgentCaseDecision.model_validate(
+        {
+            "status": "ok",
+            "action": "click",
+            "element_id": "e12",
+            "reason": "点击目标按钮",
+            "expected": "页面状态更新",
+            "confidence": 0.9,
+        }
+    ).element_id == "e12"
+    assert AgentCaseDecision.model_validate(
+        {"status": "need_more_context", "reason": "候选中没有目标元素"}
+    ).status == "need_more_context"
+    assert AgentCaseDecision.model_validate(
+        {"action": "done", "reason": "success criteria satisfied"}
+    ).action == "done"
+    with pytest.raises(ValueError):
+        AgentCaseDecision.model_validate({"action": "click"})
+
 
 def test_generated_case_payload_contract_normalizes_defaults():
     payload = GeneratedCasePayload.model_validate(
@@ -672,6 +1543,201 @@ def test_generation_spec_string_steps_still_use_ai():
 
     assert _has_explicit_steps(natural_spec) is False
     assert _has_explicit_steps(explicit_spec) is True
+
+
+def test_generation_navigation_prefers_case_steps_then_description_then_modules():
+    context = ProjectContext(
+        project="demo",
+        test_dir=Path("test_data/demo"),
+        base_url="https://project.example/",
+        elements={},
+        modules={
+            "login": [
+                {"action": "goto", "value": "https://module.example/"},
+            ]
+        },
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+
+    from_steps = _resolve_navigation_context(
+        context,
+        {
+            "cases": [
+                {
+                    "name": "test_flow",
+                    "description": "打开 https://description.example/ 后登录",
+                    "steps": ["打开 https://steps.example/ 登录页"],
+                }
+            ]
+        },
+    )
+    assert from_steps["resolved"]["source"] == "generation_spec"
+    assert from_steps["resolved"]["url"] == "https://steps.example/"
+
+    from_description = _resolve_navigation_context(
+        context,
+        {
+            "cases": [
+                {
+                    "name": "test_flow",
+                    "description": "打开 https://description.example/ 后登录",
+                    "steps": ["使用标准用户登录"],
+                }
+            ]
+        },
+    )
+    assert from_description["resolved"]["source"] == "generation_spec"
+    assert from_description["resolved"]["url"] == "https://description.example/"
+
+
+def test_generation_navigation_falls_back_to_module_then_project_base_url():
+    module_context = ProjectContext(
+        project="demo",
+        test_dir=Path("test_data/demo"),
+        base_url="https://project.example/",
+        elements={},
+        modules={"login": [{"action": "goto", "value": "https://module.example/"}]},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+
+    from_module = _resolve_navigation_context(
+        module_context,
+        {"cases": [{"name": "test_flow", "description": "标准用户登录"}]},
+    )
+    assert from_module["resolved"]["source"] == "module"
+    assert from_module["resolved"]["module"] == "login"
+    assert from_module["resolved"]["url"] == "https://module.example/"
+
+    project_context = ProjectContext(
+        project="demo",
+        test_dir=Path("test_data/demo"),
+        base_url="https://project.example/",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+    from_project = _resolve_navigation_context(
+        project_context,
+        {"cases": [{"name": "test_flow", "description": "标准用户登录"}]},
+    )
+    assert from_project["resolved"]["source"] == "project_config"
+    assert from_project["resolved"]["url"] == "https://project.example/"
+
+
+def test_entry_url_normalization_strips_query_hash_and_default_port():
+    assert (
+        normalize_entry_url("HTTPS://Example.TEST:443//login/?utm=1#top")
+        == "https://example.test/login"
+    )
+    assert (
+        normalize_entry_url("/login?x=1", base_url="https://example.test/app/")
+        == "https://example.test/login"
+    )
+
+
+def test_generation_cache_reuses_valid_payload_by_entry_scope(monkeypatch, tmp_path: Path):
+    cache_path = tmp_path / "ai_cache.sqlite3"
+    calls = {"count": 0}
+
+    monkeypatch.setattr(
+        "src.ai_generation.case_generator.load_ai_config",
+        lambda: {
+            "runtime": {"ai_cache_sqlite_path": str(cache_path)},
+            "generation": {"max_context_items": 5, "generation_cache_enabled": True},
+            "prompts": {"generation_version": "generation-test"},
+            "llm": {"schema_version": "schema-test"},
+        },
+    )
+
+    class FakeProvider:
+        settings = type("Settings", (), {"model": "test-model"})()
+
+        def complete_model(self, messages, response_model, **kwargs):
+            calls["count"] += 1
+            return response_model.model_validate(
+                {
+                    "cases": [{"name": "test_generated"}],
+                    "data": {
+                        "test_generated": {
+                            "description": "generated",
+                            "mode": "smart",
+                            "steps": [
+                                {
+                                    "action": "assert_text",
+                                    "selector": "page_title",
+                                    "value": "Products",
+                                }
+                            ],
+                        }
+                    },
+                    "elements": {},
+                    "modules": {},
+                    "vars": {},
+                }
+            )
+
+    monkeypatch.setattr("src.ai_generation.case_generator.ChatCompletionProvider", FakeProvider)
+
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://www.saucedemo.com/?utm=1",
+        elements={"page_title": ".title"},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+    spec = {
+        "cases": [
+            {
+                "name": "test_generated",
+                "intent": "Login and check products.",
+                "final": ["Products is visible"],
+            }
+        ]
+    }
+    payload = _build_payload(
+        context,
+        spec,
+        env="prod",
+        output_name="generated",
+        use_ai=True,
+    )
+    _save_generation_cache(
+        context=context,
+        spec=spec,
+        env="prod",
+        output_name="generated",
+        payload=payload,
+        use_ai=True,
+        progress=None,
+    )
+    cached = _build_payload(
+        ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="https://www.saucedemo.com/",
+            elements={"page_title": ".title"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec,
+        env="prod",
+        output_name="generated",
+        use_ai=True,
+    )
+
+    assert cached == payload
+    assert calls["count"] == 1
 
 
 def test_generation_harness_normalizes_model_field_aliases(tmp_path: Path):
@@ -755,7 +1821,7 @@ def test_generation_harness_rejects_strict_target_only_steps(tmp_path: Path):
         }
     )
 
-    with pytest.raises(ValueError, match="mode: smart/ai"):
+    with pytest.raises(ValueError, match="mode: smart"):
         harness.validate(payload)
 
 
@@ -815,7 +1881,8 @@ def test_generation_harness_normalizes_module_steps_and_params(tmp_path: Path):
                     "mode": "smart",
                     "steps": [
                         {
-                            "use_module": "login",
+                            "action": "use_module",
+                            "target": "login",
                             "params": {"username": "${standard_username}"},
                         },
                         {"action": "assert_visible", "selector": "title"},
@@ -971,6 +2038,44 @@ def test_generation_harness_rejects_missing_module_params(tmp_path: Path):
         harness.validate(payload)
 
 
+def test_generation_harness_rejects_missing_context_module_params(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"username": "#user-name", "title": ".title"},
+            modules={
+                "login": [
+                    {"action": "fill", "selector": "username", "value": "${username}"}
+                ]
+            },
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {"use_module": "login"},
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                }
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="params: username"):
+        harness.validate(payload)
+
+
 def test_generation_harness_rejects_undefined_variables(tmp_path: Path):
     harness = GenerationHarness(
         context=ProjectContext(
@@ -1019,7 +2124,7 @@ def test_heuristic_selectors_prioritize_password_target():
     selectors = heuristic_selectors("密码输入框", "fill")
 
     assert selectors[0] == 'input[type="password"]'
-    assert "#password" in selectors[:2]
+    assert 'input[name*="password" i]' in selectors
 
 
 def test_vision_find_result_contract_accepts_service_payload():
@@ -1554,12 +2659,144 @@ def test_yaml_schema_allows_native_ai_step_instruction(tmp_path: Path):
         tmp_path,
         case_data={
             "description": "native ai step instruction",
-            "mode": "ai",
+            "mode": "strict",
             "steps": [{"action": "ai_step", "instruction": "打开购物车"}],
         },
     )
 
     validate_project(project)
+
+
+def test_yaml_schema_rejects_vision_as_action(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "vision is capability, not action",
+            "mode": "smart",
+            "steps": [
+                {
+                    "action": "vision_click",
+                    "target": "login button",
+                    "mode": "smart",
+                }
+            ],
+        },
+    )
+
+    with pytest.raises(YamlSchemaValidationError, match="不支持的 action"):
+        validate_project(project)
+
+
+def test_yaml_schema_rejects_runtime_ai_case(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "runtime ai case",
+            "type": "ai_case",
+            "mode": "smart",
+            "intent": "finish the cart checkout flow",
+            "checkpoints": ["cart badge is 1"],
+            "final": ["checkout complete page is visible"],
+        },
+    )
+
+    with pytest.raises(YamlSchemaValidationError, match="standard/agent_case"):
+        validate_project(project)
+
+
+def test_yaml_schema_allows_agent_case_intent_without_mode(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "runtime agent case",
+            "type": "agent_case",
+            "intent": "打开Saucedemo并完成下单流程",
+            "checkpoints": ["购物车中存在指定商品"],
+            "final": ["页面展示 Thank you for your order"],
+        },
+    )
+
+    validate_project(project)
+
+
+def test_yaml_schema_allows_agent_case_steps_without_intent(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "runtime agent case steps",
+            "type": "agent_case",
+            "steps": [
+                "打开 Saucedemo 登录页",
+                "使用标准用户登录",
+                "打开购物车页面",
+            ],
+            "checkpoints": ["登录后进入商品列表页"],
+            "final": ["购物车页面可见"],
+        },
+    )
+
+    validate_project(project)
+
+
+def test_yaml_schema_rejects_agent_case_mode_field(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "runtime agent case",
+            "type": "agent_case",
+            "mode": "agent",
+            "intent": "打开Saucedemo并完成下单流程",
+            "final": ["订单完成"],
+        },
+    )
+
+    with pytest.raises(YamlSchemaValidationError, match="不需要声明 mode"):
+        validate_project(project)
+
+
+def test_yaml_schema_rejects_agent_case_without_checkpoints_or_final(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "runtime agent case",
+            "type": "agent_case",
+            "intent": "打开Saucedemo并完成下单流程",
+        },
+    )
+
+    with pytest.raises(YamlSchemaValidationError, match="checkpoints"):
+        validate_project(project)
+
+
+def test_yaml_schema_rejects_nested_agent_case_contract(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "runtime agent case",
+            "type": "agent_case",
+            "agent_case": {
+                "intent": "旧嵌套格式",
+                "final": ["订单完成"],
+            },
+        },
+    )
+
+    with pytest.raises(YamlSchemaValidationError, match="agent_case"):
+        validate_project(project)
+
+
+def test_yaml_schema_rejects_agent_mode_on_standard_case(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "invalid agent mode",
+            "mode": "agent",
+            "steps": [{"action": "click", "selector": "submit_button"}],
+        },
+    )
+
+    with pytest.raises(YamlSchemaValidationError, match="strict/smart"):
+        validate_project(project)
 
 
 def test_yaml_schema_rejects_missing_module_reference(tmp_path: Path):

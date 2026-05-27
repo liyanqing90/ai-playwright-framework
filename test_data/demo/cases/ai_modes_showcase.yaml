@@ -1,4 +1,6 @@
-test_cases:
-  - name: test_saucedemo_step_smart_target_add_cart
-  - name: test_saucedemo_native_ai_step_open_cart
-  - name: test_saucedemo_case_ai_target_open_menu
+﻿test_cases:
+  - name: test_saucedemo_strict_cart_logout_flow
+  - name: test_saucedemo_step_smart_cart_logout_flow
+  - name: test_saucedemo_agent_case_steps_cart_logout_flow
+  - name: test_saucedemo_agent_case_explore_cart_checkout_flow
+

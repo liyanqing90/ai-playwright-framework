@@ -75,10 +75,10 @@ def show_test_summary(start_time: float) -> None:
 def main(
     project: Project = typer.Option(Project.DEMO, "-p", "--project", help="项目"),
     test_file: Optional[str] = typer.Option(
-        "", "-f", "--file", "--test-file", help="测试文件名，例如 saucedemo_ai"
+        "", "-f", "--file", "--test-file", help="测试文件名，例如 smoke"
     ),
     ai_mode: str = typer.Option(
-        "strict", "-m", "--ai-mode", help="AI执行模式: strict/smart/ai"
+        "strict", "-m", "--ai-mode", help="执行模式: strict/smart"
     ),
     env: Environment = typer.Option(Environment.PROD, "-e", "--env", help="执行环境"),
     headed: bool = typer.Option(
@@ -93,8 +93,8 @@ def main(
     ),
     base_url: Optional[str] = typer.Option("", "--base-url", help="指定基础 URL"),
 ):
-    if ai_mode not in {"strict", "smart", "ai"}:
-        raise typer.BadParameter("--ai-mode 仅支持 strict/smart/ai")
+    if ai_mode not in {"strict", "smart"}:
+        raise typer.BadParameter("--ai-mode 仅支持 strict/smart")
 
     config = Config(
         marker=marker,

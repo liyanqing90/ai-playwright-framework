@@ -151,7 +151,7 @@ def main(
     test_file: Optional[str] = typer.Option("", "--test-file", help="指定测试文件"),
     no_parallel: bool = typer.Option(False, "--no-parallel", help="禁用并行执行"),
     ai_mode: str = typer.Option(
-        "strict", "--ai-mode", help="AI执行模式: strict/smart/ai，默认不影响历史用例"
+        "strict", "--ai-mode", help="执行模式: strict/smart，默认不影响历史用例"
     ),
     generate_case: Optional[str] = typer.Option(
         None, "--generate-case", help="根据YAML规格生成当前项目格式的用例"
@@ -188,8 +188,8 @@ def main(
 
     # 配置运行环境
     config.configure_environment()
-    if ai_mode not in {"strict", "smart", "ai"}:
-        console.print("[red]--ai-mode 仅支持 strict、smart、ai[/red]")
+    if ai_mode not in {"strict", "smart"}:
+        console.print("[red]--ai-mode 仅支持 strict、smart[/red]")
         sys.exit(1)
     os.environ["UI_AI_MODE"] = ai_mode
     tracker = get_token_usage_tracker()

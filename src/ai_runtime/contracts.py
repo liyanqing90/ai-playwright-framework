@@ -10,26 +10,129 @@ class StrictModel(BaseModel):
 
 
 class SelectorDecision(StrictModel):
-    selector: str = Field(min_length=1)
+    status: Literal["ok", "need_more_context", "blocked", "failed"] = "ok"
+    element_id: str | None = None
+    selected_element_id: str | None = None
+    selector: str | None = Field(default=None, min_length=1)
     selector_type: Literal["css", "xpath", "text"] = "css"
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    reason: str | None = Field(default=None, max_length=120)
+    expected: str | None = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_locator_payload(self):
+        if self.status == "ok" and not (
+            self.element_id or self.selected_element_id or self.selector
+        ):
+            raise ValueError("selector decision requires element_id or selector")
+        if self.status in {"need_more_context", "blocked", "failed"} and not self.reason:
+            raise ValueError(f"{self.status} requires reason")
+        return self
 
 
 class AiStepDecision(StrictModel):
-    action: Literal["click", "fill", "press", "wait", "skip"]
+    status: Literal["ok", "need_more_context", "blocked", "failed"] = "ok"
+    action: Literal["click", "fill", "press", "wait", "skip", "reject"] | None = None
+    element_id: str | None = None
     selector: str | None = None
     value: str | None = None
     key: str | None = None
     wait_ms: int | None = Field(default=None, ge=0, le=60000)
+    reason: str | None = Field(default=None, max_length=120)
+    expected: str | None = Field(default=None, max_length=120)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def validate_action_payload(self):
-        if self.action in {"click", "fill", "press"} and not self.selector:
-            raise ValueError(f"{self.action} action requires selector")
+        if self.status in {"need_more_context", "blocked", "failed"}:
+            if not self.reason:
+                raise ValueError(f"{self.status} requires reason")
+            return self
+        if not self.action:
+            raise ValueError("ok ai_step decision requires action")
+        if self.action in {"click", "fill", "press"} and not (
+            self.element_id or self.selector
+        ):
+            raise ValueError(f"{self.action} action requires element_id or selector")
         if self.action == "press" and not self.key:
             raise ValueError("press action requires key")
         if self.action == "wait" and self.wait_ms is None:
             raise ValueError("wait action requires wait_ms")
+        if self.action == "reject" and not self.reason:
+            raise ValueError("reject action requires reason")
+        return self
+
+
+class AgentCaseDecision(StrictModel):
+    status: Literal["ok", "need_more_context", "blocked", "failed"] = "ok"
+    action: Literal[
+        "goto",
+        "use_module",
+        "click",
+        "fill",
+        "press",
+        "wait",
+        "assert_visible",
+        "assert_text",
+        "assert_url_contains",
+        "assert_title",
+        "done",
+        "finish",
+        "fail",
+    ] | None = None
+    mode: Literal["smart"] | None = None
+    element_id: str | None = None
+    selector: str | None = None
+    target: str | None = None
+    value: str | None = None
+    key: str | None = None
+    wait_ms: int | None = Field(default=None, ge=0, le=60000)
+    module: str | None = None
+    params: dict[str, Any] | None = None
+    reason: str | None = Field(default=None, max_length=120)
+    expected: str | None = Field(default=None, max_length=120)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    criteria_update: dict[str, list[str]] | None = None
+    context_level: int | None = Field(default=None, ge=1, le=5)
+
+    @model_validator(mode="after")
+    def validate_action_payload(self):
+        if self.status in {"need_more_context", "blocked", "failed"}:
+            if not self.reason:
+                raise ValueError(f"{self.status} requires reason")
+            return self
+        if not self.action:
+            raise ValueError("ok decision requires action")
+        if self.action == "goto" and not self.value:
+            raise ValueError("goto action requires value")
+        if self.action == "use_module" and not self.module:
+            raise ValueError("use_module action requires module")
+        if self.action in {"click", "assert_visible"} and not (
+            self.element_id or self.selector or self.target
+        ):
+            raise ValueError(
+                f"{self.action} action requires element_id, selector or target"
+            )
+        if self.action == "fill" and not (
+            self.element_id or self.selector or self.target
+        ):
+            raise ValueError("fill action requires element_id, selector or target")
+        if self.action == "fill" and self.value is None:
+            raise ValueError("fill action requires value")
+        if self.action == "press" and not self.key:
+            raise ValueError("press action requires key")
+        if self.action == "assert_text" and self.value is None:
+            raise ValueError("assert_text action requires value")
+        if self.action == "assert_text" and not (
+            self.element_id or self.selector or self.target
+        ):
+            raise ValueError("assert_text action requires element_id, selector or target")
+        if self.action in {"assert_url_contains", "assert_title"} and self.value is None:
+            raise ValueError(f"{self.action} action requires value")
+        if self.action == "wait" and self.wait_ms is None:
+            raise ValueError("wait action requires wait_ms")
+        if self.action in {"done", "finish", "fail"} and not self.reason:
+            raise ValueError(f"{self.action} action requires reason")
         return self
 
 
@@ -43,7 +146,7 @@ class GeneratedCase(StrictModel):
 
 class GeneratedCaseData(StrictModel):
     description: str = ""
-    mode: Literal["strict", "smart", "ai"] = "strict"
+    mode: Literal["strict", "smart"] = "strict"
     steps: list[dict[str, Any]] = Field(default_factory=list)
 
 

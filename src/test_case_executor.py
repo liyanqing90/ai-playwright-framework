@@ -2,6 +2,7 @@ from typing import Dict, Any, Set
 
 import allure
 
+from src.ai_runtime.agent_case_executor import AgentCaseExecutor
 # 导入重构后的StepExecutor
 from src.step_actions.step_executor import StepExecutor
 from utils.logger import logger
@@ -39,32 +40,81 @@ class CaseExecutor:
             page: Playwright页面对象
             ui_helper: UI操作帮助类
         """
-        # 执行测试步骤
+        if self._is_agent_case():
+            self.execute_agent_case(page, ui_helper)
+            return
+        steps, default_mode = self.resolve_steps_and_mode()
+        self.execute_resolved_steps(page, ui_helper, steps, default_mode)
+
+    def execute_resolved_steps(
+        self,
+        page,
+        ui_helper,
+        steps: list[dict[str, Any]],
+        default_mode: str | None,
+    ) -> None:
         step_executor = StepExecutor(
             page,
             ui_helper,
             self.elements,
-            default_mode=self._default_mode(),
+            default_mode=default_mode,
         )
-
-        # 支持两种数据结构：直接的步骤列表或包含步骤的字典
-        if isinstance(self.case_data, list):
-            # 如果是列表，取第一个元素（兼容旧格式）
-            if self.case_data and isinstance(self.case_data[0], dict):
-                steps = self.case_data[0].get("steps", [])
-            else:
-                steps = []
-        elif isinstance(self.case_data, dict):
-            # 如果是字典，直接获取steps
-            steps = self.case_data.get("steps", [])
-        else:
-            steps = []
 
         # 执行所有步骤
         for step in steps:
             step_executor.execute_step(step)
 
+    def resolve_steps_and_mode(self) -> tuple[list[dict[str, Any]], str | None]:
+        # 支持列表和对象两种数据来源，由 data 层 schema 保证用例形态。
+        if isinstance(self.case_data, list):
+            if self.case_data and isinstance(self.case_data[0], dict):
+                steps = self.case_data[0].get("steps", [])
+            else:
+                steps = []
+            return steps, self._default_mode()
+        elif isinstance(self.case_data, dict):
+            if str(self.case_data.get("type") or "").lower() == "agent_case":
+                raise ValueError("agent_case 不会编译为静态steps，请通过AgentCaseExecutor执行")
+            if str(self.case_data.get("type") or "").lower() == "ai_case":
+                raise ValueError("run_case 不再支持运行时 ai_case 编译；请使用 gen 生成用例，或改用 agent_case")
+            # 如果是字典，直接获取steps
+            steps = self.case_data.get("steps", [])
+            return steps, self._default_mode()
+        else:
+            return [], self._default_mode()
+
+    def execute_agent_case(self, page, ui_helper) -> None:
+        case_name = self._case_name(default="anonymous_agent_case")
+        result = AgentCaseExecutor(
+            page=page,
+            ui_helper=ui_helper,
+            elements=self.elements,
+        ).run(
+            case_name=case_name,
+            case_data=self.case_data,
+        )
+        log.info(
+            "Agent用例执行结果: "
+            f"case={case_name} | steps_executed={result.steps_executed} "
+            f"| model_calls={result.model_calls} "
+            f"| cache_replayed_steps={result.cache_replayed_steps} "
+            f"| final_reason={result.final_reason}"
+        )
+
     def _default_mode(self) -> str | None:
         if isinstance(self.case_data, dict) and self.case_data.get("mode"):
             return self.case_data.get("mode")
         return self.case_metadata.get("mode")
+
+    def _case_name(self, *, default: str) -> str:
+        return str(
+            self.case_metadata.get("name")
+            or (self.case_data.get("name") if isinstance(self.case_data, dict) else None)
+            or default
+        )
+
+    def _is_agent_case(self) -> bool:
+        return (
+            isinstance(self.case_data, dict)
+            and str(self.case_data.get("type") or "").lower() == "agent_case"
+        )

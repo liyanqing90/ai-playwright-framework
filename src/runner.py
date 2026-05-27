@@ -13,20 +13,20 @@ _DEFAULT_FIXTURES = [
     "get_test_name",
     "value",
 ]
-
-
 def build_test_signature(fixtures: list) -> Signature:
     if not isinstance(fixtures, list):
         raise ValueError("fixtures 必须是列表类型")  # 中文错误信息
-    conflict = set(fixtures) & set(_DEFAULT_FIXTURES)
+    default_fixtures = _DEFAULT_FIXTURES
+    reserved_fixtures = set(_DEFAULT_FIXTURES)
+    conflict = set(fixtures) & reserved_fixtures
     if conflict:
         conflict_fixtures_str = ", ".join(conflict)  # 将冲突的 fixtures 转换为字符串
         raise ValueError(
-            f"禁止覆盖默认 fixtures: {conflict_fixtures_str}。 默认 fixtures 包括: {', '.join(_DEFAULT_FIXTURES)}"
+            f"禁止覆盖默认 fixtures: {conflict_fixtures_str}。 默认 fixtures 包括: {', '.join(sorted(reserved_fixtures))}"
         )  # 更详细的中文错误信息，列出冲突的 fixtures 和默认 fixtures
     parameters = [
         Parameter(name, Parameter.POSITIONAL_OR_KEYWORD)
-        for name in _DEFAULT_FIXTURES + fixtures
+        for name in default_fixtures + fixtures
     ]
     return Signature(parameters)
 
@@ -99,15 +99,17 @@ class TestCaseGenerator(pytest.Item):
         setattr(self.module, f"{case_name}_data", case_data)
 
         # 使用闭包绑定当前 case 数据
-        def _test_function_wrapper_for_case(
-            page, ui_helper, **kwargs
-        ):  # 重命名闭包函数
+        def _test_function_wrapper_for_case(**kwargs):  # 重命名闭包函数
+            page = kwargs.pop("page", None)
+            ui_helper = kwargs.pop("ui_helper", None)
+            request = kwargs.pop("request", None)
             self.execute_test(
                 case_data=kwargs.get("value", {}),
                 case_metadata=case,
                 elements=self.elements,
                 page=page,
                 ui_helper=ui_helper,
+                request=request,
                 **kwargs,
             )
 
@@ -119,13 +121,26 @@ class TestCaseGenerator(pytest.Item):
         # 设置函数元数据
         marked_func.__name__ = case_name
         marked_func.__doc__ = case.get("description", "")
-        marked_func.__signature__ = build_test_signature(fixtures)
+        marked_func.__signature__ = build_test_signature(
+            fixtures
+        )
         return marked_func
 
     def execute_test(
-        self, case_data, page: Page, ui_helper, case_metadata=None, **kwargs
+        self,
+        case_data,
+        page: Page | None,
+        ui_helper,
+        case_metadata=None,
+        request=None,
+        **kwargs,
     ) -> None:
         executor = CaseExecutor(case_data, self.elements, case_metadata=case_metadata)
+        if page is None or ui_helper is None:
+            if request is None:
+                raise ValueError("测试执行缺少 page/ui_helper fixture")
+            page = request.getfixturevalue("page")
+            ui_helper = request.getfixturevalue("ui_helper")
         executor.execute_test_case(page, ui_helper)
 
     def runtest(self):

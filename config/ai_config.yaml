@@ -4,6 +4,29 @@ runtime:
   ai_enabled: true
   max_ai_calls_per_test: 3
   candidate_limit: 120
+  ai_step_candidate_limit: 24
+  llm_selector_candidate_scan_limit: 120
+  llm_selector_candidate_limit: 24
+  agent_candidate_scan_limit: 120
+  agent_candidate_limit: 16
+  agent_context_items: 40
+  agent_history_limit: 3
+  agent_reasoning_effort: low
+  agent_timeout_seconds: 120
+  ai_cache_sqlite_path: .ui_auto/ai_cache.sqlite3
+  agent_case_cache_enabled: true
+  agent_case_cache_max_replay_steps: 30
+
+agent_policy:
+  limits:
+    max_steps: 30
+    max_model_calls: 18
+    max_duration_seconds: 180
+  guardrails:
+    no_runtime_registry_write: true
+    stop_on_external_domain: true
+    stop_on_unexpected_payment: true
+    require_checkpoints_or_final: true
 
 selector_registry:
   enabled: true
@@ -12,16 +35,23 @@ selector_registry:
 
 self_healing:
   persist_elements: true
+  min_persist_confidence: 0.85
+  persist_assertion_selectors: false
 
 generation:
   output_prefix: generated
   max_context_items: 160
+  compile_context_items: 32
+  compile_context_modules: 4
+  compile_context_module_steps: 4
+  generation_cache_enabled: true
+  verify_after_generate: true
   prefer_existing_modules: true
   prefer_existing_elements: true
 
 llm:
   omit_temperature: true
-  response_format: json_object
+  response_format: auto
   timeout_seconds: 60
   schema_version: ui-ai-schema-v1
 
@@ -39,5 +69,6 @@ vision:
 prompts:
   selector_version: selector-v1
   ai_step_version: ai-step-v1
+  agent_case_version: agent-case-v1
   generation_version: generation-v1
   vision_version: vision-v1

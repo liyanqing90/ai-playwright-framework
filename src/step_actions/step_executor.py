@@ -163,6 +163,12 @@ class StepExecutor:
             )
             self._validate_step(action, selector, step)
             self._execute_action(action, selector, value, step)
+            self._persist_resolved_selector_after_success(
+                element_key=element_key,
+                original_selector=raw_selector,
+                resolved_selector=selector,
+                step=step,
+            )
         except AssertionError as e:
             self.has_error = True
             self.step_has_error = True
@@ -258,7 +264,7 @@ class StepExecutor:
         config_default = self.ai_config.get("runtime", {}).get("default_mode", "strict")
         mode = step.get("mode") or self.default_mode or runtime_mode(config_default)
         mode = str(mode or "strict").lower()
-        if mode not in {"strict", "smart", "ai"}:
+        if mode not in {"strict", "smart"}:
             raise ValueError(f"不支持的AI执行模式: {mode}")
         return mode
 
@@ -305,13 +311,6 @@ class StepExecutor:
             step["_resolved_original_selector"] = resolved.original_selector
         if resolved.original_error:
             step["_resolved_original_error"] = resolved.original_error
-        self._persist_healed_selector(
-            element_key=element_key,
-            original_selector=selector,
-            resolved_selector=resolved.selector,
-            healing_attempted=resolved.healing_attempted,
-            step=step,
-        )
         return resolved.selector
 
     def _persist_healed_selector(
@@ -332,6 +331,8 @@ class StepExecutor:
             )
             return
         if original_selector == resolved_selector:
+            return
+        if not self._healed_selector_persist_allowed(step):
             return
         if not self._persist_healed_elements_enabled():
             logger.info(
@@ -407,6 +408,44 @@ class StepExecutor:
         cfg = self.ai_config.get("self_healing", {})
         return bool(cfg.get("persist_elements", True))
 
+    def _healed_selector_persist_allowed(self, step: Dict[str, Any]) -> bool:
+        cfg = self.ai_config.get("self_healing", {})
+        action = str(step.get("action") or "").lower()
+        if action.startswith("assert") and not bool(
+            cfg.get("persist_assertion_selectors", False)
+        ):
+            logger.info(
+                "selector自愈未回写elements: "
+                f"key={step.get('_resolved_element_key')} | reason=断言步骤默认不持久化"
+            )
+            return False
+        confidence = step.get("_resolved_confidence")
+        min_confidence = float(cfg.get("min_persist_confidence", 0.85))
+        if confidence is None or float(confidence) < min_confidence:
+            logger.info(
+                "selector自愈未回写elements: "
+                f"key={step.get('_resolved_element_key')} | reason=置信度不足 "
+                f"| confidence={confidence} | min={min_confidence}"
+            )
+            return False
+        return True
+
+    def _persist_resolved_selector_after_success(
+        self,
+        *,
+        element_key: str | None,
+        original_selector: str | None,
+        resolved_selector: str | None,
+        step: Dict[str, Any],
+    ) -> None:
+        self._persist_healed_selector(
+            element_key=element_key,
+            original_selector=original_selector,
+            resolved_selector=resolved_selector,
+            healing_attempted=bool(step.get("_resolved_healing_attempted")),
+            step=step,
+        )
+
     def _get_element_store(self) -> ElementDefinitionStore:
         if self.element_store is None:
             self.element_store = ElementDefinitionStore()
@@ -459,7 +498,7 @@ class StepExecutor:
             }
         )
         self._log_ai_mode(
-            mode="ai",
+            mode="smart",
             action=action,
             target=instruction,
             selector=selector,
@@ -470,6 +509,12 @@ class StepExecutor:
 
     @staticmethod
     def _compile_ai_step(operation, *, timeout: int) -> Dict[str, Any] | None:
+        if operation.action == "reject":
+            reason = operation.reason or "该指令不是单一原子动作"
+            raise ValueError(
+                "ai_step只能编译为一个标准step；"
+                f"{reason}。请拆成多个steps，或改用agent_case。"
+            )
         if operation.action == "skip":
             return None
         if operation.action == "wait":
@@ -563,8 +608,9 @@ class StepExecutor:
         labels = {
             "explicit": "显式选择器",
             "registry": "历史定位",
-            "heuristic": "规则定位",
+            "heuristic": "DOM语义匹配",
             "ai_step": "AI原生步骤",
+            "ai_step_fast": "AI step local compile",
             "ai_selector": "AI selector兜底",
             "vision_dom": "UI Vision DOM兜底",
             "vision_coordinate": "UI Vision坐标兜底",

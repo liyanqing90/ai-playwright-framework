@@ -28,11 +28,16 @@ class StepPayload(BaseModel):
 
 
 class CaseDataPayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     description: str = ""
+    case_type: str | None = Field(default=None, alias="type")
     mode: str | None = None
-    steps: list[dict[str, Any]] = Field(default_factory=list)
+    intent: Any | None = None
+    inputs: Any | None = None
+    checkpoints: Any | None = None
+    final: Any | None = None
+    steps: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -271,15 +276,128 @@ def validate_case_data(
         except ValidationError as exc:
             context.add_issue(variant_path, f"test_data 结构不合法: {exc}")
             continue
+        case_type = _normalize_case_type(payload.case_type)
+        _validate_case_type(context, variant_path, case_type)
+        if case_type == "agent_case":
+            _validate_agent_case(
+                context=context,
+                payload=payload,
+                raw_case_data=variant,
+                path=variant_path,
+            )
+            continue
+
         mode = payload.mode or inherited_mode or "strict"
         _validate_mode(context, variant_path, mode)
         _validate_steps(
             context=context,
-            steps=payload.steps,
+            steps=payload.steps or [],
             inherited_mode=mode,
             path=f"{variant_path}.steps",
             module_stack=(),
         )
+
+
+def _validate_agent_case(
+    *,
+    context: ValidationContext,
+    payload: CaseDataPayload,
+    raw_case_data: dict[str, Any],
+    path: str,
+) -> None:
+    if payload.mode is not None:
+        context.add_issue(path, "agent_case 不需要声明 mode；type 已决定运行方式")
+
+    allowed_fields = {
+        "description",
+        "type",
+        "mode",
+        "intent",
+        "steps",
+        "inputs",
+        "checkpoints",
+        "final",
+    }
+    extra = sorted(set(raw_case_data) - allowed_fields)
+    if extra:
+        context.add_issue(path, f"agent_case 包含未声明字段: {', '.join(extra)}")
+
+    intent = payload.intent
+    steps = payload.steps
+    if not _has_non_empty_text(intent) and not steps:
+        context.add_issue(path, "agent_case 必须提供 intent 或 steps")
+    if intent is not None and not _has_non_empty_text(intent):
+        context.add_issue(f"{path}.intent", "intent 必须是非空字符串")
+    if steps is not None:
+        if not isinstance(steps, list) or not steps:
+            context.add_issue(f"{path}.steps", "steps 必须是非空字符串列表")
+        else:
+            for index, item in enumerate(steps):
+                if not _has_non_empty_text(item):
+                    context.add_issue(
+                        f"{path}.steps[{index}]",
+                        "自然语言步骤必须是非空字符串",
+                    )
+
+    if payload.inputs is not None and not isinstance(payload.inputs, dict):
+        context.add_issue(f"{path}.inputs", "inputs 必须是对象")
+
+    if payload.checkpoints is None and payload.final is None:
+        context.add_issue(f"{path}.final", "agent_case 必须声明 checkpoints 或 final")
+        return
+    _validate_criteria(
+        context,
+        path,
+        {
+            "checkpoints": payload.checkpoints,
+            "final": payload.final,
+        },
+        field_label="agent_case",
+    )
+
+
+def _validate_case_type(context: ValidationContext, path: str, case_type: str) -> None:
+    if case_type and case_type not in {"standard", "agent_case"}:
+        context.add_issue(path, f"type 只支持 standard/agent_case: {case_type}")
+
+
+def _normalize_case_type(case_type: Any) -> str:
+    return str(case_type or "").lower()
+
+
+def _validate_criteria(
+    context: ValidationContext,
+    path: str,
+    criteria: Any,
+    *,
+    field_label: str,
+) -> None:
+    if not isinstance(criteria, dict):
+        context.add_issue(path, f"{field_label} 必须是包含 checkpoints/final 的对象")
+        return
+    allowed_fields = {"checkpoints", "final"}
+    extra = sorted(set(criteria) - allowed_fields)
+    if extra:
+        context.add_issue(path, f"{field_label} 包含未声明字段: {', '.join(extra)}")
+    if not criteria.get("checkpoints") and not criteria.get("final"):
+        context.add_issue(path, f"{field_label} 必须提供 checkpoints 或 final")
+    for field_name in ("checkpoints", "final"):
+        value = criteria.get(field_name)
+        if value is None:
+            continue
+        if not isinstance(value, list) or not value:
+            context.add_issue(f"{path}.{field_name}", "必须是非空字符串列表")
+            continue
+        for index, item in enumerate(value):
+            if not _has_non_empty_text(item):
+                context.add_issue(
+                    f"{path}.{field_name}[{index}]",
+                    "成功标准必须是非空字符串",
+                )
+
+
+def _has_non_empty_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _validate_steps(
@@ -520,7 +638,7 @@ def _validate_selector_requirement(
     has_target = _has_non_empty_value(raw_step, "target")
 
     if not has_selector:
-        if mode in {"smart", "ai"} and has_target:
+        if mode == "smart" and has_target:
             return
         context.add_issue(
             path,
@@ -541,7 +659,7 @@ def _validate_selector_requirement(
         return
     if looks_like_raw_selector(selector):
         return
-    if mode in {"smart", "ai"} and has_target:
+    if mode == "smart" and has_target:
         return
     target_hint = f"，target={target}" if target else ""
     context.add_issue(
@@ -561,11 +679,16 @@ def _validate_allowed_keys(
         context.add_issue(path, f"包含未声明字段: {', '.join(unknown)}")
 
 
-def _validate_mode(context: ValidationContext, path: str, mode: str | None) -> None:
+def _validate_mode(
+    context: ValidationContext,
+    path: str,
+    mode: str | None,
+) -> None:
     if mode is None:
         return
-    if str(mode).lower() not in {"strict", "smart", "ai"}:
-        context.add_issue(path, f"mode 只支持 strict/smart/ai: {mode}")
+    normalized = str(mode).lower()
+    if normalized not in {"strict", "smart"}:
+        context.add_issue(path, f"mode 只支持 strict/smart: {mode}")
 
 
 def _validate_timeout(context: ValidationContext, path: str, timeout: Any) -> None:

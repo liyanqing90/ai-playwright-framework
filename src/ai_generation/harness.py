@@ -8,7 +8,7 @@ from src.ai_generation.project_context import ProjectContext
 from src.step_actions.action_types import StepAction
 
 
-_VALID_MODES = {"strict", "smart", "ai"}
+_VALID_MODES = {"strict", "smart"}
 
 
 @dataclass
@@ -48,8 +48,12 @@ class GenerationHarness:
         known_variables = set(self.context.variables) | set(payload.get("vars") or {})
         generated_module_refs = {
             module_name: _extract_variable_refs(module_steps)
-            for module_name, module_steps in (payload.get("modules") or {}).items()
+            for module_name, module_steps in self.context.modules.items()
         }
+        generated_module_refs.update({
+            module_name: _extract_variable_refs(module_steps)
+            for module_name, module_steps in (payload.get("modules") or {}).items()
+        })
 
         for module_name, module_steps in (payload.get("modules") or {}).items():
             if not isinstance(module_steps, list) or not module_steps:
@@ -229,6 +233,7 @@ class GenerationHarness:
             return (
                 step.get("use_module")
                 or step.get("module")
+                or step.get("target")
                 or step.get("value")
                 or step.get("name")
             )
@@ -301,7 +306,7 @@ class GenerationHarness:
             and effective_mode == "strict"
         ):
             raise ValueError(
-                f"{case_name} step {index} 使用target时必须声明 mode: smart/ai，或在data用例层声明 mode: smart/ai"
+                f"{case_name} step {index} 使用target时必须声明 mode: smart，或在data用例层声明 mode: smart"
             )
         if action in _ASSERTION_ACTIONS:
             GenerationHarness._validate_assertion_fields(

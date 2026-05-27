@@ -3,12 +3,20 @@ from __future__ import annotations
 import os
 import hashlib
 import json
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from src.ai_runtime.config import load_ai_config
 from src.ai_runtime.contracts import AiStepDecision, SelectorDecision
+from src.ai_runtime.payload_compactor import (
+    build_dom_context,
+    build_locator_context,
+    looks_like_internal_element_id,
+    normalize_model_text,
+    selector_for_element_id,
+)
 from src.ai_runtime.playwright_selectors import (
     collect_candidates,
     heuristic_selectors,
@@ -56,6 +64,7 @@ class AiStepOperation:
     value: str | None = None
     key: str | None = None
     wait_ms: int | None = None
+    reason: str | None = None
     source: str = "ai_step"
     prompt_version: str | None = None
     schema_version: str | None = None
@@ -71,7 +80,12 @@ class SmartResolver:
         self.env = env or os.environ.get("TEST_ENV", "local")
         self.config = load_ai_config()
         registry_cfg = self.config.get("selector_registry", {})
-        self.registry_enabled = bool(registry_cfg.get("enabled", True))
+        registry_disabled = str(
+            os.environ.get("UI_AI_DISABLE_SELECTOR_REGISTRY") or ""
+        ).lower() in {"1", "true", "yes", "on"}
+        self.registry_enabled = (
+            bool(registry_cfg.get("enabled", True)) and not registry_disabled
+        )
         self.unstable_threshold = int(registry_cfg.get("unstable_threshold", 3))
         self.registry = None
         if self.registry_enabled:
@@ -82,6 +96,21 @@ class SmartResolver:
         self.ai_enabled = bool(runtime_cfg.get("ai_enabled", True))
         self.max_ai_calls = int(runtime_cfg.get("max_ai_calls_per_test", 3))
         self.candidate_limit = int(runtime_cfg.get("candidate_limit", 120))
+        self.ai_step_candidate_limit = int(
+            runtime_cfg.get(
+                "ai_step_candidate_limit",
+                min(self.candidate_limit, 40),
+            )
+        )
+        self.llm_selector_candidate_scan_limit = int(
+            runtime_cfg.get("llm_selector_candidate_scan_limit", self.candidate_limit)
+        )
+        self.llm_selector_candidate_limit = int(
+            runtime_cfg.get(
+                "llm_selector_candidate_limit",
+                min(self.llm_selector_candidate_scan_limit, 40),
+            )
+        )
         self.ai_call_count = 0
         self.vision_settings = load_vision_settings(self.config)
         self.vision_call_count = 0
@@ -113,6 +142,9 @@ class SmartResolver:
         page_key = self._page_key()
         healing_attempted = False
         original_error: str | None = None
+
+        if not normalized_selector and looks_like_internal_element_id(target_text):
+            raise ValueError(f"未解析的内部element_id不能直接用于语义定位: {target_text}")
 
         if normalized_selector:
             try:
@@ -214,7 +246,7 @@ class SmartResolver:
                 stable = stable_selector_for_locator(self.page.locator(candidate))
                 if not selector_matches_target(self.page, stable, target_text, action):
                     logger.warning(
-                        f"规则定位语义不匹配，跳过: target={target_text} selector={stable}"
+                        f"DOM语义匹配不一致，跳过: target={target_text} selector={stable}"
                     )
                     continue
                 self._save_selector(
@@ -345,8 +377,14 @@ class SmartResolver:
     def resolve_ai_step(self, *, instruction: str, timeout: int) -> AiStepOperation:
         if not self.ai_enabled:
             raise ValueError("AI步骤未启用")
+        fast_operation = self._resolve_ai_step_fast(
+            instruction=instruction,
+            timeout=timeout,
+        )
+        if fast_operation is not None:
+            return fast_operation
         self._claim_ai_call("ai_step")
-        candidates = collect_candidates(self.page, limit=self.candidate_limit)
+        candidates = collect_candidates(self.page, limit=self.ai_step_candidate_limit)
         provider = ChatCompletionProvider()
         decision = provider.complete_model(
             [
@@ -354,7 +392,12 @@ class SmartResolver:
                     "role": "system",
                     "content": (
                         "你是UI自动化原生AI步骤编译器。根据用户指令从候选元素中选择一个框架支持的原子动作，"
-                        "只返回JSON对象，不要解释。action只允许click/fill/press/wait/skip。"
+                        "只返回JSON对象，不要解释。action只允许click/fill/press/wait/skip/reject。"
+                        "优先返回element_id，不要自己生成selector。"
+                        "selector字段只能填写真实CSS/Playwright selector，禁止把e1/e2这类element_id写到selector。"
+                        "ai_step必须是单一UI动作或单一断言意图，只能编译为一个标准step。"
+                        "如果指令包含两个或更多动作/断言、业务流程、登录流程、加购流程、退出流程，必须返回reject并说明reason。"
+                        "reject用于提示用户拆成多个steps或改用agent_case，不要勉强选择其中一个动作。"
                         "click/fill/press必须返回候选元素中的selector；fill返回value；press返回key；"
                         "wait返回wait_ms。不要直接执行浏览器操作。"
                     ),
@@ -367,7 +410,14 @@ class SmartResolver:
                             "prompt_version": self.ai_step_prompt_version,
                             "schema_version": self.schema_version,
                             "instruction": instruction,
-                            "candidates": candidates,
+                            "dom_context": build_dom_context(
+                                candidates,
+                                url=self.page.url,
+                                title=_safe_page_title(self.page),
+                                context_level=1,
+                                limit=self.ai_step_candidate_limit,
+                                hints=[instruction],
+                            ),
                         }
                     ),
                 },
@@ -381,17 +431,57 @@ class SmartResolver:
                 "page_url": self.page.url,
             },
         )
-        if decision.action in {"skip", "wait"}:
+        if decision.status != "ok":
             return AiStepOperation(
-                action=decision.action,
-                wait_ms=decision.wait_ms or 1000,
+                action="reject",
+                reason=normalize_model_text(
+                    decision.reason or f"AI步骤返回状态: {decision.status}",
+                ),
                 prompt_version=self.ai_step_prompt_version,
                 schema_version=self.schema_version,
                 model=provider.settings.model,
                 candidate_count=len(candidates),
                 candidate_hash=self._candidate_hash(candidates),
             )
-        selector = normalize_selector(str(decision.selector or ""))
+        if decision.action == "reject":
+            return AiStepOperation(
+                action="reject",
+                reason=normalize_model_text(
+                    decision.reason or "ai_step不是单一原子动作"
+                ),
+                prompt_version=self.ai_step_prompt_version,
+                schema_version=self.schema_version,
+                model=provider.settings.model,
+                candidate_count=len(candidates),
+                candidate_hash=self._candidate_hash(candidates),
+            )
+        if decision.action in {"skip", "wait"}:
+            return AiStepOperation(
+                action=decision.action,
+                wait_ms=decision.wait_ms or 1000,
+                reason=decision.reason,
+                prompt_version=self.ai_step_prompt_version,
+                schema_version=self.schema_version,
+                model=provider.settings.model,
+                candidate_count=len(candidates),
+                candidate_hash=self._candidate_hash(candidates),
+            )
+        dom_context = build_dom_context(
+            candidates,
+            url=self.page.url,
+            title=_safe_page_title(self.page),
+            context_level=1,
+            limit=self.ai_step_candidate_limit,
+            hints=[instruction],
+        )
+        selector = selector_for_element_id(
+            dom_context,
+            decision.element_id,
+        ) or selector_for_element_id(
+            dom_context,
+            decision.selector,
+        ) or str(decision.selector or "")
+        selector = normalize_selector(selector)
         if not selector:
             raise ValueError("AI步骤未返回selector")
         verify_action = "fill" if decision.action == "fill" else "click"
@@ -401,6 +491,7 @@ class SmartResolver:
             selector=selector,
             value=decision.value,
             key=decision.key,
+            reason=normalize_model_text(decision.reason),
             prompt_version=self.ai_step_prompt_version,
             schema_version=self.schema_version,
             model=provider.settings.model,
@@ -413,11 +504,132 @@ class SmartResolver:
     def observe_operation(self, *, instruction: str, timeout: int) -> AiStepOperation:
         return self.resolve_ai_step(instruction=instruction, timeout=timeout)
 
+    def _resolve_ai_step_fast(
+        self,
+        *,
+        instruction: str,
+        timeout: int,
+    ) -> AiStepOperation | None:
+        normalized = " ".join(str(instruction or "").split())
+        lowered = normalized.lower()
+        if not normalized:
+            return None
+        if _looks_like_multi_step_instruction(lowered):
+            return AiStepOperation(
+                action="reject",
+                reason="ai_step 只能包含一个原子动作",
+                source="ai_step_fast",
+                prompt_version=self.ai_step_prompt_version,
+                schema_version=self.schema_version,
+                model="heuristic-local",
+            )
+
+        wait_ms = _parse_wait_ms(normalized)
+        if wait_ms is not None:
+            return AiStepOperation(
+                action="wait",
+                wait_ms=wait_ms,
+                reason="等待指定时长",
+                source="ai_step_fast",
+                prompt_version=self.ai_step_prompt_version,
+                schema_version=self.schema_version,
+                model="heuristic-local",
+            )
+
+        fill_target, fill_value = _parse_fill_instruction(normalized)
+        if fill_target and fill_value is not None:
+            operation = self._build_fast_ai_step_operation(
+                action="fill",
+                target=fill_target,
+                timeout=timeout,
+                value=fill_value,
+            )
+            if operation is not None:
+                return operation
+
+        click_target = _parse_click_target(normalized)
+        if click_target:
+            operation = self._build_fast_ai_step_operation(
+                action="click",
+                target=click_target,
+                timeout=timeout,
+            )
+            if operation is not None:
+                return operation
+        return None
+
+    def _build_fast_ai_step_operation(
+        self,
+        *,
+        action: str,
+        target: str,
+        timeout: int,
+        value: str | None = None,
+    ) -> AiStepOperation | None:
+        for candidate_target in _instruction_target_variants(target):
+            selectors = _dedupe(
+                semantic_selectors(
+                    self.page,
+                    candidate_target,
+                    action,
+                    limit=min(self.ai_step_candidate_limit, 8),
+                )
+                + heuristic_selectors(candidate_target, action)
+            )
+            if not selectors:
+                continue
+            for selector in selectors[:3]:
+                normalized_selector = normalize_selector(selector)
+                if not normalized_selector:
+                    continue
+                try:
+                    verify_selector(
+                        self.page,
+                        normalized_selector,
+                        action="fill" if action == "fill" else "click",
+                        timeout=timeout,
+                    )
+                    if not selector_matches_target(
+                        self.page,
+                        normalized_selector,
+                        candidate_target,
+                        action,
+                    ):
+                        continue
+                    return AiStepOperation(
+                        action=action,
+                        selector=normalized_selector,
+                        value=value,
+                        reason=normalize_model_text(f"{action} {target}"),
+                        source="ai_step_fast",
+                        prompt_version=self.ai_step_prompt_version,
+                        schema_version=self.schema_version,
+                        model="heuristic-local",
+                        candidate_count=len(selectors),
+                        candidate_hash=self._candidate_hash(
+                            [{"selector": item} for item in selectors]
+                        ),
+                    )
+                except Exception:
+                    continue
+        return None
+
     def _resolve_with_ai(
         self, *, action: str, target: str, timeout: int
     ) -> ResolvedSelector:
         self._claim_ai_call("selector")
-        candidates = collect_candidates(self.page, limit=self.candidate_limit)
+        candidates = collect_candidates(
+            self.page,
+            limit=self.llm_selector_candidate_scan_limit,
+        )
+        locator_context = build_locator_context(
+            action=action,
+            target=target,
+            candidates=candidates,
+            url=self.page.url,
+            title=_safe_page_title(self.page),
+            limit=self.llm_selector_candidate_limit,
+        )
         provider = ChatCompletionProvider()
         decision = provider.complete_model(
             [
@@ -425,19 +637,19 @@ class SmartResolver:
                     "role": "system",
                     "content": (
                         "你是UI自动化selector解析器。根据候选元素为目标选择最稳定的selector。"
-                        "只返回JSON对象，字段: selector, selector_type(css/xpath/text), confidence。"
+                        "只负责当前step的元素选择，不做业务决策。"
+                        "优先返回element_id或selected_element_id，不要自己生成selector。"
+                        "selector字段只能填写真实CSS/Playwright selector，禁止把e1/e2这类element_id写到selector。"
+                        "reason不超过80个中文字符。只返回JSON对象。"
                     ),
                 },
                 {
                     "role": "user",
                     "content": self._json_payload(
                         {
-                            "url": self.page.url,
                             "prompt_version": self.selector_prompt_version,
                             "schema_version": self.schema_version,
-                            "action": action,
-                            "target": target,
-                            "candidates": candidates,
+                            "smart_locator_context": locator_context,
                         }
                     ),
                 },
@@ -452,8 +664,20 @@ class SmartResolver:
                 "action": action,
             },
         )
-        selector = normalize_selector(
+        if decision.status != "ok":
+            raise ValueError(
+                f"AI定位未返回可执行元素: status={decision.status} reason={decision.reason}"
+            )
+        selected_element_id = decision.element_id or decision.selected_element_id
+        selector = selector_for_element_id(
+            locator_context,
+            selected_element_id,
+        ) or selector_for_element_id(
+            locator_context,
             decision.selector,
+        )
+        selector = normalize_selector(
+            selector or str(decision.selector or ""),
             decision.selector_type,
         )
         if not selector:
@@ -655,3 +879,145 @@ def _dedupe(values: list[str]) -> list[str]:
         if value and value not in result:
             result.append(value)
     return result
+
+
+def _safe_page_title(page: Any) -> str:
+    try:
+        return str(page.title()).strip()
+    except Exception:
+        return ""
+
+
+def _looks_like_multi_step_instruction(instruction: str) -> bool:
+    action_markers = [
+        "click",
+        "open",
+        "tap",
+        "fill",
+        "input",
+        "enter",
+        "type",
+        "press",
+        "wait",
+        "goto",
+        "navigate",
+        "点击",
+        "打开",
+        "输入",
+        "填写",
+        "按下",
+        "等待",
+        "访问",
+    ]
+    hits = sum(1 for marker in action_markers if marker in instruction)
+    if hits <= 1:
+        return False
+    return any(token in instruction for token in (" and ", " then ", "；", ";", "，然后", "并且", "后再"))
+
+
+def _parse_wait_ms(instruction: str) -> int | None:
+    match = re.search(r"\bwait\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds|s|sec|seconds)?\b", instruction, re.IGNORECASE)
+    if match:
+        value = float(match.group(1))
+        unit = (match.group(2) or "s").lower()
+        return int(value if unit.startswith("ms") else value * 1000)
+    match = re.search(r"等待\s*(\d+(?:\.\d+)?)\s*(毫秒|秒)?", instruction)
+    if match:
+        value = float(match.group(1))
+        unit = match.group(2) or "秒"
+        return int(value if "毫秒" in unit else value * 1000)
+    return None
+
+
+def _parse_click_target(instruction: str) -> str:
+    text = instruction.strip().rstrip(".。")
+    patterns = [
+        r"^(?:click|open|tap|select)\s+(?:the\s+)?(.+)$",
+        r"^(?:点击|打开|选择)\s*(.+)$",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, text, re.IGNORECASE)
+        if match:
+            return _clean_instruction_target(match.group(1))
+    return ""
+
+
+def _parse_fill_instruction(instruction: str) -> tuple[str, str | None]:
+    text = instruction.strip().rstrip(".。")
+    chinese_target, chinese_value = _parse_chinese_fill_instruction(text)
+    if chinese_target and chinese_value is not None:
+        return chinese_target, chinese_value
+
+    patterns = [
+        (
+            r'^(?:fill|enter|input|type)\s+"([^"]+)"\s+(?:into|in)\s+(.+)$',
+            "value_target",
+        ),
+        (
+            r"^(?:fill|enter|input|type)\s+'([^']+)'\s+(?:into|in)\s+(.+)$",
+            "value_target",
+        ),
+        (r"^(?:fill|enter|input|type)\s+(.+?)\s+with\s+(.+)$", "target_value"),
+    ]
+    for pattern, group_order in patterns:
+        match = re.match(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        left, right = (item.strip() for item in match.groups())
+        if group_order == "target_value":
+            target, value = left, right
+        else:
+            value, target = left, right
+        return _clean_instruction_target(target), _clean_instruction_value(value)
+    return "", None
+
+
+def _clean_instruction_target(value: str) -> str:
+    text = " ".join(str(value or "").split()).strip(" .。,:：")
+    text = re.sub(r"^(?:the|a|an)\s+", "", text, flags=re.IGNORECASE)
+    return text
+
+
+def _parse_chinese_fill_instruction(text: str) -> tuple[str, str | None]:
+    if not re.search(r"[\u4e00-\u9fff]", text) or "输入" not in text:
+        return "", None
+    split_at = text.rfind("输入")
+    if split_at <= 0:
+        return "", None
+    target = text[:split_at].strip()
+    value = text[split_at + len("输入") :].strip()
+    target = re.sub(r"^在", "", target).strip()
+    target = re.sub(r"中$", "", target).strip()
+    if not target or not value:
+        return "", None
+    return _clean_instruction_target(target), _clean_instruction_value(value)
+
+
+def _instruction_target_variants(target: str) -> list[str]:
+    text = " ".join(str(target or "").split()).strip()
+    if not text:
+        return []
+    variants = [text]
+    simplified = re.sub(
+        r"\s+(?:in|on|from|at)\s+(?:the\s+)?(?:top|bottom|left|right|top-right|top left|header|navigation|nav).*$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+    if simplified and simplified not in variants:
+        variants.append(simplified)
+    semantic = simplified or text
+    semantic = re.sub(
+        r"(?:top|bottom|left|right|header|navigation|nav)",
+        "",
+        semantic,
+        flags=re.IGNORECASE,
+    )
+    semantic = " ".join(semantic.split()).strip()
+    if semantic and semantic not in variants:
+        variants.append(semantic)
+    return variants
+
+
+def _clean_instruction_value(value: str) -> str:
+    return " ".join(str(value or "").split()).strip(" .。,:：'\"")

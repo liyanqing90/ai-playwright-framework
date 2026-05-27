@@ -1,3 +1,12 @@
 elements:
   sauce_page_title: .title
+  cart_item_backpack_name: "[data-test='inventory-item-name']"
+  menu_button: "#react-burger-menu-btn"
   logout_sidebar_link: '#logout_sidebar_link'
+  checkout_button: "[data-test='checkout']"
+  checkout_first_name_input: "[data-test='firstName']"
+  checkout_last_name_input: "[data-test='lastName']"
+  checkout_postal_code_input: "[data-test='postalCode']"
+  checkout_continue_button: "[data-test='continue']"
+  checkout_finish_button: "[data-test='finish']"
+  checkout_complete_header: "[data-test='complete-header']"
