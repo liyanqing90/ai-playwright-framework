@@ -108,6 +108,7 @@ TEXT_ASSERT_ACTIONS = _action_set(
     StepAction.ASSERT_URL,
     StepAction.ASSERT_URL_CONTAINS,
     StepAction.ASSERT_TITLE,
+    StepAction.ASSERT_TITLE_CONTAINS,
     StepAction.ASSERT_VALUE,
 )
 PRESENCE_ASSERT_ACTIONS = _action_set(

@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from src.ai_runtime.native_observe import SelectorValidation
+
 _SENSITIVE_PATTERNS = [
     (re.compile(r"\b1[3-9]\d{9}\b"), "<phone>"),
     (re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"), "<email>"),
@@ -22,24 +24,165 @@ def normalize_selector(selector: str, selector_type: str | None = None) -> str:
     return selector
 
 
-def verify_selector(page, selector: str, *, action: str, timeout: int) -> bool:
-    locator = page.locator(selector).first
-    locator.wait_for(state="visible", timeout=timeout)
-    if action in {"click", "press", "press_key"}:
-        return bool(locator.is_enabled())
-    if action == "fill":
-        return bool(
-            locator.evaluate(
-                """el => {
-                    const tag = el.tagName.toLowerCase();
-                    return tag === 'input'
-                        || tag === 'textarea'
-                        || el.isContentEditable === true
-                        || el.getAttribute('role') === 'textbox';
-                }"""
-            )
+def validate_selector(
+    page,
+    selector: str,
+    *,
+    action: str,
+    timeout: int,
+    require_unique: bool = False,
+) -> SelectorValidation:
+    locator = page.locator(selector)
+    match_count = _safe_locator_count(locator)
+    if match_count == 0:
+        return SelectorValidation(
+            selector=selector,
+            action=action,
+            ok=False,
+            match_count=0,
+            visible_count=0,
+            error="selector matched no elements",
         )
+    if require_unique and match_count is not None and match_count != 1:
+        return SelectorValidation(
+            selector=selector,
+            action=action,
+            ok=False,
+            match_count=match_count,
+            visible_count=_safe_visible_count(locator, match_count),
+            error=f"selector matched {match_count} elements",
+        )
+
+    first = locator.first
+    try:
+        first.wait_for(state="visible", timeout=timeout)
+    except Exception as exc:
+        return SelectorValidation(
+            selector=selector,
+            action=action,
+            ok=False,
+            match_count=match_count,
+            visible_count=_safe_visible_count(locator, match_count),
+            error=str(exc),
+        )
+
+    visible_count = _safe_visible_count(locator, match_count)
+    enabled: bool | None = None
+    action_compatible: bool | None = None
+    normalized_action = str(action or "").lower()
+    if normalized_action in {"click", "press", "press_key"}:
+        try:
+            enabled = bool(first.is_enabled())
+        except Exception as exc:
+            return SelectorValidation(
+                selector=selector,
+                action=action,
+                ok=False,
+                match_count=match_count,
+                visible_count=visible_count,
+                error=str(exc),
+                locator=first,
+            )
+        if not enabled:
+            return SelectorValidation(
+                selector=selector,
+                action=action,
+                ok=False,
+                match_count=match_count,
+                visible_count=visible_count,
+                enabled=False,
+                action_compatible=False,
+                error="selector target is disabled",
+                locator=first,
+            )
+        action_compatible = True
+    elif normalized_action == "fill":
+        try:
+            action_compatible = bool(
+                first.evaluate(
+                    """el => {
+                        const tag = el.tagName.toLowerCase();
+                        return tag === 'input'
+                            || tag === 'textarea'
+                            || el.isContentEditable === true
+                            || el.getAttribute('role') === 'textbox';
+                    }"""
+                )
+            )
+        except Exception as exc:
+            return SelectorValidation(
+                selector=selector,
+                action=action,
+                ok=False,
+                match_count=match_count,
+                visible_count=visible_count,
+                enabled=enabled,
+                action_compatible=False,
+                error=str(exc),
+                locator=first,
+            )
+        if not action_compatible:
+            return SelectorValidation(
+                selector=selector,
+                action=action,
+                ok=False,
+                match_count=match_count,
+                visible_count=visible_count,
+                enabled=enabled,
+                action_compatible=False,
+                error="selector target is not fillable",
+                locator=first,
+            )
+    return SelectorValidation(
+        selector=selector,
+        action=action,
+        ok=True,
+        match_count=match_count,
+        visible_count=visible_count,
+        enabled=enabled,
+        action_compatible=action_compatible,
+        locator=first,
+    )
+
+
+def verify_selector(
+    page,
+    selector: str,
+    *,
+    action: str,
+    timeout: int,
+    require_unique: bool = False,
+) -> bool:
+    validation = validate_selector(
+        page,
+        selector,
+        action=action,
+        timeout=timeout,
+        require_unique=require_unique,
+    )
+    if not validation.ok:
+        raise ValueError(validation.error or f"selector validation failed: {selector}")
     return True
+
+
+def _safe_locator_count(locator) -> int | None:
+    try:
+        return int(locator.count())
+    except Exception:
+        return None
+
+
+def _safe_visible_count(locator, match_count: int | None) -> int | None:
+    if match_count is None:
+        return None
+    visible = 0
+    for index in range(min(match_count, 20)):
+        try:
+            if locator.nth(index).is_visible():
+                visible += 1
+        except Exception:
+            return None
+    return visible
 
 
 def stable_selector_for_locator(locator) -> str:
@@ -75,9 +218,18 @@ def stable_selector_for_locator(locator) -> str:
     )
 
 
-def collect_candidates(page, *, limit: int = 120) -> list[dict[str, Any]]:
+def collect_candidates(
+    page,
+    *,
+    limit: int = 120,
+    ignore_selectors: list[str] | tuple[str, ...] | None = None,
+    include_open_shadow_dom: bool = True,
+) -> list[dict[str, Any]]:
     candidates = page.evaluate(
-        """limit => {
+        """opts => {
+            const limit = opts.limit || 120;
+            const ignoreSelectors = Array.isArray(opts.ignore_selectors) ? opts.ignore_selectors : [];
+            const includeOpenShadowDom = opts.include_open_shadow_dom !== false;
             const viewport = {
                 width: window.innerWidth || document.documentElement.clientWidth || 1,
                 height: window.innerHeight || document.documentElement.clientHeight || 1
@@ -91,6 +243,24 @@ def collect_candidates(page, *, limit: int = 120) -> list[dict[str, Any]]:
                 if (!value) return null;
                 return `${node.tagName.toLowerCase()}[${attr}="${String(value).replace(/["\\\\]/g, '\\\\$&')}"]`;
             };
+            const safeMatches = (node, selector) => {
+                try {
+                    return node.matches && node.matches(selector);
+                } catch {
+                    return false;
+                }
+            };
+            const safeClosest = (node, selector) => {
+                try {
+                    return node.closest && node.closest(selector);
+                } catch {
+                    return null;
+                }
+            };
+            const ignored = el => ignoreSelectors.some(selector => {
+                if (!selector) return false;
+                return safeMatches(el, selector) || !!safeClosest(el, selector);
+            });
             const labelText = el => {
                 const labels = [];
                 if (el.id) {
@@ -136,7 +306,7 @@ def collect_candidates(page, *, limit: int = 120) -> list[dict[str, Any]]:
                 }
                 return parts.join(' > ');
             };
-            const nodes = Array.from(document.querySelectorAll([
+            const candidateSelector = [
                 'input', 'textarea', 'button', 'a', 'select', '[role]',
                 '[aria-label]', '[placeholder]', 'label', '[onclick]',
                 '[tabindex]', '[title]', '[class*="close" i]',
@@ -144,8 +314,43 @@ def collect_candidates(page, *, limit: int = 120) -> list[dict[str, Any]]:
                 '[class*="modal" i]', '[class*="dialog" i]',
                 '[data-test]', '[data-testid]', '[data-qa]',
                 '[class*="badge" i]', '[class*="error" i]'
-            ].join(',')));
+            ].join(',');
+            const nodes = [];
+            const seen = new Set();
+            const addNode = el => {
+                if (!el || seen.has(el)) return;
+                seen.add(el);
+                nodes.push(el);
+            };
+            const scanRoot = (root, inShadow=false) => {
+                let found = [];
+                try {
+                    found = Array.from(root.querySelectorAll(candidateSelector));
+                } catch {
+                    found = [];
+                }
+                for (const el of found) {
+                    if (inShadow) el.__uiAutoInShadow = true;
+                    addNode(el);
+                    if (includeOpenShadowDom && el.shadowRoot) {
+                        scanRoot(el.shadowRoot, true);
+                    }
+                }
+                if (includeOpenShadowDom) {
+                    let shadowHosts = [];
+                    try {
+                        shadowHosts = Array.from(root.querySelectorAll('*')).filter(el => el.shadowRoot);
+                    } catch {
+                        shadowHosts = [];
+                    }
+                    for (const host of shadowHosts) {
+                        scanRoot(host.shadowRoot, true);
+                    }
+                }
+            };
+            scanRoot(document, false);
             return nodes
+                .filter(el => !ignored(el))
                 .filter(el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length))
                 .slice(0, limit)
                 .map((el, index) => {
@@ -176,6 +381,7 @@ def collect_candidates(page, *, limit: int = 120) -> list[dict[str, Any]]:
                         ancestor_text: ancestorText(el),
                         visible: true,
                         enabled: !el.disabled && el.getAttribute('aria-disabled') !== 'true',
+                        in_shadow: !!el.__uiAutoInShadow,
                         bbox: [x1, y1, x2, y2],
                         center: [centerX, centerY],
                         bbox_norm: [x1 / viewport.width, y1 / viewport.height, x2 / viewport.width, y2 / viewport.height],
@@ -183,17 +389,32 @@ def collect_candidates(page, *, limit: int = 120) -> list[dict[str, Any]]:
                     };
                 });
         }""",
-        limit,
+        {
+            "limit": limit,
+            "ignore_selectors": list(ignore_selectors or ()),
+            "include_open_shadow_dom": include_open_shadow_dom,
+        },
     )
     return candidates
 
 
 def semantic_selectors(
-    page, target: str, action: str, *, limit: int = 120
+    page,
+    target: str,
+    action: str,
+    *,
+    limit: int = 120,
+    ignore_selectors: list[str] | tuple[str, ...] | None = None,
+    include_open_shadow_dom: bool = True,
 ) -> list[str]:
     """Rank visible DOM candidates by target semantics before asking the model."""
     try:
-        candidates = collect_candidates(page, limit=limit)
+        candidates = collect_candidates(
+            page,
+            limit=limit,
+            ignore_selectors=ignore_selectors,
+            include_open_shadow_dom=include_open_shadow_dom,
+        )
     except Exception:
         return []
 
@@ -406,7 +627,11 @@ def _target_attribute_selectors(target: str, action: str) -> list[str]:
     tokens = _target_tokens(target)
     selectors: list[str] = []
     attrs = ("data-test", "data-testid", "data-qa", "id", "name", "aria-label", "title")
-    tags = ("input", "textarea") if action == "fill" else ("button", "a", "input", "textarea", "select")
+    tags = (
+        ("input", "textarea")
+        if action == "fill"
+        else ("button", "a", "input", "textarea", "select")
+    )
     for token in tokens[:5]:
         quoted = _css_attr(token)
         for attr in attrs:

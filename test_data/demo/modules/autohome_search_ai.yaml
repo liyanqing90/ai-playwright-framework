@@ -1,0 +1,8 @@
+autohome_open_search:
+  - action: goto
+    value: https://www.autohome.com.cn/beijing/?from=m
+  - action: fill
+    selector: autohome_search_input
+    value: ${keyword}
+  - action: click
+    selector: autohome_search_button

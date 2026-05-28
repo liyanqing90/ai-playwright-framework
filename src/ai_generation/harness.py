@@ -19,12 +19,27 @@ class GenerationHarness:
 
     def normalize(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = self._normalize_top_level(payload)
-        payload["elements"] = self._normalize_elements(payload.get("elements") or {})
-        payload["modules"] = self._normalize_modules(payload.get("modules") or {})
+        raw_elements = payload.get("elements") or {}
+        semantic_element_aliases = _semantic_element_aliases(raw_elements)
+        payload["elements"] = self._normalize_elements(raw_elements)
+        selector_element_aliases = set(self.context.elements) | {
+            key
+            for key, value in payload["elements"].items()
+            if isinstance(value, str) and value.strip()
+        }
+        payload["modules"] = self._normalize_modules(
+            payload.get("modules") or {},
+            selector_element_aliases=selector_element_aliases,
+            semantic_element_aliases=semantic_element_aliases,
+        )
         self._normalize_cases_and_data(payload)
         for case_data in payload["data"].values():
             if isinstance(case_data, dict):
-                case_data["steps"] = self._normalize_steps(case_data.get("steps") or [])
+                case_data["steps"] = self._normalize_steps(
+                    case_data.get("steps") or [],
+                    selector_element_aliases=selector_element_aliases,
+                    semantic_element_aliases=semantic_element_aliases,
+                )
         return payload
 
     def validate(self, payload: dict[str, Any]) -> list[str]:
@@ -50,10 +65,12 @@ class GenerationHarness:
             module_name: _extract_variable_refs(module_steps)
             for module_name, module_steps in self.context.modules.items()
         }
-        generated_module_refs.update({
-            module_name: _extract_variable_refs(module_steps)
-            for module_name, module_steps in (payload.get("modules") or {}).items()
-        })
+        generated_module_refs.update(
+            {
+                module_name: _extract_variable_refs(module_steps)
+                for module_name, module_steps in (payload.get("modules") or {}).items()
+            }
+        )
 
         for module_name, module_steps in (payload.get("modules") or {}).items():
             if not isinstance(module_steps, list) or not module_steps:
@@ -158,7 +175,13 @@ class GenerationHarness:
             return str(self.spec["mode"]).lower()
         return str(raw_case.get("mode") or self.spec.get("mode") or "strict").lower()
 
-    def _normalize_steps(self, steps: list[Any]) -> list[dict[str, Any]]:
+    def _normalize_steps(
+        self,
+        steps: list[Any],
+        *,
+        selector_element_aliases: set[str] | None = None,
+        semantic_element_aliases: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
         normalized: list[dict[str, Any]] = []
         for step in steps:
             if not isinstance(step, dict):
@@ -181,6 +204,11 @@ class GenerationHarness:
                 item = _normalize_action_fields(item)
                 item = _normalize_verify_step(item)
             item = _normalize_variable_syntax(item)
+            item = _normalize_step_element_references(
+                item,
+                selector_element_aliases=selector_element_aliases or set(),
+                semantic_element_aliases=semantic_element_aliases or {},
+            )
             normalized.append(item)
         return normalized
 
@@ -199,11 +227,19 @@ class GenerationHarness:
                     field_path=f"elements.{normalized_key}.selector",
                     preferred_keys=("selector", "css", "xpath", "value", "text"),
                 )
+            elif isinstance(value, dict):
+                continue
             else:
                 normalized[normalized_key] = value
         return normalized
 
-    def _normalize_modules(self, modules: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_modules(
+        self,
+        modules: dict[str, Any],
+        *,
+        selector_element_aliases: set[str] | None = None,
+        semantic_element_aliases: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         normalized: dict[str, Any] = {}
         for module_name, raw_module in modules.items():
             module_name = _coerce_generated_string(
@@ -219,7 +255,11 @@ class GenerationHarness:
                 raise ValueError(
                     f"modules.{module_name} 必须是steps列表，或包含steps字段的对象"
                 )
-            normalized[module_name] = self._normalize_steps(raw_steps)
+            normalized[module_name] = self._normalize_steps(
+                raw_steps,
+                selector_element_aliases=selector_element_aliases or set(),
+                semantic_element_aliases=semantic_element_aliases or {},
+            )
         return normalized
 
     @staticmethod
@@ -486,6 +526,62 @@ def _coerce_generated_string(
     raise ValueError(f"{field_path} 必须是字符串，实际类型: {type(value).__name__}")
 
 
+def _semantic_element_aliases(elements: dict[str, Any]) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for key, value in (elements or {}).items():
+        if not isinstance(value, dict) or value.get("selector"):
+            continue
+        name = _coerce_generated_string(
+            key,
+            field_path="elements key",
+            preferred_keys=("key", "name", "id", "value"),
+        )
+        target = _first_generated_string(
+            value,
+            preferred_keys=("target", "description", "desc", "label", "text", "name"),
+        )
+        if name and target:
+            aliases[name] = target
+    return aliases
+
+
+def _normalize_step_element_references(
+    step: dict[str, Any],
+    *,
+    selector_element_aliases: set[str],
+    semantic_element_aliases: dict[str, str],
+) -> dict[str, Any]:
+    target = step.get("target")
+    if not isinstance(target, str) or not target.strip():
+        return step
+    if target in selector_element_aliases and not step.get("selector"):
+        step["selector"] = target
+        step.pop("target", None)
+    elif target in semantic_element_aliases:
+        step["target"] = semantic_element_aliases[target]
+    return step
+
+
+def _first_generated_string(
+    value: dict[str, Any],
+    *,
+    preferred_keys: tuple[str, ...],
+) -> str:
+    for key in preferred_keys:
+        raw = value.get(key)
+        if raw is None:
+            continue
+        text = _coerce_generated_string(
+            raw,
+            field_path=key,
+            preferred_keys=preferred_keys,
+        )
+        text = str(text or "").strip()
+        if text:
+            return text
+    return ""
+
+
 def _extract_variable_refs(value: Any) -> set[str]:
     refs: set[str] = set()
     if isinstance(value, str):
@@ -522,6 +618,7 @@ _URL_TITLE_ASSERTIONS = _lower_actions(
     StepAction.ASSERT_URL,
     StepAction.ASSERT_URL_CONTAINS,
     StepAction.ASSERT_TITLE,
+    StepAction.ASSERT_TITLE_CONTAINS,
 )
 _COUNT_ASSERTIONS = _lower_actions(StepAction.ASSERT_ELEMENT_COUNT)
 _ATTRIBUTE_ASSERTIONS = _lower_actions(StepAction.ASSERT_ATTRIBUTE)

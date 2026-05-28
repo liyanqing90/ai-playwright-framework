@@ -4,6 +4,8 @@ import copy
 import re
 from typing import TYPE_CHECKING, Any
 
+from src.ai_runtime.native_observe import build_selector_candidates
+
 if TYPE_CHECKING:
     from src.ai_generation.project_context import ProjectContext
 
@@ -225,20 +227,30 @@ def selector_for_element_id(
     payload: dict[str, Any] | list[dict[str, Any]],
     element_id: str | None,
 ) -> str | None:
+    selectors = selectors_for_element_id(payload, element_id)
+    return selectors[0] if selectors else None
+
+
+def selectors_for_element_id(
+    payload: dict[str, Any] | list[dict[str, Any]],
+    element_id: str | None,
+) -> list[str]:
     if not element_id:
-        return None
+        return []
     for element in _iter_elements(payload):
         if element.get("id") != element_id:
             continue
+        result: list[str] = []
         selectors = element.get("selector_candidates")
         if isinstance(selectors, list):
             for selector in selectors:
                 if isinstance(selector, str) and selector.strip():
-                    return selector.strip()
+                    result.append(selector.strip())
         selector = element.get("selector")
         if isinstance(selector, str) and selector.strip():
-            return selector.strip()
-    return None
+            result.append(selector.strip())
+        return _dedupe(result)
+    return []
 
 
 def looks_like_internal_element_id(value: Any) -> bool:
@@ -250,7 +262,9 @@ def normalize_model_text(value: Any, *, limit: int = 80) -> str:
     return _trim_text(value or "", limit)
 
 
-def compressed_decision_summary(decision: Any, *, result: str = "passed") -> dict[str, Any]:
+def compressed_decision_summary(
+    decision: Any, *, result: str = "passed"
+) -> dict[str, Any]:
     action = getattr(decision, "action", None)
     return {
         "action": action,
@@ -264,7 +278,9 @@ def compressed_decision_summary(decision: Any, *, result: str = "passed") -> dic
     }
 
 
-def compact_history(history: list[dict[str, Any]], *, limit: int = 10) -> list[dict[str, Any]]:
+def compact_history(
+    history: list[dict[str, Any]], *, limit: int = 10
+) -> list[dict[str, Any]]:
     if not isinstance(history, list) or limit <= 0:
         return []
     compacted: list[dict[str, Any]] = []
@@ -288,7 +304,14 @@ def compact_history(history: list[dict[str, Any]], *, limit: int = 10) -> list[d
         if isinstance(decision, dict):
             history_item["decision"] = {
                 key: decision.get(key)
-                for key in ("action", "element_id", "target", "reason", "expected", "confidence")
+                for key in (
+                    "action",
+                    "element_id",
+                    "target",
+                    "reason",
+                    "expected",
+                    "confidence",
+                )
                 if decision.get(key) not in (None, "")
             }
         compacted.append(history_item)
@@ -330,11 +353,19 @@ def compact_model_dom_context(
     dom_context: dict[str, Any],
     *,
     candidate_limit: int = 12,
+    selector_limit: int = 2,
+    form_limit: int = 6,
+    assertion_limit: int | None = None,
+    include_business_objects: bool = True,
+    include_compression: bool = True,
 ) -> dict[str, Any]:
     if not isinstance(dom_context, dict):
         return {}
-    business_objects = dom_context.get("business_objects")
-    if isinstance(business_objects, dict):
+    business_objects: dict[str, Any] = {}
+    if include_business_objects and isinstance(
+        dom_context.get("business_objects"), dict
+    ):
+        business_objects = dom_context.get("business_objects") or {}
         cards = business_objects.get("cards")
         if isinstance(cards, list):
             business_objects = {
@@ -344,19 +375,91 @@ def compact_model_dom_context(
                     if isinstance(item, dict)
                 ]
             }
-    return {
+    page_summary = copy.deepcopy(dom_context.get("page_summary") or {})
+    if isinstance(page_summary.get("visible_text_summary"), list):
+        page_summary["visible_text_summary"] = [
+            _trim_text(item, 80)
+            for item in page_summary.get("visible_text_summary", [])[:4]
+            if str(item or "").strip()
+        ]
+    if page_summary.get("main_heading"):
+        page_summary["main_heading"] = _trim_text(page_summary["main_heading"], 80)
+
+    result = {
         "meta": copy.deepcopy(dom_context.get("meta") or {}),
-        "page_summary": copy.deepcopy(dom_context.get("page_summary") or {}),
-        "forms": copy.deepcopy((dom_context.get("forms") or [])[:6]),
-        "business_objects": business_objects or {},
-        "interactive_elements": copy.deepcopy(
-            (dom_context.get("interactive_elements") or [])[:candidate_limit]
-        ),
-        "assertion_candidates": copy.deepcopy(
-            (dom_context.get("assertion_candidates") or [])[:candidate_limit]
-        ),
-        "compression": copy.deepcopy(dom_context.get("compression") or {}),
+        "page_summary": page_summary,
+        "forms": [
+            _compact_model_element(item, selector_limit=selector_limit)
+            for item in (dom_context.get("forms") or [])[: max(0, form_limit)]
+            if isinstance(item, dict)
+        ],
+        "interactive_elements": [
+            _compact_model_element(item, selector_limit=selector_limit)
+            for item in (dom_context.get("interactive_elements") or [])[
+                : max(0, candidate_limit)
+            ]
+            if isinstance(item, dict)
+        ],
+        "assertion_candidates": [
+            _compact_model_element(item, selector_limit=selector_limit)
+            for item in (dom_context.get("assertion_candidates") or [])[
+                : max(
+                    0,
+                    assertion_limit if assertion_limit is not None else candidate_limit,
+                )
+            ]
+            if isinstance(item, dict)
+        ],
     }
+    if business_objects:
+        result["business_objects"] = business_objects
+    if include_compression:
+        result["compression"] = copy.deepcopy(dom_context.get("compression") or {})
+    return result
+
+
+def _compact_model_element(
+    item: dict[str, Any], *, selector_limit: int = 2
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, limit in (
+        ("id", 24),
+        ("tag", 24),
+        ("role", 32),
+        ("type", 32),
+        ("input_type", 32),
+        ("name", 64),
+        ("label", 64),
+        ("text", 64),
+        ("placeholder", 64),
+        ("near_text", 96),
+        ("value_state", 16),
+    ):
+        value = item.get(key)
+        if value in (None, "", []):
+            continue
+        result[key] = _trim_text(value, limit) if isinstance(value, str) else value
+    selectors = item.get("selector_candidates")
+    if isinstance(selectors, list) and selector_limit > 0:
+        result["selector_candidates"] = [
+            str(selector).strip()
+            for selector in selectors[:selector_limit]
+            if str(selector or "").strip()
+        ]
+    attributes = item.get("attributes")
+    if isinstance(attributes, dict):
+        compact_attrs = {
+            key: _trim_text(value, 48)
+            for key, value in attributes.items()
+            if key in {"data-test", "data-testid", "name", "type"} and value
+        }
+        if compact_attrs:
+            result["attributes"] = compact_attrs
+    if item.get("visible") is False:
+        result["visible"] = False
+    if item.get("enabled") is False:
+        result["enabled"] = False
+    return {key: value for key, value in result.items() if value not in (None, "", [])}
 
 
 def _compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -435,7 +538,11 @@ def _candidate_score(candidate: dict[str, Any], hint_terms: set[str]) -> int:
         score += 8
     if candidate.get("data_test") or candidate.get("data_testid"):
         score += 20
-    if candidate.get("aria_label") or candidate.get("placeholder") or candidate.get("label"):
+    if (
+        candidate.get("aria_label")
+        or candidate.get("placeholder")
+        or candidate.get("label")
+    ):
         score += 15
     if _has_text(candidate):
         score += 8
@@ -452,34 +559,7 @@ def _candidate_score(candidate: dict[str, Any], hint_terms: set[str]) -> int:
 
 
 def _selector_candidates(candidate: dict[str, Any]) -> list[str]:
-    result: list[str] = []
-    tag = str(candidate.get("tag") or "").lower()
-    data_test = candidate.get("data_test")
-    data_testid = candidate.get("data_testid")
-    element_id = candidate.get("id")
-    name = candidate.get("name")
-    aria_label = candidate.get("aria_label")
-    placeholder = candidate.get("placeholder")
-    text = _trim_text(candidate.get("text") or "", 60)
-    selector = candidate.get("selector")
-
-    if data_test:
-        result.append(f'{tag or "*"}[data-test="{_css_attr(data_test)}"]')
-    if data_testid:
-        result.append(f'{tag or "*"}[data-testid="{_css_attr(data_testid)}"]')
-    if element_id:
-        result.append(f"#{_css_ident(element_id)}")
-    if name:
-        result.append(f'{tag or "*"}[name="{_css_attr(name)}"]')
-    if aria_label:
-        result.append(f'{tag or "*"}[aria-label="{_css_attr(aria_label)}"]')
-    if placeholder:
-        result.append(f'{tag or "*"}[placeholder="{_css_attr(placeholder)}"]')
-    if text and tag in {"button", "a"}:
-        result.append(f'{tag}:has-text("{_css_attr(text)}")')
-    if selector:
-        result.append(str(selector))
-    return _dedupe(result)[:5]
+    return [item.selector for item in build_selector_candidates(candidate)][:5]
 
 
 def _element_id(candidate: dict[str, Any], *, prefix: str) -> str:
@@ -507,7 +587,16 @@ def _role(candidate: dict[str, Any]) -> str:
 
 
 def _accessible_name(candidate: dict[str, Any]) -> str:
-    for key in ("aria_label", "label", "placeholder", "title", "text", "name", "data_test", "id"):
+    for key in (
+        "aria_label",
+        "label",
+        "placeholder",
+        "title",
+        "text",
+        "name",
+        "data_test",
+        "id",
+    ):
         value = _trim_text(candidate.get(key) or "", 100)
         if value:
             return value
@@ -543,9 +632,9 @@ def _is_assertion_candidate(candidate: dict[str, Any]) -> bool:
     blob = _candidate_blob(candidate)
     if tag in {"input", "textarea", "select"}:
         return False
-    return (
-        tag in _ASSERTION_TAGS and _has_text(candidate)
-    ) or any(keyword in blob for keyword in _ASSERTION_KEYWORDS)
+    return (tag in _ASSERTION_TAGS and _has_text(candidate)) or any(
+        keyword in blob for keyword in _ASSERTION_KEYWORDS
+    )
 
 
 def _assertion_type(candidate: dict[str, Any]) -> str:
@@ -562,7 +651,9 @@ def _assertion_type(candidate: dict[str, Any]) -> str:
     return "text"
 
 
-def _visible_text_summary(candidates: list[dict[str, Any]], *, limit: int = 12) -> list[str]:
+def _visible_text_summary(
+    candidates: list[dict[str, Any]], *, limit: int = 12
+) -> list[str]:
     result: list[str] = []
     for candidate in candidates:
         for key in ("text", "aria_label", "placeholder", "label", "ancestor_text"):
@@ -696,9 +787,7 @@ def _compact_modules(
     for name in module_names:
         steps = _module_steps(modules.get(name))
         result[name] = [
-            _compact_step(step)
-            for step in steps[:max_steps]
-            if isinstance(step, dict)
+            _compact_step(step) for step in steps[:max_steps] if isinstance(step, dict)
         ]
     return result
 
@@ -745,7 +834,9 @@ def _trim_business_object(item: dict[str, Any]) -> dict[str, Any]:
             }
         if compact_actions:
             result["actions"] = compact_actions
-    return {key: value for key, value in result.items() if value not in (None, "", [], {})}
+    return {
+        key: value for key, value in result.items() if value not in (None, "", [], {})
+    }
 
 
 def _module_steps(module: Any) -> list[Any]:
@@ -798,7 +889,11 @@ def _has_text(candidate: dict[str, Any]) -> bool:
 
 def _terms(value: str) -> set[str]:
     text = _trim_text(value, 1200).lower()
-    terms = {part for part in text.replace("_", " ").replace("-", " ").split() if len(part) >= 2}
+    terms = {
+        part
+        for part in text.replace("_", " ").replace("-", " ").split()
+        if len(part) >= 2
+    }
     return set(list(terms)[:80])
 
 

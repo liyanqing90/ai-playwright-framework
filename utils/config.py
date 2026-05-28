@@ -60,8 +60,11 @@ class Config(BaseSettings):
         self._update_config_based_on_env_and_project()
 
     def reconfigure(self, **kwargs):
-        if ("env" in kwargs or "project" in kwargs) and "base_url" not in kwargs:
+        env_or_project_changed = "env" in kwargs or "project" in kwargs
+        if env_or_project_changed and "base_url" not in kwargs:
             self.base_url = ""
+        if env_or_project_changed and "test_dir" not in kwargs:
+            self.test_dir = ""
         for key, value in kwargs.items():
             if value is None or not hasattr(self, key):
                 continue
@@ -96,7 +99,8 @@ class Config(BaseSettings):
 
     def _update_config_based_on_env_and_project(self):
         """根据环境和项目更新配置"""
-        explicit_base_url = self.base_url
+        explicit_base_url = self.base_url or os.environ.get("BASE_URL", "")
+        explicit_test_dir = self.test_dir or os.environ.get("TEST_DIR", "")
         try:
             env_config = YamlHandler().load_yaml(Path("config/env_config.yaml"))
             if not env_config or not isinstance(env_config, dict):
@@ -120,7 +124,7 @@ class Config(BaseSettings):
                 )
 
             # 设置测试数据目录
-            self.test_dir = project_config.get("test_dir")
+            self.test_dir = explicit_test_dir or project_config.get("test_dir")
             self.browser_config = project_config.get(
                 "browser_config", {"viewport": {"width": 1920, "height": 1080}}
             )

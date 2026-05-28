@@ -277,6 +277,9 @@ BASE_URL=
 | `runtime.agent_timeout_seconds` | Agent 运行时模型调用的专用超时时间 |
 | `runtime.ai_cache_sqlite_path` | 统一 AI 缓存 SQLite 库，默认 `.ui_auto/ai_cache.sqlite3` |
 | `runtime.agent_case_cache_enabled` | 是否启用 `agent_case` advisory trace 缓存 |
+| `native_observe.include_open_shadow_dom` | 是否递归扫描 open shadow DOM，默认开启 |
+| `native_observe.include_iframes` | 是否扫描 iframe；当前默认关闭，避免生成执行层无法直接消费的 frame selector |
+| `native_observe.ignore_selectors` | DOM 观察时排除广告、推荐、footer、浮层等干扰区域 |
 | `generation.generation_cache_enabled` | 是否启用 `gen` 生成结果缓存 |
 | `generation.verify_after_generate` | `gen` 写入后是否默认执行生成用例验证 |
 | `agent_policy.limits.max_steps` | `agent_case` 单用例最大运行时动作数 |
@@ -285,6 +288,8 @@ BASE_URL=
 | `agent_policy.guardrails.*` | `agent_case` 全局安全边界，单条用例不声明 |
 | `llm.response_format` | 模型响应格式，默认 `auto`；GGUF 模型会自动降级为 `text` |
 | `selector_registry.sqlite_path` | selector 自愈和历史定位缓存库 |
+| `selector_registry.min_score_to_use` | registry selector 低于该分数不参与定位 |
+| `selector_registry.deprecated_after_failures` | registry selector 连续失败达到阈值后标记 deprecated |
 | `self_healing.persist_elements` | 自愈成功后是否异步回写 `elements/*.yaml` |
 | `self_healing.min_persist_confidence` | 自愈 selector 写回元素文件的最低置信度 |
 | `self_healing.persist_assertion_selectors` | 是否允许断言步骤的自愈 selector 写回元素文件，默认建议关闭 |
@@ -649,7 +654,7 @@ dom_context:
     context_level: 2
 ```
 
-模型原则上只返回 `element_id`。框架负责把 `element_id` 映射到 `selector_candidates` 并通过 Playwright 验证。
+模型必须返回候选中的 `element_id`。框架负责把 `element_id` 映射到 `selector_candidates` 并通过 Playwright 验证。
 
 默认策略：
 
@@ -663,6 +668,14 @@ runtime:
   agent_candidate_limit: 40
   agent_context_items: 40
   agent_history_limit: 10
+
+native_observe:
+  include_open_shadow_dom: true
+  include_iframes: false
+  ignore_selectors:
+    - ".ads"
+    - ".recommend"
+    - "footer"
 ```
 
 含义是：框架可以从页面扫描较多候选，但真正发给文本模型的是压缩后的前 40 个高价值候选。这样比简单截取前 N 个 DOM 更稳定，也比全量 DOM 更省 token。
@@ -704,7 +717,7 @@ confidence: 0.96
 4. 原始模型请求/响应只保存到 `logs/model_io/<run_id>/`，默认不进入下一轮上下文。
 5. 下一轮只传 `agent_state`、`recent_actions`、`criteria` 摘要和新的 `dom_context`。
 6. 信息不足时返回 `status: need_more_context`；危险或外部不可控状态返回 `status: blocked`。
-7. 模型返回 `element_id` 后，框架映射 selector 并校验；模型直接返回 selector 只作为兜底。
+7. 模型返回 `element_id` 后，框架映射 selector 并校验；模型直接返回 selector 会被拒绝，不能绕过候选验证。
 
 ### Selector 自愈与 elements 回写
 

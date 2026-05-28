@@ -23,6 +23,7 @@ class StepAction:
     ASSERT_ATTRIBUTE = ["assert_attribute", "验证属性"]
     ASSERT_URL = ["assert_url", "验证URL"]
     ASSERT_TITLE = ["assert_title", "验证标题"]
+    ASSERT_TITLE_CONTAINS = ["assert_title_contains", "验证标题包含"]
     ASSERT_ELEMENT_COUNT = ["assert_element_count", "验证元素数量"]
     ASSERT_TEXT_CONTAINS = ["assert_text_contains", "验证包含文本"]
     ASSERT_URL_CONTAINS = ["assert_url_contains", "验证URL包含"]
@@ -98,6 +99,7 @@ class StepAction:
         NAVIGATE
         + ASSERT_URL
         + ASSERT_TITLE
+        + ASSERT_TITLE_CONTAINS
         + ASSERT_URL_CONTAINS
         + EXECUTE_PYTHON
         + WAIT

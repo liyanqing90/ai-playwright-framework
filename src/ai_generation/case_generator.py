@@ -4,9 +4,11 @@ import json
 import os
 import re
 import shutil
+from contextlib import redirect_stderr, redirect_stdout
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -123,19 +125,16 @@ def generate_case_files(
             },
         )
         if not dry_run:
-            _emit(progress, "写入生成文件")
-            _write_payload(
-                result,
-                overwrite=overwrite,
-                verify=lambda: _validate_written_case_file(result),
-            )
-            _emit(progress, "写入后YAML schema校验通过")
             if verify_after_generate:
                 try:
-                    _verify_generated_case(
+                    _verify_candidate_persist_formal(
                         context=context,
                         env=env,
+                        payload=payload,
                         result=result,
+                        overwrite=overwrite,
+                        output_name=resolved_output_name,
+                        artifacts=artifacts,
                         progress=progress,
                     )
                     _save_generation_cache(
@@ -155,24 +154,19 @@ def generate_case_files(
                             reason=str(exc),
                             progress=progress,
                         )
-                    if not (cache_info.get("hit") and use_ai):
+                    if not use_ai:
                         raise
-                    _emit(progress, "缓存验证失败，绕过缓存重新生成一次")
-                    payload, warnings, result = _regenerate_without_cache(
+                    payload, warnings, result = _repair_and_verify_runtime_failure(
                         context=context,
                         spec=spec,
                         env=env,
                         output_name=resolved_output_name,
                         use_ai=use_ai,
                         overwrite=overwrite,
+                        failed_payload=payload,
+                        failed_error=str(exc),
                         progress=progress,
                         artifacts=artifacts,
-                    )
-                    _verify_generated_case(
-                        context=context,
-                        env=env,
-                        result=result,
-                        progress=progress,
                     )
                     _save_generation_cache(
                         context=context,
@@ -185,6 +179,13 @@ def generate_case_files(
                         status="verified",
                     )
             else:
+                _emit(progress, "写入生成文件")
+                _write_payload(
+                    result,
+                    overwrite=overwrite,
+                    verify=lambda: _validate_written_case_file(result),
+                )
+                _emit(progress, "写入后YAML schema校验通过")
                 _emit(progress, "跳过生成后执行验证")
         else:
             _emit(progress, "dry-run模式，跳过写入")
@@ -334,15 +335,304 @@ def _normalize_validate_payload(
     raise ValueError("Harness校验失败: 未知错误")
 
 
+_VALUE_ASSERTION_ACTIONS = {
+    "assert_text",
+    "hard_assert",
+    "assertion",
+    "verify",
+    "assert_text_contains",
+    "assert_url",
+    "assert_url_contains",
+    "assert_title",
+    "assert_title_contains",
+    "assert_value",
+    "assert_attribute",
+    "assert_element_count",
+    "assert_have_values",
+}
+
+_STATE_ASSERTION_ACTIONS = {
+    "assert_visible",
+    "assert_be_hidden",
+    "assert_exists",
+    "assert_not_exists",
+    "assert_enabled",
+    "assert_disabled",
+}
+
+
+def _assert_effective_verification_payload(
+    context: ProjectContext,
+    payload: dict[str, Any],
+) -> None:
+    modules = dict(context.modules or {})
+    modules.update(payload.get("modules") or {})
+    data = payload.get("data") or {}
+    for case in payload.get("cases") or []:
+        if not isinstance(case, dict):
+            continue
+        case_name = str(case.get("name") or "")
+        data_name = str(case.get("data_name") or case_name)
+        case_data = data.get(data_name) or {}
+        steps = case_data.get("steps") or []
+        if not _steps_have_effective_assertion(steps, modules, seen=set()):
+            raise ValueError(
+                "生成用例缺少有效信息断言，不能进入真实页面验证或缓存: "
+                f"case={case_name or data_name}"
+            )
+
+
+def _steps_have_effective_assertion(
+    steps: Any,
+    modules: dict[str, Any],
+    *,
+    seen: set[str],
+) -> bool:
+    if not isinstance(steps, list):
+        return False
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if _is_effective_assertion_step(step):
+            return True
+        module_name = step.get("use_module")
+        if module_name:
+            module_key = str(module_name)
+            if module_key in seen:
+                continue
+            module_steps = _module_steps_for_effective_check(modules.get(module_key))
+            if _steps_have_effective_assertion(
+                module_steps,
+                modules,
+                seen=seen | {module_key},
+            ):
+                return True
+    return False
+
+
+def _module_steps_for_effective_check(raw_module: Any) -> list[dict[str, Any]]:
+    if isinstance(raw_module, list):
+        return raw_module
+    if isinstance(raw_module, dict) and isinstance(raw_module.get("steps"), list):
+        return raw_module["steps"]
+    return []
+
+
+def _is_effective_assertion_step(step: dict[str, Any]) -> bool:
+    action = str(step.get("action") or "").lower()
+    if action in _STATE_ASSERTION_ACTIONS:
+        return _has_nonempty_value(step.get("selector") or step.get("target"))
+    if action not in _VALUE_ASSERTION_ACTIONS:
+        return False
+    if action == "assert_attribute":
+        return _has_nonempty_value(step.get("attribute")) and _has_any_nonempty(
+            step,
+            ("expected", "value"),
+        )
+    if action == "assert_element_count":
+        return _has_any_nonempty(step, ("expected", "value", "expression"))
+    if action == "assert_have_values":
+        return _has_any_nonempty(step, ("expected_values", "expected", "value"))
+    return _has_any_nonempty(step, ("expected", "value"))
+
+
+def _has_any_nonempty(step: dict[str, Any], fields: tuple[str, ...]) -> bool:
+    return any(_has_nonempty_value(step.get(field)) for field in fields)
+
+
+def _has_nonempty_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict, tuple, set)):
+        return bool(value)
+    return True
+
+
+def _write_and_verify_candidate(
+    *,
+    context: ProjectContext,
+    env: str,
+    payload: dict[str, Any],
+    output_name: str,
+    artifacts: _GenerationArtifacts,
+    progress: Callable[[str], None] | None,
+) -> tuple[ProjectContext, dict[str, Any]]:
+    candidate_context = _candidate_context(context, artifacts)
+    candidate_result = _result_paths(
+        candidate_context,
+        payload,
+        output_name=output_name,
+    )
+    artifacts.write_json(
+        "92_candidate_write_plan.json",
+        {
+            "test_dir": str(candidate_context.test_dir),
+            "case_file": str(candidate_result["case_file"]),
+            "data_file": str(candidate_result["data_file"]),
+            "elements_file": str(candidate_result.get("elements_file") or ""),
+            "modules_file": str(candidate_result.get("modules_file") or ""),
+            "vars_file": str(candidate_result.get("vars_file") or ""),
+        },
+    )
+    _emit(progress, f"写入候选验证文件: {candidate_result['case_file']}")
+    _write_payload(
+        candidate_result,
+        overwrite=True,
+        verify=lambda: _validate_written_case_file(candidate_result),
+    )
+    _emit(progress, "候选YAML schema校验通过")
+    _verify_generated_case(
+        context=candidate_context,
+        env=env,
+        result=candidate_result,
+        progress=progress,
+        stage="候选",
+        artifacts=artifacts,
+    )
+    return candidate_context, candidate_result
+
+
+def _verify_candidate_persist_formal(
+    *,
+    context: ProjectContext,
+    env: str,
+    payload: dict[str, Any],
+    result: dict[str, Any],
+    overwrite: bool,
+    output_name: str,
+    artifacts: _GenerationArtifacts,
+    progress: Callable[[str], None] | None,
+) -> None:
+    _assert_effective_verification_payload(context, payload)
+    _write_and_verify_candidate(
+        context=context,
+        env=env,
+        payload=payload,
+        output_name=output_name,
+        artifacts=artifacts,
+        progress=progress,
+    )
+    _emit(progress, "候选用例真实页面验证通过，写入正式用例")
+    _write_payload(
+        result,
+        overwrite=overwrite,
+        verify=lambda: _validate_written_case_file(result),
+        post_verify=lambda: _verify_generated_case(
+            context=context,
+            env=env,
+            result=result,
+            progress=progress,
+            stage="正式存储后",
+            artifacts=artifacts,
+        ),
+    )
+    _emit(progress, "正式用例再次执行验证通过")
+    _emit(progress, "写入后YAML schema校验通过")
+
+
+def _repair_and_verify_runtime_failure(
+    *,
+    context: ProjectContext,
+    spec: dict[str, Any],
+    env: str,
+    output_name: str,
+    use_ai: bool,
+    overwrite: bool,
+    failed_payload: dict[str, Any],
+    failed_error: str,
+    progress: Callable[[str], None] | None,
+    artifacts: _GenerationArtifacts,
+) -> tuple[dict[str, Any], list[str], dict[str, Any]]:
+    generation_cfg = load_ai_config().get("generation", {})
+    max_attempts = int(generation_cfg.get("runtime_repair_attempts", 1))
+    if max_attempts <= 0:
+        raise AssertionError(failed_error)
+
+    current_payload = failed_payload
+    current_error = failed_error
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        _emit(
+            progress,
+            f"候选真实页面验证失败，调用模型针对错误点修复({attempt}/{max_attempts})",
+        )
+        repaired_payload = _repair_payload_with_ai(
+            context=context,
+            spec=spec,
+            invalid_payload=current_payload,
+            error=current_error,
+        )
+        artifacts.write_json(
+            f"9{attempt + 2}_runtime_repair_payload.json", repaired_payload
+        )
+        payload, warnings = _normalize_validate_payload(
+            context=context,
+            spec=spec,
+            output_name=output_name,
+            payload=repaired_payload,
+            use_ai=use_ai,
+            progress=progress,
+            artifacts=artifacts,
+        )
+        result = _result_paths(context, payload, output_name=output_name)
+        try:
+            _verify_candidate_persist_formal(
+                context=context,
+                env=env,
+                payload=payload,
+                result=result,
+                overwrite=overwrite,
+                output_name=output_name,
+                artifacts=artifacts,
+                progress=progress,
+            )
+            return payload, warnings, result
+        except Exception as exc:
+            last_error = exc
+            current_payload = payload
+            current_error = str(exc)
+            artifacts.write_text(
+                f"9{attempt + 2}_runtime_repair_error.txt",
+                f"{type(exc).__name__}: {exc}\n",
+            )
+
+    raise AssertionError(f"运行验证修复失败: {last_error or failed_error}")
+
+
+def _candidate_context(
+    context: ProjectContext,
+    artifacts: _GenerationArtifacts,
+) -> ProjectContext:
+    source_test_dir = Path(context.test_dir)
+    candidate_test_dir = (artifacts.path / "candidate_test_dir").resolve()
+    if candidate_test_dir.exists():
+        shutil.rmtree(candidate_test_dir)
+    if source_test_dir.exists():
+        shutil.copytree(
+            source_test_dir,
+            candidate_test_dir,
+            ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"),
+        )
+    else:
+        candidate_test_dir.mkdir(parents=True, exist_ok=True)
+    for dirname in ("cases", "data", "elements", "modules", "vars"):
+        (candidate_test_dir / dirname).mkdir(parents=True, exist_ok=True)
+    return replace(context, test_dir=candidate_test_dir)
+
+
 def _verify_generated_case(
     *,
     context: ProjectContext,
     env: str,
     result: dict[str, Any],
     progress: Callable[[str], None] | None,
+    stage: str = "生成",
+    artifacts: _GenerationArtifacts | None = None,
 ) -> None:
     case_file = Path(result["case_file"])
-    _emit(progress, f"执行生成用例验证: {case_file}")
+    _emit(progress, f"执行{stage}用例真实页面验证: {case_file}")
     previous_env = {name: os.environ.get(name) for name in _VERIFY_ENV_KEYS}
     os.environ["TEST_PROJECT"] = context.project
     os.environ["TEST_ENV"] = env
@@ -351,28 +641,41 @@ def _verify_generated_case(
     os.environ.setdefault("BROWSER", "chromium")
     os.environ.setdefault("PWHEADED", "1")
     os.environ.setdefault("UI_AI_MODE", "strict")
+    _configure_runtime_for_verification(context=context, env=env)
+    output_buffer = StringIO()
     try:
-        exit_code = pytest.main(
-            [
-                str(case_file),
-                "-v",
-                "--tb=line",
-                "-p",
-                "no:warnings",
-                "-s",
-                "--alluredir=reports/allure-results",
-                "--clean-alluredir",
-            ]
-        )
+        with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
+            exit_code = pytest.main(
+                [
+                    str(case_file),
+                    "-v",
+                    "--tb=line",
+                    "-p",
+                    "no:warnings",
+                    "--skip-yaml-schema",
+                    "-s",
+                    "--alluredir=reports/allure-results",
+                    "--clean-alluredir",
+                ]
+            )
     finally:
         for name, value in previous_env.items():
             if value is None:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
+    output = output_buffer.getvalue()
+    if artifacts:
+        artifacts.write_text(
+            f"{_safe_artifact_name(stage)}_pytest_output.txt",
+            output,
+        )
     if exit_code != 0:
-        raise AssertionError(f"生成用例执行验证失败: exit_code={exit_code}")
-    _emit(progress, "生成用例执行验证通过")
+        raise AssertionError(
+            f"{stage}用例真实页面验证失败: exit_code={exit_code}\n"
+            f"{_tail_text(output)}"
+        )
+    _emit(progress, f"{stage}用例真实页面验证通过")
 
 
 def _regenerate_without_cache(
@@ -382,7 +685,6 @@ def _regenerate_without_cache(
     env: str,
     output_name: str,
     use_ai: bool,
-    overwrite: bool,
     progress: Callable[[str], None] | None,
     artifacts: _GenerationArtifacts,
 ) -> tuple[dict[str, Any], list[str], dict[str, Any]]:
@@ -406,11 +708,6 @@ def _regenerate_without_cache(
         artifacts=artifacts,
     )
     result = _result_paths(context, payload, output_name=output_name)
-    _write_payload(
-        result,
-        overwrite=overwrite,
-        verify=lambda: _validate_written_case_file(result),
-    )
     return payload, warnings, result
 
 
@@ -441,6 +738,28 @@ _VERIFY_ENV_KEYS = (
     "PWHEADED",
     "UI_AI_MODE",
 )
+
+
+def _configure_runtime_for_verification(*, context: ProjectContext, env: str) -> None:
+    try:
+        from utils.config import Config
+
+        Config(
+            project=context.project,
+            env=env,
+            base_url=str(context.base_url or ""),
+            test_dir=str(context.test_dir),
+        )
+    except Exception:
+        # Environment variables above remain the source of truth for verification.
+        pass
+
+
+def _tail_text(text: str, *, max_chars: int = 4000) -> str:
+    text = str(text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
 
 
 def resolve_generation_spec_path(
@@ -588,18 +907,18 @@ def _build_payload(
                     "当steps是字符串列表时，必须逐条理解为业务步骤，再转换为框架action步骤。"
                     "checkpoints/final是验收标准，生成结果必须把它们落实为项目格式断言步骤。"
                     "优先复用已有module、element key、变量key；只有项目资产确实不存在且业务必须新增时，才输出新的elements、modules或vars。"
-                    "如果已有module能覆盖登录、进入页面、通用前置步骤，优先用use_module而不是重复生成步骤。"
+                    "如果已有module能覆盖当前目标所需的前置步骤或公共流程，优先用use_module而不是重复生成步骤。"
                     "可以生成原生AI步骤 action=ai_step，但只用于自然语言探索或无法稳定拆分的低确定性步骤；"
                     "稳定业务主链路优先生成明确 action、selector/target、value 和断言。"
                     "Module output shape must be modules: {module_name: [step, ...]}, not {module_name: {steps: [...]}}. "
                     "If a module needs case-specific data, use ${param_name} inside the module and pass use_module.params in every call. "
                     "Do not invent variable names such as username_var unless they are also emitted under vars. "
-                    "For Saucedemo login, standard_user and locked_out_user must be selected by params, not by sharing one fixed login user. "
+                    "When similar cases differ by input values, roles, states, or expected outcomes, parameterize shared modules via use_module.params instead of hard-coding one fixed value. "
                     "每个用例必须至少包含一个断言步骤，断言必须使用项目格式："
                     "assert_visible需要selector；assert_text/assert_text_contains需要selector和value；"
-                    "assert_url/assert_url_contains/assert_title需要value。"
+                    "assert_url/assert_url_contains/assert_title/assert_title_contains需要value。"
                     "断言必须验证前置步骤实际造成的页面状态，不允许用空value或泛化描述充当断言。"
-                    "负向登录、错误提示、购物车数量等结果必须断言可观察的准确文案或准确数量。"
+                    "所有结果验证必须断言可观察的准确信息，例如页面文案、URL、标题、状态或数量。"
                     "使用target而没有selector时，该步骤或data用例层必须声明mode为smart。"
                     "找不到元素时用 target + mode: smart，不要编造selector。"
                     "不要输出解释。"
@@ -789,12 +1108,14 @@ def _repair_payload_with_ai(
                 "role": "system",
                 "content": (
                     "你是UI自动化生成结果修正器。必须只返回当前框架格式JSON，不要解释。"
-                    "修正 invalid_payload 中导致 Harness/schema 失败的问题，保留原业务意图。"
+                    "修正 invalid_payload 中导致 Harness/schema/真实页面验证失败的问题，保留原业务意图。"
                     "cases层只允许name；description/mode/steps必须在data层；"
                     "selector、target、use_module、action、mode等字段必须是字符串，不能是对象。"
                     "modules必须是 {module_name: [step, ...]}。"
                     "每个用例必须至少有一个准确断言。"
                     "优先复用project_context已有 elements/modules/vars。"
+                    "如果真实页面验证提示selector匹配不到元素、fixture value缺失或测试数据未参数化，"
+                    "必须针对错误点修复对应steps/elements/modules/data映射；不要保留导致失败的新增element selector。"
                 ),
             },
             {
@@ -1011,6 +1332,7 @@ def _write_payload(
     *,
     overwrite: bool,
     verify: Callable[[], None] | None = None,
+    post_verify: Callable[[], None] | None = None,
 ) -> None:
     payload = result["payload"]
     files = {
@@ -1049,6 +1371,8 @@ def _write_payload(
             tmp_path.replace(path)
         if verify:
             verify()
+        if post_verify:
+            post_verify()
     except Exception:
         for path, content in backups.items():
             path.write_bytes(content)

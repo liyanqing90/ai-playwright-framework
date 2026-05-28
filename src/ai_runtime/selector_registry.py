@@ -33,6 +33,7 @@ class SelectorRecord:
     candidate_hash: str | None = None
     candidate_count: int | None = None
     last_error: str | None = None
+    score: float = 0.0
 
 
 class SelectorRegistry:
@@ -108,9 +109,10 @@ class SelectorRegistry:
         page_key: str,
         action: str,
         target: str,
+        min_score: float = 0.0,
     ) -> SelectorRecord | None:
         with self._lock:
-            row = self._conn.execute(
+            rows = self._conn.execute(
                 """
                 SELECT * FROM selectors
                 WHERE project = ?
@@ -119,17 +121,22 @@ class SelectorRegistry:
                   AND action = ?
                   AND target = ?
                   AND status IN ('active', 'unstable')
-                ORDER BY
-                  CASE status WHEN 'active' THEN 0 ELSE 1 END,
-                  success_count DESC,
-                  fail_count ASC,
-                  COALESCE(last_success_at, '') DESC,
-                  confidence DESC
-                LIMIT 1
+                ORDER BY COALESCE(last_success_at, '') DESC
+                LIMIT 20
                 """,
                 (project, env, page_key, action, target),
-            ).fetchone()
-        return self._to_record(row) if row else None
+            ).fetchall()
+        records = [self._to_record(row) for row in rows]
+        records = [record for record in records if record.score >= min_score]
+        records.sort(
+            key=lambda record: (
+                0 if record.status == "active" else 1,
+                -record.score,
+                -record.success_count,
+                record.fail_count,
+            )
+        )
+        return records[0] if records else None
 
     def save(
         self,
@@ -221,9 +228,14 @@ class SelectorRegistry:
         record_id: str,
         *,
         unstable_threshold: int,
+        deprecated_after_failures: int | None = None,
         last_error: str | None = None,
     ) -> None:
         now = _now()
+        deprecated_after_failures = deprecated_after_failures or max(
+            unstable_threshold + 1,
+            3,
+        )
         with self._lock:
             self._conn.execute(
                 """
@@ -232,13 +244,21 @@ class SelectorRegistry:
                     last_failed_at = ?,
                     last_error = ?,
                     status = CASE
+                        WHEN fail_count + 1 >= ? THEN 'deprecated'
                         WHEN fail_count + 1 >= ? THEN 'unstable'
                         ELSE status
                     END,
                     updated_at = ?
                 WHERE id = ?
                 """,
-                (now, last_error, unstable_threshold, now, record_id),
+                (
+                    now,
+                    last_error,
+                    deprecated_after_failures,
+                    unstable_threshold,
+                    now,
+                    record_id,
+                ),
             )
             self._conn.commit()
 
@@ -270,6 +290,9 @@ class SelectorRegistry:
     @staticmethod
     def _to_record(row: sqlite3.Row) -> SelectorRecord:
         values: dict[str, Any] = dict(row)
+        success_count = int(values["success_count"])
+        fail_count = int(values["fail_count"])
+        confidence = float(values["confidence"])
         return SelectorRecord(
             id=values["id"],
             project=values["project"],
@@ -279,9 +302,9 @@ class SelectorRegistry:
             target=values["target"],
             selector=values["selector"],
             source=values["source"],
-            confidence=float(values["confidence"]),
-            success_count=int(values["success_count"]),
-            fail_count=int(values["fail_count"]),
+            confidence=confidence,
+            success_count=success_count,
+            fail_count=fail_count,
             status=values["status"],
             prompt_version=values.get("prompt_version"),
             schema_version=values.get("schema_version"),
@@ -293,4 +316,15 @@ class SelectorRegistry:
                 else None
             ),
             last_error=values.get("last_error"),
+            score=_score(confidence, success_count, fail_count),
         )
+
+
+def _score(confidence: float, success_count: int, fail_count: int) -> float:
+    return max(
+        0.0,
+        min(
+            1.0,
+            confidence + min(success_count, 10) * 0.02 - min(fail_count, 10) * 0.05,
+        ),
+    )

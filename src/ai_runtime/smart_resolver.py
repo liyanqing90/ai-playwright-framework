@@ -10,12 +10,14 @@ from typing import Any
 
 from src.ai_runtime.config import load_ai_config
 from src.ai_runtime.contracts import AiStepDecision, SelectorDecision
+from src.ai_runtime.native_observe import NativeObserveSettings
 from src.ai_runtime.payload_compactor import (
     build_dom_context,
     build_locator_context,
     looks_like_internal_element_id,
     normalize_model_text,
     selector_for_element_id,
+    selectors_for_element_id,
 )
 from src.ai_runtime.playwright_selectors import (
     collect_candidates,
@@ -24,6 +26,7 @@ from src.ai_runtime.playwright_selectors import (
     selector_matches_target,
     semantic_selectors,
     stable_selector_for_locator,
+    validate_selector,
     verify_selector,
 )
 from src.ai_runtime.provider import ChatCompletionProvider
@@ -79,6 +82,7 @@ class SmartResolver:
         self.project = project or os.environ.get("TEST_PROJECT", "default")
         self.env = env or os.environ.get("TEST_ENV", "local")
         self.config = load_ai_config()
+        self.native_observe = NativeObserveSettings.from_config(self.config)
         registry_cfg = self.config.get("selector_registry", {})
         registry_disabled = str(
             os.environ.get("UI_AI_DISABLE_SELECTOR_REGISTRY") or ""
@@ -87,6 +91,13 @@ class SmartResolver:
             bool(registry_cfg.get("enabled", True)) and not registry_disabled
         )
         self.unstable_threshold = int(registry_cfg.get("unstable_threshold", 3))
+        self.deprecated_after_failures = int(
+            registry_cfg.get(
+                "deprecated_after_failures",
+                max(self.unstable_threshold + 1, 3),
+            )
+        )
+        self.registry_min_score = float(registry_cfg.get("min_score_to_use", 0.0))
         self.registry = None
         if self.registry_enabled:
             sqlite_path = Path(registry_cfg.get("sqlite_path", ".ui_auto/selectors.db"))
@@ -144,7 +155,9 @@ class SmartResolver:
         original_error: str | None = None
 
         if not normalized_selector and looks_like_internal_element_id(target_text):
-            raise ValueError(f"未解析的内部element_id不能直接用于语义定位: {target_text}")
+            raise ValueError(
+                f"未解析的内部element_id不能直接用于语义定位: {target_text}"
+            )
 
         if normalized_selector:
             try:
@@ -186,6 +199,7 @@ class SmartResolver:
                 page_key=page_key,
                 action=action,
                 target=target_text,
+                min_score=self.registry_min_score,
             )
             if record:
                 try:
@@ -225,6 +239,7 @@ class SmartResolver:
                         self.registry.mark_failed(
                             record.id,
                             unstable_threshold=self.unstable_threshold,
+                            deprecated_after_failures=self.deprecated_after_failures,
                             last_error="registry selector verification failed",
                         )
                     self._log_heal_rejected(
@@ -234,8 +249,17 @@ class SmartResolver:
                         healing_attempted=healing_attempted,
                     )
 
-        selector_candidates = semantic_selectors(
-            self.page, target_text, action, limit=self.candidate_limit
+        selector_candidates = (
+            semantic_selectors(
+                self.page,
+                target_text,
+                action,
+                limit=self.candidate_limit,
+                ignore_selectors=self.native_observe.ignore_selectors,
+                include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
+            )
+            if self.native_observe.enabled
+            else []
         )
         selector_candidates.extend(heuristic_selectors(target_text, action))
         for candidate in _dedupe(selector_candidates):
@@ -384,7 +408,7 @@ class SmartResolver:
         if fast_operation is not None:
             return fast_operation
         self._claim_ai_call("ai_step")
-        candidates = collect_candidates(self.page, limit=self.ai_step_candidate_limit)
+        candidates = self._collect_candidates(limit=self.ai_step_candidate_limit)
         provider = ChatCompletionProvider()
         decision = provider.complete_model(
             [
@@ -393,12 +417,12 @@ class SmartResolver:
                     "content": (
                         "你是UI自动化原生AI步骤编译器。根据用户指令从候选元素中选择一个框架支持的原子动作，"
                         "只返回JSON对象，不要解释。action只允许click/fill/press/wait/skip/reject。"
-                        "优先返回element_id，不要自己生成selector。"
-                        "selector字段只能填写真实CSS/Playwright selector，禁止把e1/e2这类element_id写到selector。"
+                        "必须返回候选元素中的element_id，不要自己生成selector。"
+                        "selector字段仅作为兼容字段；如填写，只能填写候选element_id。"
                         "ai_step必须是单一UI动作或单一断言意图，只能编译为一个标准step。"
-                        "如果指令包含两个或更多动作/断言、业务流程、登录流程、加购流程、退出流程，必须返回reject并说明reason。"
+                        "如果指令包含两个或更多动作/断言，或描述需要多步完成的端到端流程，必须返回reject并说明reason。"
                         "reject用于提示用户拆成多个steps或改用agent_case，不要勉强选择其中一个动作。"
-                        "click/fill/press必须返回候选元素中的selector；fill返回value；press返回key；"
+                        "click/fill/press必须返回候选元素中的element_id；fill返回value；press返回key；"
                         "wait返回wait_ms。不要直接执行浏览器操作。"
                     ),
                 },
@@ -474,18 +498,19 @@ class SmartResolver:
             limit=self.ai_step_candidate_limit,
             hints=[instruction],
         )
-        selector = selector_for_element_id(
-            dom_context,
-            decision.element_id,
-        ) or selector_for_element_id(
-            dom_context,
-            decision.selector,
-        ) or str(decision.selector or "")
-        selector = normalize_selector(selector)
-        if not selector:
-            raise ValueError("AI步骤未返回selector")
         verify_action = "fill" if decision.action == "fill" else "click"
-        verify_selector(self.page, selector, action=verify_action, timeout=timeout)
+        selected_element_id = self._selected_element_id_from_decision(
+            dom_context,
+            element_id=decision.element_id,
+            selector_ref=decision.selector,
+            source="AI步骤",
+        )
+        selector = self._verified_selector_for_element_id(
+            dom_context,
+            selected_element_id,
+            action=verify_action,
+            timeout=timeout,
+        )
         return AiStepOperation(
             action=decision.action,
             selector=selector,
@@ -567,14 +592,20 @@ class SmartResolver:
         value: str | None = None,
     ) -> AiStepOperation | None:
         for candidate_target in _instruction_target_variants(target):
-            selectors = _dedupe(
+            semantic_candidates = (
                 semantic_selectors(
                     self.page,
                     candidate_target,
                     action,
                     limit=min(self.ai_step_candidate_limit, 8),
+                    ignore_selectors=self.native_observe.ignore_selectors,
+                    include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
                 )
-                + heuristic_selectors(candidate_target, action)
+                if self.native_observe.enabled
+                else []
+            )
+            selectors = _dedupe(
+                semantic_candidates + heuristic_selectors(candidate_target, action)
             )
             if not selectors:
                 continue
@@ -618,8 +649,7 @@ class SmartResolver:
         self, *, action: str, target: str, timeout: int
     ) -> ResolvedSelector:
         self._claim_ai_call("selector")
-        candidates = collect_candidates(
-            self.page,
+        candidates = self._collect_candidates(
             limit=self.llm_selector_candidate_scan_limit,
         )
         locator_context = build_locator_context(
@@ -638,8 +668,8 @@ class SmartResolver:
                     "content": (
                         "你是UI自动化selector解析器。根据候选元素为目标选择最稳定的selector。"
                         "只负责当前step的元素选择，不做业务决策。"
-                        "优先返回element_id或selected_element_id，不要自己生成selector。"
-                        "selector字段只能填写真实CSS/Playwright selector，禁止把e1/e2这类element_id写到selector。"
+                        "必须返回候选元素中的element_id或selected_element_id，不要自己生成selector。"
+                        "selector字段仅作为兼容字段；如填写，只能填写候选element_id。"
                         "reason不超过80个中文字符。只返回JSON对象。"
                     ),
                 },
@@ -668,21 +698,18 @@ class SmartResolver:
             raise ValueError(
                 f"AI定位未返回可执行元素: status={decision.status} reason={decision.reason}"
             )
-        selected_element_id = decision.element_id or decision.selected_element_id
-        selector = selector_for_element_id(
+        selected_element_id = self._selected_element_id_from_decision(
+            locator_context,
+            element_id=decision.element_id or decision.selected_element_id,
+            selector_ref=decision.selector,
+            source="AI定位",
+        )
+        selector = self._verified_selector_for_element_id(
             locator_context,
             selected_element_id,
-        ) or selector_for_element_id(
-            locator_context,
-            decision.selector,
+            action=action,
+            timeout=timeout,
         )
-        selector = normalize_selector(
-            selector or str(decision.selector or ""),
-            decision.selector_type,
-        )
-        if not selector:
-            raise ValueError(f"AI未返回selector: {target}")
-        verify_selector(self.page, selector, action=action, timeout=timeout)
         if not selector_matches_target(self.page, selector, target, action):
             raise ValueError(
                 f"AI selector semantic mismatch: target={target}, selector={selector}"
@@ -700,11 +727,51 @@ class SmartResolver:
             candidate_hash=self._candidate_hash(candidates),
         )
 
+    def _selected_element_id_from_decision(
+        self,
+        payload: dict[str, Any],
+        *,
+        element_id: str | None,
+        selector_ref: str | None,
+        source: str,
+    ) -> str:
+        if element_id:
+            if selectors_for_element_id(payload, element_id):
+                return element_id
+            raise ValueError(f"{source}返回未知element_id: {element_id}")
+        if selector_ref and selectors_for_element_id(payload, selector_ref):
+            return selector_ref
+        raise ValueError(f"{source}必须返回候选element_id，不能直接返回selector")
+
+    def _verified_selector_for_element_id(
+        self,
+        payload: dict[str, Any],
+        element_id: str,
+        *,
+        action: str,
+        timeout: int,
+    ) -> str:
+        errors: list[str] = []
+        for raw_selector in selectors_for_element_id(payload, element_id):
+            selector = normalize_selector(raw_selector)
+            validation = validate_selector(
+                self.page,
+                selector,
+                action=action,
+                timeout=timeout,
+                require_unique=True,
+            )
+            if validation.ok:
+                return selector
+            errors.append(f"{selector}: {validation.error}")
+        detail = "; ".join(errors) if errors else "no selector candidates"
+        raise ValueError(f"候选element_id不可执行: {element_id} | {detail}")
+
     def _resolve_with_vision(
         self, *, action: str, target: str, timeout: int
     ) -> ResolvedSelector:
         self._claim_vision_call()
-        candidates = collect_candidates(self.page, limit=self.candidate_limit)
+        candidates = self._collect_candidates(limit=self.candidate_limit)
         candidate_hash = self._candidate_hash(candidates)
         resolution = VisionResolver(
             self.page,
@@ -857,6 +924,16 @@ class SmartResolver:
             )
         self.vision_call_count += 1
 
+    def _collect_candidates(self, *, limit: int) -> list[dict[str, Any]]:
+        if not self.native_observe.enabled:
+            return []
+        return collect_candidates(
+            self.page,
+            limit=min(limit, self.native_observe.max_candidates),
+            ignore_selectors=self.native_observe.ignore_selectors,
+            include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
+        )
+
     @staticmethod
     def _candidate_hash(candidates: list[dict[str, Any]]) -> str:
         raw = json.dumps(candidates, ensure_ascii=False, sort_keys=True)
@@ -912,11 +989,18 @@ def _looks_like_multi_step_instruction(instruction: str) -> bool:
     hits = sum(1 for marker in action_markers if marker in instruction)
     if hits <= 1:
         return False
-    return any(token in instruction for token in (" and ", " then ", "；", ";", "，然后", "并且", "后再"))
+    return any(
+        token in instruction
+        for token in (" and ", " then ", "；", ";", "，然后", "并且", "后再")
+    )
 
 
 def _parse_wait_ms(instruction: str) -> int | None:
-    match = re.search(r"\bwait\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds|s|sec|seconds)?\b", instruction, re.IGNORECASE)
+    match = re.search(
+        r"\bwait\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds|s|sec|seconds)?\b",
+        instruction,
+        re.IGNORECASE,
+    )
     if match:
         value = float(match.group(1))
         unit = (match.group(2) or "s").lower()

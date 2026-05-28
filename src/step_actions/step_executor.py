@@ -35,6 +35,46 @@ from utils.variable_manager import VariableManager
 # 导入所有命令类
 
 
+def _lower_actions(*groups: list[str]) -> set[str]:
+    return {action.lower() for group in groups for action in group}
+
+
+_STABILIZE_AFTER_ACTIONS = _lower_actions(
+    StepAction.NAVIGATE,
+    StepAction.CLICK,
+    StepAction.FILL,
+    StepAction.PRESS_KEY,
+    StepAction.REFRESH,
+    StepAction.UPLOAD,
+    StepAction.HOVER,
+    StepAction.DOUBLE_CLICK,
+    StepAction.RIGHT_CLICK,
+    StepAction.SELECT,
+    StepAction.DRAG_AND_DROP,
+    StepAction.SCROLL_INTO_VIEW,
+    StepAction.SCROLL_TO,
+    StepAction.FOCUS,
+    StepAction.BLUR,
+    StepAction.TYPE,
+    StepAction.CLEAR,
+    StepAction.ACCEPT_ALERT,
+    StepAction.DISMISS_ALERT,
+    StepAction.EXPECT_POPUP,
+    StepAction.SWITCH_WINDOW,
+    StepAction.CLOSE_WINDOW,
+    StepAction.WAIT_FOR_NEW_WINDOW,
+    StepAction.TAB_SWITCH,
+    StepAction.DOWNLOAD_FILE,
+    StepAction.KEYBOARD_SHORTCUT,
+    StepAction.KEYBOARD_PRESS,
+    StepAction.KEYBOARD_TYPE,
+    StepAction.EXECUTE_SCRIPT,
+    StepAction.MANAGE_COOKIES,
+    StepAction.MONITOR_REQUEST,
+    StepAction.MONITOR_RESPONSE,
+)
+
+
 class StepExecutor:
 
     def __init__(
@@ -163,6 +203,7 @@ class StepExecutor:
             )
             self._validate_step(action, selector, step)
             self._execute_action(action, selector, value, step)
+            self._wait_after_action_stable(action, step)
             self._persist_resolved_selector_after_success(
                 element_key=element_key,
                 original_selector=raw_selector,
@@ -235,6 +276,49 @@ class StepExecutor:
 
             # 直接抛出异常，不做其他任何处理
             raise
+
+    def _wait_after_action_stable(self, action: str, step: Dict[str, Any]) -> None:
+        if not self._should_wait_after_action(action, step):
+            return
+
+        wait_for_stable = getattr(self.ui_helper, "wait_for_stable", None)
+        if not callable(wait_for_stable):
+            logger.debug(f"跳过页面稳定等待: ui_helper不支持 | action={action}")
+            return
+
+        timeout = self._stable_timeout_ms(step)
+        idle_ms = self._stable_idle_ms(step)
+        logger.debug(
+            f"等待页面稳定: action={action} | timeout={timeout}ms | idle={idle_ms}ms"
+        )
+        wait_for_stable(timeout=timeout, idle_ms=idle_ms)
+
+    def _should_wait_after_action(self, action: str, step: Dict[str, Any]) -> bool:
+        if action not in _STABILIZE_AFTER_ACTIONS:
+            return False
+        value = (step or {}).get("wait_for_stable", True)
+        if isinstance(value, str):
+            return value.strip().lower() not in {"0", "false", "no", "off"}
+        return value is not False
+
+    def _stable_timeout_ms(self, step: Dict[str, Any]) -> int:
+        runtime = self.ai_config.get("runtime", {})
+        value = (
+            (step or {}).get("stable_timeout_ms")
+            or (step or {}).get("stable_timeout")
+            or runtime.get("action_stable_timeout_ms")
+            or DEFAULT_TIMEOUT
+        )
+        return int(value)
+
+    def _stable_idle_ms(self, step: Dict[str, Any]) -> int:
+        runtime = self.ai_config.get("runtime", {})
+        value = (
+            (step or {}).get("stable_idle_ms")
+            or runtime.get("action_stable_idle_ms")
+            or 500
+        )
+        return int(value)
 
     def _execute_coordinate_action(
         self,
@@ -506,6 +590,7 @@ class StepExecutor:
         )
         self._validate_step(action, selector, compiled_step)
         self._execute_action(action, selector, value, compiled_step)
+        self._wait_after_action_stable(action, compiled_step)
 
     @staticmethod
     def _compile_ai_step(operation, *, timeout: int) -> Dict[str, Any] | None:

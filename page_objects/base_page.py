@@ -3,6 +3,7 @@ import json
 import os
 import re
 import time
+from urllib.parse import unquote
 from typing import Callable, Literal, Optional, List, Any, Dict
 
 import allure
@@ -172,6 +173,54 @@ def base_url():
     return os.environ.get("BASE_URL")
 
 
+def _url_contains(actual: Any, expected: Any) -> bool:
+    actual_text = str(actual or "")
+    expected_text = str(expected or "")
+    if not actual_text or not expected_text:
+        return False
+    return expected_text in actual_text or expected_text in unquote(actual_text)
+
+
+def _page_context_pages(page: Any) -> list[Any]:
+    context = getattr(page, "context", None)
+    if context is None:
+        return []
+    try:
+        return list(getattr(context, "pages", []) or [])
+    except Exception:
+        return []
+
+
+def _target_blank_navigation_hint(page: Any, selector: Any) -> str | None:
+    if not selector or not hasattr(page, "locator"):
+        return None
+    try:
+        locator = page.locator(str(selector)).first
+        if callable(locator):
+            locator = locator()
+        url = locator.evaluate(
+            """(el) => {
+                const link = el.closest && el.closest('a[target="_blank"]');
+                if (link && link.href) return link.href;
+                const form = el.closest && el.closest('form[target="_blank"]');
+                if (!form) return null;
+                const action = form.action || window.location.href;
+                const method = String(form.method || 'get').toLowerCase();
+                if (method !== 'get') return null;
+                const target = new URL(action, window.location.href);
+                const data = new FormData(form);
+                for (const [key, value] of data.entries()) {
+                    if (typeof value === 'string') target.searchParams.set(key, value);
+                }
+                return String(target);
+            }"""
+        )
+        text = str(url or "").strip()
+        return text or None
+    except Exception:
+        return None
+
+
 class BasePage:
     def __init__(self, page: Page):
         self.page = page
@@ -210,7 +259,142 @@ class BasePage:
     @handle_page_error(description="点击元素")
     def click(self, selector: str):
         """点击元素"""
+        previous_pages = _page_context_pages(self.page)
+        new_page_hint = _target_blank_navigation_hint(self.page, selector)
         self._locator(selector).first.click(timeout=DEFAULT_TIMEOUT)
+        if previous_pages:
+            self._adopt_new_page_if_opened(
+                previous_pages,
+                wait_ms=500 if new_page_hint else 2000,
+            )
+        if new_page_hint and self.page in previous_pages:
+            self._open_new_page_from_hint(new_page_hint)
+
+    def _adopt_new_page_if_opened(
+        self, previous_pages: list[Any], *, wait_ms: int = 0
+    ) -> bool:
+        import time
+
+        context = getattr(self.page, "context", None)
+        if context is None and previous_pages:
+            context = getattr(previous_pages[0], "context", None)
+        if context is None:
+            return False
+        deadline = time.monotonic() + max(wait_ms, 0) / 1000
+        while True:
+            current_pages = _page_context_pages(self.page)
+            new_pages = [page for page in current_pages if page not in previous_pages]
+            if new_pages:
+                new_page = new_pages[-1]
+                try:
+                    new_page.wait_for_load_state("domcontentloaded", timeout=5000)
+                except Exception:
+                    pass
+                self.page = new_page
+                self.pages = list(getattr(context, "pages", []) or [new_page])
+                logger.info(f"点击打开新标签页，已自动切换: {new_page.url}")
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+
+    def _open_new_page_from_hint(self, url: str) -> None:
+        context = getattr(self.page, "context", None)
+        if context is None or not hasattr(context, "new_page"):
+            return
+        new_page = context.new_page()
+        new_page.goto(url, wait_until="domcontentloaded")
+        try:
+            new_page.wait_for_load_state("domcontentloaded", timeout=5000)
+        except Exception:
+            pass
+        self.page = new_page
+        self.pages = list(getattr(context, "pages", []) or [new_page])
+        logger.info(f"按target=_blank语义打开并切换新标签页: {url}")
+
+    def wait_for_stable(
+        self,
+        timeout: Optional[int] = DEFAULT_TIMEOUT,
+        idle_ms: int = 500,
+    ) -> bool:
+        """Wait until the active page stops changing URL/title/DOM shape."""
+        timeout = int(timeout or DEFAULT_TIMEOUT)
+        idle_ms = max(int(idle_ms or 0), 0)
+        deadline = time.monotonic() + timeout / 1000
+
+        self._wait_for_load_state_best_effort("domcontentloaded", deadline)
+
+        last_signature = None
+        stable_since = None
+        while True:
+            now = time.monotonic()
+            signature = self._page_stability_signature()
+            if signature == last_signature:
+                if stable_since is None:
+                    stable_since = now
+                if (now - stable_since) * 1000 >= idle_ms:
+                    logger.debug(
+                        f"page stable wait completed: url={getattr(self.page, 'url', '')}"
+                    )
+                    return True
+            else:
+                last_signature = signature
+                stable_since = now
+
+            if now >= deadline:
+                raise TimeoutError(
+                    "page stable wait timed out: "
+                    f"timeout={timeout}ms | idle={idle_ms}ms | "
+                    f"url={getattr(self.page, 'url', '')}"
+                )
+            time.sleep(min(0.1, max(0.01, deadline - now)))
+
+    def _wait_for_load_state_best_effort(self, state: str, deadline: float) -> None:
+        if not hasattr(self.page, "wait_for_load_state"):
+            return
+        remaining_ms = max(int((deadline - time.monotonic()) * 1000), 1)
+        try:
+            self.page.wait_for_load_state(
+                state,
+                timeout=min(remaining_ms, 5000),
+            )
+        except Exception:
+            pass
+
+    def _page_stability_signature(self) -> tuple[Any, ...]:
+        page = self.page
+        url = getattr(page, "url", "")
+        title = ""
+        if hasattr(page, "title"):
+            try:
+                title = page.title()
+            except Exception:
+                title = ""
+
+        dom_state: Any = None
+        if hasattr(page, "evaluate"):
+            try:
+                dom_state = page.evaluate(
+                    """() => {
+                        const body = document.body;
+                        return {
+                            readyState: document.readyState,
+                            href: window.location.href,
+                            title: document.title,
+                            elementCount: document.getElementsByTagName('*').length,
+                            textLength: body ? body.innerText.length : 0,
+                        };
+                    }"""
+                )
+            except Exception:
+                dom_state = None
+
+        return (
+            url,
+            title,
+            len(_page_context_pages(page)),
+            json.dumps(dom_state, sort_keys=True, ensure_ascii=False),
+        )
 
     @handle_page_error(description="上传文件")
     def upload_file(self, selector: str, file_path: str):
@@ -296,6 +480,23 @@ class BasePage:
             actual := self.page.title()
         ) == expected, f"页面标题断言失败: 期望结果: '{expected}', 实际结果: '{actual}'"
 
+    @check_and_screenshot("断言页面标题包含")
+    def assert_title_contains(self, expected: str):
+        """断言页面标题包含指定内容"""
+        resolved_expected = self.variable_manager.replace_variables_refactored(expected)
+        if hasattr(self.page, "wait_for_function"):
+            try:
+                self.page.wait_for_function(
+                    "(expected) => String(document.title || '').includes(expected)",
+                    str(resolved_expected),
+                    timeout=DEFAULT_TIMEOUT,
+                )
+            except Exception:
+                pass
+        assert (
+            actual := self.page.title()
+        ) and resolved_expected in actual, f"页面标题包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
+
     @check_and_screenshot("断言元素数量")
     def assert_element_count(self, selector: str, expected: int):
         """断言元素数量"""
@@ -323,11 +524,26 @@ class BasePage:
     def assert_url_contains(self, expected: str):
         """断言当前URL包含指定内容"""
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
-        assert (
-            actual := self.page.url
-        ) and resolved_expected in actual, (
-            f"URL包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
-        )
+        if hasattr(self.page, "wait_for_function"):
+            try:
+                self.page.wait_for_function(
+                    """(expected) => {
+                        const href = String(window.location.href || '');
+                        try {
+                            return href.includes(expected)
+                                || decodeURIComponent(href).includes(expected);
+                        } catch {
+                            return href.includes(expected);
+                        }
+                    }""",
+                    str(resolved_expected),
+                    timeout=DEFAULT_TIMEOUT,
+                )
+            except Exception:
+                pass
+        assert (actual := self.page.url) and _url_contains(
+            actual, resolved_expected
+        ), f"URL包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言元素存在")
     def assert_exists(self, selector: str):

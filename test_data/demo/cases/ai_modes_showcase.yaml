@@ -1,6 +1,7 @@
 ﻿test_cases:
-  - name: test_saucedemo_strict_cart_logout_flow
-  - name: test_saucedemo_step_smart_cart_logout_flow
-  - name: test_saucedemo_agent_case_steps_cart_logout_flow
-  - name: test_saucedemo_agent_case_explore_cart_checkout_flow
-
+  # - name: test_saucedemo_strict_cart_logout_flow
+  # - name: test_saucedemo_step_smart_cart_logout_flow
+  # - name: test_saucedemo_agent_case_steps_cart_logout_flow
+  # - name: test_saucedemo_agent_case_explore_cart_checkout_flow
+  - name: test_saucedemo_agent_case_steps_google_search
+  - name: test_saucedemo_agent_case_explore_Google_search

@@ -30,7 +30,9 @@ class LLMSettings:
     model: str
     reasoning_effort: str | None = None
     omit_temperature: bool = True
-    response_format: Literal["json_object", "json_schema", "text", "none"] = "json_object"
+    response_format: Literal["json_object", "json_schema", "text", "none"] = (
+        "json_object"
+    )
     timeout_seconds: int = 60
     schema_version: str = "ui-ai-schema-v1"
 
@@ -51,8 +53,7 @@ def load_llm_settings() -> LLMSettings:
     model = os.environ.get(LLM_MODEL_ENV)
     reasoning_effort = os.environ.get(LLM_REASONING_EFFORT_ENV)
     timeout_seconds = int(
-        os.environ.get(LLM_TIMEOUT_SECONDS_ENV)
-        or llm_cfg.get("timeout_seconds", 60)
+        os.environ.get(LLM_TIMEOUT_SECONDS_ENV) or llm_cfg.get("timeout_seconds", 60)
     )
     is_gguf_model = bool(model and model.lower().endswith(".gguf"))
     if is_gguf_model and timeout_seconds < 180:
@@ -146,7 +147,32 @@ class ChatCompletionProvider:
         try:
             response.raise_for_status()
         except requests.HTTPError as exc:
-            if _should_retry_with_text_response_format(response, payload):
+            if _should_retry_transient_http(response):
+                logger.warning(f"模型请求返回HTTP {response.status_code}，自动重试一次")
+                try:
+                    response = requests.post(
+                        self.settings.url,
+                        headers={
+                            "Authorization": f"Bearer {self.settings.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                        timeout=self.settings.timeout_seconds,
+                    )
+                    response.raise_for_status()
+                    exc = None
+                except requests.HTTPError as retry_exc:
+                    exc = retry_exc
+                except Exception as retry_exc:
+                    tracker.record_model_io(
+                        operation=usage_operation,
+                        request_payload=payload,
+                        error=f"{type(retry_exc).__name__}: {retry_exc}",
+                    )
+                    raise
+            if exc is None:
+                pass
+            elif _should_retry_with_text_response_format(response, payload):
                 logger.warning(
                     "模型端不支持当前 response_format，自动切换为 text 重试一次"
                 )
@@ -276,6 +302,10 @@ def _should_retry_with_text_response_format(
         return False
     message = response.text.lower()
     return "response_format.type" in message and "text" in message
+
+
+def _should_retry_transient_http(response: requests.Response) -> bool:
+    return response.status_code in {429, 500, 502, 503, 504}
 
 
 def build_response_format(

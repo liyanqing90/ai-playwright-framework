@@ -205,6 +205,22 @@ class AssertTitleCommand(Command):
         )
 
 
+@CommandFactory.register(StepAction.ASSERT_TITLE_CONTAINS)
+class AssertTitleContainsCommand(Command):
+    """断言标题包含命令"""
+
+    def execute(
+        self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
+    ) -> None:
+        expected = step.get("expected", value)
+        ui_helper.assert_title_contains(expected=expected)
+        _log_assertion_success(
+            "assert_title_contains",
+            expected=_resolve_expected(ui_helper, expected),
+            actual=_actual_title(ui_helper),
+        )
+
+
 @CommandFactory.register(StepAction.ASSERT_ELEMENT_COUNT)
 class AssertElementCountCommand(Command):
     """断言元素数量命令，支持数学表达式"""
