@@ -1,0 +1,19 @@
+test_data:
+  test_crm_steps_generated:
+    mode: smart
+    steps:
+      - use_module: crm_oa_login_and_navigate_to_product_audit
+        params:
+          username: test17868
+          password: '20260528'
+      - action: assert_title_contains
+        value: 商品审核
+  test_crm_intent_generated:
+    mode: smart
+    steps:
+      - use_module: crm_oa_login_and_navigate_to_product_audit
+        params:
+          username: test17868
+          password: '20260528'
+      - action: assert_title_contains
+        value: 商品审核

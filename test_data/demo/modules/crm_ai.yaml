@@ -1,0 +1,17 @@
+crm_oa_login_and_navigate_to_product_audit:
+  - action: goto
+    value: http://edit.ahohcrm.terra.corpautohome.com/#/login
+  - action: click
+    selector: text=OA登录
+  - action: fill
+    selector: input[name='username']
+    value: ${username}
+  - action: fill
+    selector: input[name='password']
+    value: ${password}
+  - action: click
+    selector: button[type='submit']
+  - action: click
+    selector: text=商城
+  - action: click
+    selector: text=商品审核

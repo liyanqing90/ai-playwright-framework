@@ -1,9 +1,5 @@
-project: demo
-description: "复用 Agent 搜索场景生成正式 UI 用例：同一搜索流程分别覆盖 steps 与 intent 输入形态"
-mode: smart
 cases:
   - name: autohome_search_keyword_steps_generated
-    description: "步骤式规格：打开汽车之家北京站并搜索宝马x3"
     steps:
       - "打开 https://www.autohome.com.cn/beijing/?from=m"
       - "搜索框输入“宝马x3”"
@@ -15,7 +11,6 @@ cases:
       - "当前页面已经进入搜索结果页"
 
   - name: autohome_search_keyword_intent_generated
-    description: "意图式规格：通过一句目标完成相同搜索流程"
     intent: "访问 https://www.autohome.com.cn/beijing/?from=m，搜索 “宝马x3”，并确认进入搜索结果页。"
     checkpoints:
       - "搜索成功之后，页面标题包含 “宝马x3”"

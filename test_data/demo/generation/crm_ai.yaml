@@ -1,0 +1,28 @@
+cases:
+  - name: crm_steps_generated
+    description: "进入运营后台"
+    steps:
+      - "打开运营后台登录页 http://edit.ahohcrm.terra.corpautohome.com/#/login"
+      - 点击 OA登录
+      - 输入用户名和密码
+      - 点击登录按钮
+      - 点击商城展开菜单
+      - 点击商品审核
+    inputs:
+      username: test17868
+      password: 20260528
+    checkpoints:
+      - "页面title包含商品审核"
+    final:
+      - "当前页面已经进入运营后台商品审核"
+
+  - name: crm_intent_generated
+    description: "意图式规格：通过一句目标完成相同搜索流程"
+    intent: "访问url http://edit.ahohcrm.terra.corpautohome.com/#/login，使用oa登录，展开商城菜单，点击商品审核"
+    inputs:
+      username: test17868
+      password: 20260528
+    checkpoints:
+      - "页面title包含商品审核"
+    final:
+      - "当前页面已经进入搜索结果页"

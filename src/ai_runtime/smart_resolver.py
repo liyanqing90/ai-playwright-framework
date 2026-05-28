@@ -58,6 +58,11 @@ class ResolvedSelector:
     coordinate: tuple[float, float] | None = None
     vision_method: str | None = None
     vision_reason: str | None = None
+    registry_record_id: str | None = None
+    cache_action: str | None = None
+    cache_target: str | None = None
+    cache_page_key: str | None = None
+    cache_replace_active: bool = False
 
 
 @dataclass(frozen=True)
@@ -217,7 +222,6 @@ class SmartResolver:
                             f"历史定位语义不匹配，已废弃: target={target_text} selector={record.selector}"
                         )
                         raise ValueError("registry selector semantic mismatch")
-                    self.registry.mark_success(record.id)
                     self._log_heal_success(
                         source="registry",
                         selector=record.selector,
@@ -229,6 +233,10 @@ class SmartResolver:
                             selector=record.selector,
                             source="registry",
                             confidence=record.confidence,
+                            registry_record_id=record.id,
+                            cache_action=action,
+                            cache_target=target_text,
+                            cache_page_key=page_key,
                         ),
                         healing_attempted=healing_attempted,
                         original_selector=normalized_selector,
@@ -273,13 +281,6 @@ class SmartResolver:
                         f"DOM语义匹配不一致，跳过: target={target_text} selector={stable}"
                     )
                     continue
-                self._save_selector(
-                    action=action,
-                    target=target_text,
-                    selector=stable,
-                    source="heuristic",
-                    confidence=0.8,
-                )
                 self._log_heal_success(
                     source="heuristic",
                     selector=stable,
@@ -291,6 +292,9 @@ class SmartResolver:
                         selector=stable,
                         source="heuristic",
                         confidence=0.8,
+                        cache_action=action,
+                        cache_target=target_text,
+                        cache_page_key=page_key,
                     ),
                     healing_attempted=healing_attempted,
                     original_selector=normalized_selector,
@@ -362,24 +366,18 @@ class SmartResolver:
                 raise ValueError(
                     f"智能定位结果与目标语义不匹配: target={target_text}, selector={resolved.selector}"
                 )
-            self._save_selector(
-                action=action,
-                target=target_text,
-                selector=resolved.selector,
-                source=resolved.source,
-                confidence=resolved.confidence or 0.6,
-                prompt_version=resolved.prompt_version,
-                schema_version=resolved.schema_version,
-                model=resolved.model,
-                candidate_hash=resolved.candidate_hash,
-                candidate_count=resolved.candidate_count,
-                replace_active=True,
-            )
             self._log_heal_success(
                 source=resolved.source,
                 selector=resolved.selector,
                 confidence=resolved.confidence,
                 healing_attempted=healing_attempted,
+            )
+            resolved = replace(
+                resolved,
+                cache_action=action,
+                cache_target=target_text,
+                cache_page_key=page_key,
+                cache_replace_active=True,
             )
         elif not resolved.coordinate:
             detail = "; ".join(errors) if errors else target_text
@@ -811,6 +809,7 @@ class SmartResolver:
         model: str | None = None,
         candidate_hash: str | None = None,
         candidate_count: int | None = None,
+        page_key: str | None = None,
         replace_active: bool = False,
     ) -> None:
         if not self.registry:
@@ -823,7 +822,7 @@ class SmartResolver:
         self.registry.save(
             project=self.project,
             env=self.env,
-            page_key=self._page_key(),
+            page_key=page_key or self._page_key(),
             action=action,
             target=target,
             selector=selector,
@@ -834,6 +833,48 @@ class SmartResolver:
             model=model,
             candidate_hash=candidate_hash,
             candidate_count=candidate_count,
+            replace_active=replace_active,
+        )
+
+    def record_verified_selector(
+        self,
+        *,
+        action: str | None,
+        target: str | None,
+        selector: str | None,
+        source: str | None,
+        confidence: float | None,
+        registry_record_id: str | None = None,
+        page_key: str | None = None,
+        prompt_version: str | None = None,
+        schema_version: str | None = None,
+        model: str | None = None,
+        candidate_hash: str | None = None,
+        candidate_count: int | None = None,
+        replace_active: bool = False,
+    ) -> None:
+        if not self.registry:
+            return
+        if registry_record_id:
+            self.registry.mark_success(registry_record_id)
+            logger.info(
+                f"selector registry verified after action: id={registry_record_id}"
+            )
+            return
+        if not (action and target and selector and source):
+            return
+        self._save_selector(
+            action=action,
+            target=target,
+            selector=selector,
+            source=source,
+            confidence=confidence if confidence is not None else 0.6,
+            prompt_version=prompt_version,
+            schema_version=schema_version,
+            model=model,
+            candidate_hash=candidate_hash,
+            candidate_count=candidate_count,
+            page_key=page_key,
             replace_active=replace_active,
         )
 

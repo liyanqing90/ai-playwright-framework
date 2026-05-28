@@ -1,6 +1,4 @@
-project: demo
 description: "步骤式规格：基于当前 demo 项目生成 Saucedemo 标准用户完整购物车流程用例"
-mode: smart
 cases:
   - name: saucedemo_standard_user_cart_logout_flow
     description: "标准用户完成登录、添加Backpack、查看购物车并退出登录"

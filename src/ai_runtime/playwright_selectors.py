@@ -192,16 +192,77 @@ def stable_selector_for_locator(locator) -> str:
                 if (window.CSS && CSS.escape) return CSS.escape(value);
                 return String(value).replace(/["\\\\]/g, '\\\\$&');
             };
+            const quote = value => String(value).replace(/["\\\\]/g, '\\\\$&');
+            const visibleText = node => (node.innerText || node.textContent || '').trim().replace(/\\s+/g, ' ');
+            const safeQueryAll = selector => {
+                try {
+                    return Array.from(document.querySelectorAll(selector));
+                } catch {
+                    return [];
+                }
+            };
+            const isUniqueCss = selector => safeQueryAll(selector).length === 1;
+            const isStableId = value => {
+                if (!value) return false;
+                const text = String(value);
+                if (text.length > 80) return false;
+                if (/^[0-9]+$/.test(text)) return false;
+                if (/^[a-f0-9]{8,}$/i.test(text)) return false;
+                if (/[0-9]{8,}/.test(text)) return false;
+                if (/^ember\\d+$/i.test(text)) return false;
+                return true;
+            };
             const attrSelector = (node, attr) => {
                 const value = node.getAttribute(attr);
                 if (!value) return null;
-                return `${node.tagName.toLowerCase()}[${attr}="${String(value).replace(/["\\\\]/g, '\\\\$&')}"]`;
+                return `${node.tagName.toLowerCase()}[${attr}="${quote(value)}"]`;
             };
-            if (el.id) return `#${cssEscape(el.id)}`;
-            for (const attr of ['data-testid', 'data-test', 'data-qa', 'name', 'aria-label', 'placeholder', 'title']) {
-                const selector = attrSelector(el, attr);
-                if (selector) return selector;
-            }
+            const exactTextSelector = node => {
+                const tag = node.tagName.toLowerCase();
+                if (!['button', 'a', 'label'].includes(tag)) return null;
+                const text = visibleText(node);
+                if (!text || text.length > 80) return null;
+                const same = safeQueryAll(tag).filter(item => visibleText(item) === text);
+                if (same.length !== 1) return null;
+                return `${tag}:has-text("${quote(text)}")`;
+            };
+            const localSelectors = (node, includeText=true) => {
+                const selectors = [];
+                for (const attr of ['data-testid', 'data-test', 'data-qa', 'data-cy', 'data-ui']) {
+                    const selector = attrSelector(node, attr);
+                    if (selector) selectors.push(selector);
+                }
+                if (node.id && isStableId(node.id)) selectors.push(`#${cssEscape(node.id)}`);
+                for (const attr of ['name', 'aria-label', 'placeholder', 'title']) {
+                    const selector = attrSelector(node, attr);
+                    if (selector) selectors.push(selector);
+                }
+                const role = node.getAttribute('role');
+                const aria = node.getAttribute('aria-label');
+                if (role && aria) {
+                    selectors.push(`${node.tagName.toLowerCase()}[role="${quote(role)}"][aria-label="${quote(aria)}"]`);
+                }
+                if (includeText) {
+                    const textSelector = exactTextSelector(node);
+                    if (textSelector) selectors.push(textSelector);
+                }
+                return selectors;
+            };
+            for (const selector of localSelectors(el)) {
+                if (selector.includes(':has-text(') || isUniqueCss(selector)) return selector;
+            };
+            let ancestor = el.parentElement;
+            while (ancestor && ancestor !== document.body) {
+                for (const ancestorSelector of localSelectors(ancestor, false)) {
+                    if (!isUniqueCss(ancestorSelector)) continue;
+                    for (const childSelector of localSelectors(el, false)) {
+                        if (childSelector.includes(':has-text(')) continue;
+                        const scoped = `${ancestorSelector} ${childSelector}`;
+                        if (isUniqueCss(scoped)) return scoped;
+                    }
+                }
+                ancestor = ancestor.parentElement;
+            };
             const parts = [];
             let node = el;
             while (node && node.nodeType === Node.ELEMENT_NODE && node !== document.body) {
@@ -211,6 +272,8 @@ def stable_selector_for_locator(locator) -> str:
                 const same = Array.from(parent.children).filter(child => child.tagName === node.tagName);
                 if (same.length > 1) part += `:nth-of-type(${same.indexOf(node) + 1})`;
                 parts.unshift(part);
+                const path = parts.join(' > ');
+                if (parts.length >= 2 && isUniqueCss(path)) return path;
                 node = parent;
             }
             return parts.join(' > ');
@@ -288,10 +351,71 @@ def collect_candidates(
                 return (ancestor.innerText || ancestor.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 300);
             };
             const stableSelector = el => {
-                if (el.id) return `#${cssEscape(el.id)}`;
-                for (const attr of ['data-testid', 'data-test', 'data-qa', 'name', 'aria-label', 'placeholder', 'title']) {
-                    const selector = attrSelector(el, attr);
-                    if (selector) return selector;
+                const quote = value => String(value).replace(/["\\\\]/g, '\\\\$&');
+                const visibleText = node => (node.innerText || node.textContent || '').trim().replace(/\\s+/g, ' ');
+                const safeQueryAll = selector => {
+                    try {
+                        return Array.from(document.querySelectorAll(selector));
+                    } catch {
+                        return [];
+                    }
+                };
+                const isUniqueCss = selector => safeQueryAll(selector).length === 1;
+                const isStableId = value => {
+                    if (!value) return false;
+                    const text = String(value);
+                    if (text.length > 80) return false;
+                    if (/^[0-9]+$/.test(text)) return false;
+                    if (/^[a-f0-9]{8,}$/i.test(text)) return false;
+                    if (/[0-9]{8,}/.test(text)) return false;
+                    if (/^ember\\d+$/i.test(text)) return false;
+                    return true;
+                };
+                const exactTextSelector = node => {
+                    const tag = node.tagName.toLowerCase();
+                    if (!['button', 'a', 'label'].includes(tag)) return null;
+                    const text = visibleText(node);
+                    if (!text || text.length > 80) return null;
+                    const same = safeQueryAll(tag).filter(item => visibleText(item) === text);
+                    if (same.length !== 1) return null;
+                    return `${tag}:has-text("${quote(text)}")`;
+                };
+                const localSelectors = (node, includeText=true) => {
+                    const selectors = [];
+                    for (const attr of ['data-testid', 'data-test', 'data-qa', 'data-cy', 'data-ui']) {
+                        const selector = attrSelector(node, attr);
+                        if (selector) selectors.push(selector);
+                    }
+                    if (node.id && isStableId(node.id)) selectors.push(`#${cssEscape(node.id)}`);
+                    for (const attr of ['name', 'aria-label', 'placeholder', 'title']) {
+                        const selector = attrSelector(node, attr);
+                        if (selector) selectors.push(selector);
+                    }
+                    const role = node.getAttribute('role');
+                    const aria = node.getAttribute('aria-label');
+                    if (role && aria) {
+                        selectors.push(`${node.tagName.toLowerCase()}[role="${quote(role)}"][aria-label="${quote(aria)}"]`);
+                    }
+                    if (includeText) {
+                        const textSelector = exactTextSelector(node);
+                        if (textSelector) selectors.push(textSelector);
+                    }
+                    return selectors;
+                };
+                for (const selector of localSelectors(el)) {
+                    if (selector.includes(':has-text(') || isUniqueCss(selector)) return selector;
+                }
+                let ancestor = el.parentElement;
+                while (ancestor && ancestor !== document.body) {
+                    for (const ancestorSelector of localSelectors(ancestor, false)) {
+                        if (!isUniqueCss(ancestorSelector)) continue;
+                        for (const childSelector of localSelectors(el, false)) {
+                            if (childSelector.includes(':has-text(')) continue;
+                            const scoped = `${ancestorSelector} ${childSelector}`;
+                            if (isUniqueCss(scoped)) return scoped;
+                        }
+                    }
+                    ancestor = ancestor.parentElement;
                 }
                 const parts = [];
                 let node = el;
@@ -302,6 +426,8 @@ def collect_candidates(
                     const same = Array.from(parent.children).filter(child => child.tagName === node.tagName);
                     if (same.length > 1) part += `:nth-of-type(${same.indexOf(node) + 1})`;
                     parts.unshift(part);
+                    const path = parts.join(' > ');
+                    if (parts.length >= 2 && isUniqueCss(path)) return path;
                     node = parent;
                 }
                 return parts.join(' > ');
@@ -312,7 +438,7 @@ def collect_candidates(
                 '[tabindex]', '[title]', '[class*="close" i]',
                 '[class*="cancel" i]', '[class*="popup" i]',
                 '[class*="modal" i]', '[class*="dialog" i]',
-                '[data-test]', '[data-testid]', '[data-qa]',
+                '[data-test]', '[data-testid]', '[data-qa]', '[data-cy]', '[data-ui]',
                 '[class*="badge" i]', '[class*="error" i]'
             ].join(',');
             const nodes = [];
@@ -411,25 +537,29 @@ def semantic_selectors(
     try:
         candidates = collect_candidates(
             page,
-            limit=limit,
+            limit=min(max(limit * 3, limit), 500),
             ignore_selectors=ignore_selectors,
             include_open_shadow_dom=include_open_shadow_dom,
         )
     except Exception:
         return []
 
-    scored: list[tuple[float, str]] = []
+    scored: list[tuple[float, float, int, str]] = []
     min_score = _minimum_semantic_score(target, action)
-    for candidate in candidates:
+    for index, candidate in enumerate(candidates):
         selector = str(candidate.get("selector") or "").strip()
         if not selector:
             continue
         score = _candidate_semantic_score(candidate, target, action)
         if score >= min_score:
-            scored.append((score, selector))
+            scored.append((score, _selector_quality_score(selector), -index, selector))
 
     deduped: list[str] = []
-    for _, selector in sorted(scored, key=lambda item: item[0], reverse=True):
+    for _, _, _, selector in sorted(
+        scored,
+        key=lambda item: (item[0], item[1], item[2]),
+        reverse=True,
+    ):
         if selector not in deduped:
             deduped.append(selector)
     return deduped
@@ -490,16 +620,23 @@ def selector_matches_target(
     tag = str(snapshot.get("tag") or "").lower()
     input_type = str(snapshot.get("type") or "").lower()
     selector_l = str(selector or "").lower()
+    blob = _candidate_blob(snapshot)
     if is_password_target:
         return score >= 6
     if is_username_target:
         return score >= 4
     if is_login_target and action in {"click", "assert_visible"}:
-        return (
-            tag in {"button", "a"}
-            or (tag == "input" and input_type in {"submit", "button"})
-            or "login-button" in selector_l
+        login_like = score >= 4 or _contains_any(
+            blob,
+            ["login", "sign in", "登录", "登陆"],
         )
+        if "login-button" in selector_l:
+            return True
+        if tag == "input" and input_type in {"submit", "button"}:
+            return login_like
+        if tag in {"button", "a"}:
+            return login_like
+        return False
     if is_title_target:
         return score >= 1.5
     return True
@@ -626,7 +763,17 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
 def _target_attribute_selectors(target: str, action: str) -> list[str]:
     tokens = _target_tokens(target)
     selectors: list[str] = []
-    attrs = ("data-test", "data-testid", "data-qa", "id", "name", "aria-label", "title")
+    attrs = (
+        "data-testid",
+        "data-test",
+        "data-qa",
+        "data-cy",
+        "data-ui",
+        "id",
+        "name",
+        "aria-label",
+        "title",
+    )
     tags = (
         ("input", "textarea")
         if action == "fill"
@@ -640,7 +787,7 @@ def _target_attribute_selectors(target: str, action: str) -> list[str]:
                 selectors.append(f'{tag}[{attr}*="{quoted}" i]')
     if len(tokens) >= 2:
         primary = [_css_attr(token) for token in tokens[:3]]
-        for attr in ("data-test", "data-testid", "id", "name"):
+        for attr in ("data-testid", "data-test", "data-qa", "data-cy", "id", "name"):
             selectors.append("".join(f'[{attr}*="{token}" i]' for token in primary))
     return selectors
 
@@ -683,6 +830,51 @@ def _target_tokens(target: str) -> list[str]:
 
 def _css_attr(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _selector_quality_score(selector: str) -> float:
+    selector_l = str(selector or "").lower().strip()
+    if not selector_l:
+        return -100.0
+
+    score = 0.0
+    if any(attr in selector_l for attr in ("[data-testid=", "[data-test=")):
+        score += 45
+    elif any(attr in selector_l for attr in ("[data-qa=", "[data-cy=", "[data-ui=")):
+        score += 42
+    elif selector_l.startswith("#"):
+        score += 36
+        if _looks_like_generated_selector_id(selector_l[1:]):
+            score -= 18
+    elif "[name=" in selector_l:
+        score += 30
+    elif "[aria-label=" in selector_l:
+        score += 28
+    elif "[placeholder=" in selector_l:
+        score += 24
+    elif "[title=" in selector_l:
+        score += 20
+    elif ":has-text(" in selector_l or selector_l.startswith("text="):
+        score += 18
+    elif "[role=" in selector_l:
+        score += 16
+
+    if selector_l in {"input", "textarea", "button", "a", "select"}:
+        score -= 30
+    score -= selector_l.count(":nth-of-type") * 8
+    score -= selector_l.count(" > ") * 2
+    score -= min(len(selector_l) / 40, 12)
+    return score
+
+
+def _looks_like_generated_selector_id(value: str) -> bool:
+    value = str(value or "")
+    return bool(
+        re.fullmatch(r"\d+", value)
+        or re.fullmatch(r"[a-f0-9]{8,}", value, flags=re.IGNORECASE)
+        or re.search(r"\d{8,}", value)
+        or re.fullmatch(r"ember\d+", value, flags=re.IGNORECASE)
+    )
 
 
 def _candidate_semantic_score(

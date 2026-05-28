@@ -88,5 +88,5 @@ prompts:
   selector_version: selector-v2
   ai_step_version: ai-step-v2
   agent_case_version: agent-case-v2
-  generation_version: generation-v2
+  generation_version: generation-v4
   vision_version: vision-v1

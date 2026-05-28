@@ -9,6 +9,7 @@ from src.step_actions.action_types import StepAction
 
 
 _VALID_MODES = {"strict", "smart"}
+_DEFAULT_GENERATED_MODE = "smart"
 
 
 @dataclass
@@ -80,7 +81,9 @@ class GenerationHarness:
                     case_name=f"modules.{module_name}",
                     index=index,
                     step=step,
-                    case_mode=str(self.spec.get("mode") or "strict").lower(),
+                    case_mode=str(
+                        self.spec.get("mode") or _DEFAULT_GENERATED_MODE
+                    ).lower(),
                     valid_actions=valid_actions,
                     known_elements=known_elements,
                     known_modules=known_modules,
@@ -93,7 +96,7 @@ class GenerationHarness:
         for case_name, case_data in (payload.get("data") or {}).items():
             if not isinstance(case_data, dict):
                 raise ValueError(f"data.{case_name} 必须是对象")
-            mode = str(case_data.get("mode", "strict")).lower()
+            mode = str(case_data.get("mode", _DEFAULT_GENERATED_MODE)).lower()
             if mode not in _VALID_MODES:
                 raise ValueError(f"data.{case_name}.mode 不合法: {mode}")
             steps = case_data.get("steps")
@@ -160,10 +163,9 @@ class GenerationHarness:
                 raw_data = payload.get("data", {}).get(original_name)
             raw_data = raw_data or payload.get("data", {}).get(raw_name)
             case_data = dict(raw_data) if isinstance(raw_data, dict) else {}
-            case_data.setdefault(
-                "description",
-                raw_case.get("description") or self.spec.get("description", ""),
-            )
+            description = raw_case.get("description") or self.spec.get("description")
+            if "description" not in case_data and description:
+                case_data["description"] = description
             case_data.setdefault("mode", self._case_mode(raw_case))
             normalized_cases.append({"name": name})
             normalized_data[name] = case_data
@@ -173,7 +175,9 @@ class GenerationHarness:
     def _case_mode(self, raw_case: dict[str, Any]) -> str:
         if self.spec.get("mode") and not _has_explicit_steps(self.spec):
             return str(self.spec["mode"]).lower()
-        return str(raw_case.get("mode") or self.spec.get("mode") or "strict").lower()
+        return str(
+            raw_case.get("mode") or self.spec.get("mode") or _DEFAULT_GENERATED_MODE
+        ).lower()
 
     def _normalize_steps(
         self,
@@ -326,7 +330,9 @@ class GenerationHarness:
 
         selector = step.get("selector")
         target = step.get("target")
-        effective_mode = str(step.get("mode") or case_mode or "strict").lower()
+        effective_mode = str(
+            step.get("mode") or case_mode or _DEFAULT_GENERATED_MODE
+        ).lower()
         if effective_mode not in _VALID_MODES:
             raise ValueError(f"{case_name} step {index} mode 不合法: {effective_mode}")
         if (

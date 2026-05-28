@@ -642,6 +642,7 @@ def _verify_generated_case(
     os.environ.setdefault("PWHEADED", "1")
     os.environ.setdefault("UI_AI_MODE", "strict")
     _configure_runtime_for_verification(context=context, env=env)
+    _clear_runtime_data_caches()
     output_buffer = StringIO()
     try:
         with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
@@ -752,6 +753,15 @@ def _configure_runtime_for_verification(*, context: ProjectContext, env: str) ->
         )
     except Exception:
         # Environment variables above remain the source of truth for verification.
+        pass
+
+
+def _clear_runtime_data_caches() -> None:
+    try:
+        from src.case_utils import _load_data_for
+
+        _load_data_for.cache_clear()
+    except Exception:
         pass
 
 
@@ -897,7 +907,7 @@ def _build_payload(
                     "响应必须是合法 JSON，不要输出解释。"
                     "字段为 cases, data, elements, modules, vars。"
                     "cases只用于组织用例顺序，只允许包含name。"
-                    "description和用例默认mode必须放到data对应用例下。"
+                    "cases层只用于组织用例顺序；description可省略；mode可省略，省略时默认smart。"
                     "用户的generation_spec.cases只描述业务场景，不要求用户指定module、element或变量。"
                     "你必须根据project_context自动选择可复用资产。"
                     "入口URL按就近原则解析：优先使用generation_spec的自然语言steps或description中的URL；"
@@ -939,8 +949,7 @@ def _build_payload(
                             "cases": [{"name": "test_xxx"}],
                             "data": {
                                 "test_xxx": {
-                                    "description": "说明",
-                                    "mode": "strict|smart",
+                                    "mode": "smart",
                                     "steps": [
                                         {
                                             "action": "click",
@@ -1059,7 +1068,6 @@ def _generation_cache_key(
 
 def _cacheable_generation_spec(spec: dict[str, Any]) -> dict[str, Any]:
     return {
-        "project": spec.get("project"),
         "description": spec.get("description"),
         "intent": spec.get("intent"),
         "steps": spec.get("steps"),
@@ -1109,7 +1117,7 @@ def _repair_payload_with_ai(
                 "content": (
                     "你是UI自动化生成结果修正器。必须只返回当前框架格式JSON，不要解释。"
                     "修正 invalid_payload 中导致 Harness/schema/真实页面验证失败的问题，保留原业务意图。"
-                    "cases层只允许name；description/mode/steps必须在data层；"
+                    "cases层只允许name；description可省略；mode可省略，省略时默认smart；steps必须在data层；"
                     "selector、target、use_module、action、mode等字段必须是字符串，不能是对象。"
                     "modules必须是 {module_name: [step, ...]}。"
                     "每个用例必须至少有一个准确断言。"
@@ -1135,8 +1143,7 @@ def _repair_payload_with_ai(
                             "cases": [{"name": "test_xxx"}],
                             "data": {
                                 "test_xxx": {
-                                    "description": "说明",
-                                    "mode": "strict|smart",
+                                    "mode": "smart",
                                     "steps": [
                                         {
                                             "action": "click",
@@ -1275,11 +1282,14 @@ def _payload_from_explicit_spec(spec: dict[str, Any]) -> dict[str, Any]:
             for module_name in item.get("reuse_modules", []):
                 steps.append({"use_module": module_name})
             steps.extend(item.get("steps") or [])
-            data[name] = {
-                "description": item.get("description", ""),
-                "mode": item.get("mode", spec.get("mode", "strict")),
+            case_data = {
+                "mode": item.get("mode", spec.get("mode", "smart")),
                 "steps": steps,
             }
+            description = item.get("description") or spec.get("description")
+            if description:
+                case_data["description"] = description
+            data[name] = case_data
         return {
             "cases": cases,
             "data": data,
@@ -1293,15 +1303,15 @@ def _payload_from_explicit_spec(spec: dict[str, Any]) -> dict[str, Any]:
     for module_name in spec.get("reuse_modules", []):
         steps.append({"use_module": module_name})
     steps.extend(spec.get("steps") or [])
+    case_data = {
+        "mode": spec.get("mode", "smart"),
+        "steps": steps,
+    }
+    if spec.get("description"):
+        case_data["description"] = spec["description"]
     return {
         "cases": [{"name": name}],
-        "data": {
-            name: {
-                "description": spec.get("description", ""),
-                "mode": spec.get("mode", "strict"),
-                "steps": steps,
-            }
-        },
+        "data": {name: case_data},
         "elements": spec.get("elements") or {},
         "modules": spec.get("modules") or {},
         "vars": spec.get("vars") or {},

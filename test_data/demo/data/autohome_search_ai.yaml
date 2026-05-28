@@ -1,6 +1,5 @@
 test_data:
   test_autohome_search_keyword_steps_generated:
-    description: 步骤式规格：打开汽车之家北京站并搜索宝马x3
     mode: smart
     steps:
       - use_module: autohome_open_search
@@ -11,7 +10,6 @@ test_data:
       - action: assert_url_contains
         value: q=宝马x3
   test_autohome_search_keyword_intent_generated:
-    description: 意图式规格：通过一句目标完成相同搜索流程
     mode: smart
     steps:
       - use_module: autohome_open_search

@@ -25,7 +25,10 @@ class SelectorDecision(StrictModel):
             self.element_id or self.selected_element_id or self.selector
         ):
             raise ValueError("selector decision requires element_id or selector")
-        if self.status in {"need_more_context", "blocked", "failed"} and not self.reason:
+        if (
+            self.status in {"need_more_context", "blocked", "failed"}
+            and not self.reason
+        ):
             raise ValueError(f"{self.status} requires reason")
         return self
 
@@ -65,21 +68,24 @@ class AiStepDecision(StrictModel):
 
 class AgentCaseDecision(StrictModel):
     status: Literal["ok", "need_more_context", "blocked", "failed"] = "ok"
-    action: Literal[
-        "goto",
-        "use_module",
-        "click",
-        "fill",
-        "press",
-        "wait",
-        "assert_visible",
-        "assert_text",
-        "assert_url_contains",
-        "assert_title",
-        "done",
-        "finish",
-        "fail",
-    ] | None = None
+    action: (
+        Literal[
+            "goto",
+            "use_module",
+            "click",
+            "fill",
+            "press",
+            "wait",
+            "assert_visible",
+            "assert_text",
+            "assert_url_contains",
+            "assert_title",
+            "done",
+            "finish",
+            "fail",
+        ]
+        | None
+    ) = None
     mode: Literal["smart"] | None = None
     element_id: str | None = None
     selector: str | None = None
@@ -126,8 +132,13 @@ class AgentCaseDecision(StrictModel):
         if self.action == "assert_text" and not (
             self.element_id or self.selector or self.target
         ):
-            raise ValueError("assert_text action requires element_id, selector or target")
-        if self.action in {"assert_url_contains", "assert_title"} and self.value is None:
+            raise ValueError(
+                "assert_text action requires element_id, selector or target"
+            )
+        if (
+            self.action in {"assert_url_contains", "assert_title"}
+            and self.value is None
+        ):
             raise ValueError(f"{self.action} action requires value")
         if self.action == "wait" and self.wait_ms is None:
             raise ValueError("wait action requires wait_ms")
@@ -145,8 +156,8 @@ class GeneratedCase(StrictModel):
 
 
 class GeneratedCaseData(StrictModel):
-    description: str = ""
-    mode: Literal["strict", "smart"] = "strict"
+    description: str | None = None
+    mode: Literal["strict", "smart"] = "smart"
     steps: list[dict[str, Any]] = Field(default_factory=list)
 
 

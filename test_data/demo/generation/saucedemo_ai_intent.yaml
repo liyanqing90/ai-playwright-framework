@@ -1,6 +1,4 @@
-project: demo
 description: "意图式规格：让AI基于业务目标自行拆分 Saucedemo 标准用户完整购物车流程"
-mode: smart
 cases:
   - name: saucedemo_standard_user_cart_logout_ai_generated
     intent: "打开 https://www.saucedemo.com/，标准用户登录 Saucedemo 后，添加指定商品到购物车，进入购物车确认商品和数量，然后从左侧菜单退出登录。"

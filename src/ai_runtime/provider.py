@@ -249,6 +249,16 @@ class ChatCompletionProvider:
         if refusal:
             raise RuntimeError(f"模型拒绝响应: {refusal}")
         content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        if response_json:
+            fallback_content = _extract_json_content_from_reasoning(
+                message,
+                response_model=response_model,
+            )
+            if fallback_content is not None:
+                logger.warning("模型content为空，已从reasoning_content提取JSON响应")
+                return fallback_content
         if not isinstance(content, str):
             raise RuntimeError("模型响应缺少 choices[0].message.content")
         return content
@@ -384,7 +394,36 @@ def parse_model_response(content: str, response_model: type[TModel]) -> TModel:
         raise ValueError(f"模型响应不符合契约: {exc}") from exc
 
 
+def _extract_json_content_from_reasoning(
+    message: dict[str, Any],
+    *,
+    response_model: type[BaseModel] | None,
+) -> str | None:
+    reasoning_content = message.get("reasoning_content")
+    if not isinstance(reasoning_content, str) or not reasoning_content.strip():
+        return None
+    fallback: dict[str, Any] | None = None
+    for data in _iter_json_objects(reasoning_content):
+        if response_model is None:
+            fallback = data
+            continue
+        try:
+            response_model.model_validate(data)
+        except ValidationError:
+            continue
+        return json.dumps(data, ensure_ascii=False)
+    if fallback is None:
+        return None
+    return json.dumps(fallback, ensure_ascii=False)
+
+
 def _parse_first_json_object(content: str) -> dict[str, Any]:
+    for data in _iter_json_objects(content):
+        return data
+    raise ValueError("模型响应不是JSON对象")
+
+
+def _iter_json_objects(content: str):
     decoder = json.JSONDecoder()
     for match in re.finditer(r"\{", content):
         try:
@@ -392,5 +431,4 @@ def _parse_first_json_object(content: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             continue
         if isinstance(data, dict):
-            return data
-    raise ValueError("模型响应不是JSON对象")
+            yield data

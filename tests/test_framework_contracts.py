@@ -14,6 +14,7 @@ from src.ai_generation.case_generator import (
     _assert_effective_verification_payload,
     _build_payload,
     _has_explicit_steps,
+    _payload_from_explicit_spec,
     _resolve_navigation_context,
     _save_generation_cache,
     _validate_spec_project_scope,
@@ -54,6 +55,8 @@ from src.ai_runtime.playwright_selectors import (
     collect_candidates,
     heuristic_selectors,
     redact_value,
+    semantic_selectors,
+    selector_matches_target,
     validate_selector,
 )
 from src.ai_runtime.provider import (
@@ -294,6 +297,106 @@ def test_step_executor_stable_wait_can_be_skipped_for_non_mutating_steps(
         ("execute", "assert_url_contains"),
         ("execute", "click"),
     ]
+
+
+def test_step_executor_records_registry_selector_after_verified_action(monkeypatch):
+    events: list[Any] = []
+
+    class FakeResolver:
+        def resolve(self, **kwargs):
+            events.append(("resolve", kwargs["target"]))
+            return ResolvedSelector(
+                selector="#login",
+                source="heuristic",
+                confidence=0.9,
+                cache_action="click",
+                cache_target=kwargs["target"],
+                cache_page_key="https://example.test/login",
+            )
+
+        def record_verified_selector(self, **kwargs):
+            events.append(("cache", kwargs))
+
+    class FakePage:
+        url = "https://example.test/login"
+
+    class FakeUiHelper:
+        pass
+
+    def fake_execute_action_with_command(ui_helper, action, selector, value, step):
+        events.append(("execute", action, selector, value))
+
+    monkeypatch.setattr(
+        "src.step_actions.step_executor.execute_action_with_command",
+        fake_execute_action_with_command,
+    )
+
+    executor = StepExecutor(FakePage(), FakeUiHelper(), elements={})
+    executor.smart_resolver = FakeResolver()
+
+    executor.execute_step(
+        {"action": "click", "target": "login button", "mode": "smart"}
+    )
+
+    assert events[0] == ("resolve", "login button")
+    assert events[1] == ("execute", "click", "#login", None)
+    assert events[2][0] == "cache"
+    assert events[2][1]["target"] == "login button"
+    assert events[2][1]["selector"] == "#login"
+
+
+def test_step_executor_skips_selector_cache_when_action_switches_page(monkeypatch):
+    events: list[Any] = []
+
+    class FakePage:
+        def __init__(self, url):
+            self.url = url
+
+    first_page = FakePage("https://example.test/login")
+    second_page = FakePage("https://example.test/download")
+
+    class FakeResolver:
+        page = first_page
+
+        def resolve(self, **kwargs):
+            events.append(("resolve", kwargs["target"]))
+            return ResolvedSelector(
+                selector="#download",
+                source="heuristic",
+                confidence=0.9,
+                cache_action="click",
+                cache_target=kwargs["target"],
+                cache_page_key="https://example.test/login",
+            )
+
+        def record_verified_selector(self, **kwargs):
+            events.append(("cache", kwargs))
+
+    class FakeUiHelper:
+        def __init__(self):
+            self.page = first_page
+
+    def fake_execute_action_with_command(ui_helper, action, selector, value, step):
+        events.append(("execute", action, selector, value))
+        ui_helper.page = second_page
+
+    monkeypatch.setattr(
+        "src.step_actions.step_executor.execute_action_with_command",
+        fake_execute_action_with_command,
+    )
+
+    ui_helper = FakeUiHelper()
+    resolver = FakeResolver()
+    executor = StepExecutor(first_page, ui_helper, elements={})
+    executor.smart_resolver = resolver
+
+    executor.execute_step(
+        {"action": "click", "target": "download app", "mode": "smart"}
+    )
+
+    assert [event[0] for event in events] == ["resolve", "execute"]
+    assert executor.page is second_page
+    assert resolver.page is second_page
 
 
 def test_native_ai_step_rejects_multi_action_instruction():
@@ -2461,6 +2564,29 @@ def test_smart_resolver_can_disable_selector_registry_by_env(
     assert resolver.registry is None
 
 
+def test_selector_matches_target_rejects_login_target_on_unrelated_link():
+    class FakeLocator:
+        @property
+        def first(self):
+            return self
+
+        def evaluate(self, script):
+            return {
+                "tag": "a",
+                "text": "Download app",
+                "href": "https://example.test/download",
+            }
+
+    class FakePage:
+        def locator(self, selector):
+            return FakeLocator()
+
+    assert (
+        selector_matches_target(FakePage(), "a.download-link", "login button", "click")
+        is False
+    )
+
+
 def test_smart_resolver_rejects_unresolved_internal_element_id_target():
     class FakePage:
         url = "https://example.test/"
@@ -2965,6 +3091,65 @@ def test_chat_completion_provider_records_token_usage(monkeypatch, tmp_path: Pat
     )
 
 
+def test_chat_completion_provider_extracts_valid_json_from_reasoning_content(
+    monkeypatch, tmp_path: Path
+):
+    tracker = TokenUsageTracker(tmp_path)
+    tracker.start_run(run_kind="pytest", metadata={"project": "demo"})
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "reasoning_content": (
+                                'ignore {"foo": 1} final '
+                                '{"cases":[{"name":"generated"}],'
+                                '"data":{"generated":{"mode":"smart","steps":[]}},'
+                                '"elements":{},"modules":{},"vars":{}}'
+                            ),
+                        }
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+
+    monkeypatch.setattr(
+        "src.ai_runtime.provider.requests.post", lambda *a, **k: FakeResponse()
+    )
+    monkeypatch.setattr(
+        "src.ai_runtime.provider.get_token_usage_tracker", lambda: tracker
+    )
+
+    provider = ChatCompletionProvider(
+        LLMSettings(
+            url="http://llm.test/chat/completions",
+            api_key="test-key",
+            model="deepseek-test",
+        )
+    )
+
+    payload = provider.complete_model(
+        [{"role": "user", "content": "generate"}],
+        GeneratedCasePayload,
+    )
+
+    assert payload.cases[0].name == "generated"
+    assert payload.data["generated"].mode == "smart"
+
+
 def test_chat_completion_provider_retries_transient_http_error(
     monkeypatch, tmp_path: Path
 ):
@@ -3126,15 +3311,38 @@ def test_generated_case_payload_contract_normalizes_defaults():
         }
     )
 
-    assert payload.data["test_generated"].mode == "strict"
+    assert payload.data["test_generated"].mode == "smart"
     assert payload.elements == {}
+
+
+def test_explicit_generation_spec_defaults_to_smart_without_description():
+    payload = _payload_from_explicit_spec(
+        {
+            "cases": [
+                {
+                    "name": "generated",
+                    "steps": [
+                        {"action": "click", "target": "提交按钮"},
+                        {
+                            "action": "assert_url_contains",
+                            "value": "/done",
+                        },
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert payload["cases"] == [{"name": "generated"}]
+    assert "description" not in payload["data"]["generated"]
+    assert payload["data"]["generated"]["mode"] == "smart"
 
 
 def test_generation_spec_scope_matches_project():
     _validate_spec_project_scope(
         project="demo",
         spec_path=Path("test_data/demo/generation/saucedemo_ai.yaml"),
-        spec={"project": "demo"},
+        spec={},
     )
 
     with pytest.raises(ValueError, match="test_data/crm/generation"):
@@ -3156,7 +3364,7 @@ def test_generation_spec_short_name_resolves_to_project_generation_dir(tmp_path:
     spec_dir = tmp_path / "test_data" / "demo" / "generation"
     spec_dir.mkdir(parents=True)
     spec_file = spec_dir / "saucedemo_ai.yaml"
-    spec_file.write_text("project: demo\ncases: []\n", encoding="utf-8")
+    spec_file.write_text("cases: []\n", encoding="utf-8")
 
     class Context:
         test_dir = tmp_path / "test_data" / "demo"
@@ -3399,7 +3607,7 @@ def test_generate_case_verifies_candidate_before_formal_persist(
     spec_file = test_dir / "generation" / "spec.yaml"
     spec_file.parent.mkdir(parents=True)
     spec_file.write_text(
-        "project: demo\ncases:\n  - name: generated\n    intent: check page\n",
+        "cases:\n  - name: generated\n    intent: check page\n",
         encoding="utf-8",
     )
     for dirname in ("cases", "data", "elements", "modules", "vars"):
@@ -3500,7 +3708,7 @@ def test_generate_case_does_not_persist_when_candidate_verify_fails(
     spec_file = test_dir / "generation" / "spec.yaml"
     spec_file.parent.mkdir(parents=True)
     spec_file.write_text(
-        "project: demo\ncases:\n  - name: generated\n    intent: check page\n",
+        "cases:\n  - name: generated\n    intent: check page\n",
         encoding="utf-8",
     )
     for dirname in ("cases", "data", "elements", "modules", "vars"):
@@ -4090,6 +4298,50 @@ def test_heuristic_selectors_prioritize_password_target():
     assert 'input[name*="password" i]' in selectors
 
 
+def test_semantic_selectors_rank_semantics_then_stable_concise_selector(monkeypatch):
+    class FakePage:
+        pass
+
+    candidates = [
+        {
+            "index": 0,
+            "tag": "button",
+            "selector": "main > section > div:nth-of-type(3) > button",
+            "text": "Login",
+            "visible": True,
+            "enabled": True,
+        },
+        {
+            "index": 1,
+            "tag": "button",
+            "selector": 'button[data-test="login"]',
+            "data_test": "login",
+            "text": "Login",
+            "visible": True,
+            "enabled": True,
+        },
+        {
+            "index": 2,
+            "tag": "a",
+            "selector": 'a[title="Download app"]',
+            "title": "Download app",
+            "text": "Download app",
+            "visible": True,
+            "enabled": True,
+        },
+    ]
+
+    monkeypatch.setattr(
+        "src.ai_runtime.playwright_selectors.collect_candidates",
+        lambda *args, **kwargs: candidates,
+    )
+
+    selectors = semantic_selectors(FakePage(), "login button", "click")
+
+    assert selectors[0] == 'button[data-test="login"]'
+    assert 'a[title="Download app"]' not in selectors
+
+
 def test_vision_find_result_contract_accepts_service_payload():
     result = VisionFindResult.model_validate(
         {
@@ -4381,6 +4633,9 @@ def test_smart_resolver_rejects_registry_semantic_mismatch(tmp_path: Path):
     )
 
     assert resolved.selector == "#password"
+    assert resolved.cache_action == "fill"
+    assert resolved.cache_target == "密码输入框"
+    assert resolved.cache_page_key == "https://www.saucedemo.com/"
     assert (
         registry.find(
             project="demo",
@@ -4388,8 +4643,8 @@ def test_smart_resolver_rejects_registry_semantic_mismatch(tmp_path: Path):
             page_key="https://www.saucedemo.com/",
             action="fill",
             target="密码输入框",
-        ).selector
-        == "#password"
+        )
+        is None
     )
 
 

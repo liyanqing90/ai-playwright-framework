@@ -144,6 +144,7 @@ class StepExecutor:
         try:
             self.start_time = datetime.now()
             self.step_has_error = False
+            self._sync_runtime_page_from_ui_helper()
 
             # 检查是否为流程控制步骤
             if "use_module" in step:
@@ -202,8 +203,16 @@ class StepExecutor:
                 step=step,
             )
             self._validate_step(action, selector, step)
+            action_before_page = self._active_page()
+            action_before_url = self._safe_page_url(action_before_page)
             self._execute_action(action, selector, value, step)
             self._wait_after_action_stable(action, step)
+            self._sync_runtime_page_from_ui_helper()
+            self._capture_action_outcome(
+                step,
+                before_page=action_before_page,
+                before_url=action_before_url,
+            )
             self._persist_resolved_selector_after_success(
                 element_key=element_key,
                 original_selector=raw_selector,
@@ -292,6 +301,47 @@ class StepExecutor:
             f"等待页面稳定: action={action} | timeout={timeout}ms | idle={idle_ms}ms"
         )
         wait_for_stable(timeout=timeout, idle_ms=idle_ms)
+
+    def _sync_runtime_page_from_ui_helper(self) -> None:
+        page = getattr(self.ui_helper, "page", None)
+        if page is None or page is self.page:
+            return
+        self.page = page
+        if self.smart_resolver is not None:
+            self.smart_resolver.page = page
+
+    def _active_page(self) -> Any:
+        return getattr(self.ui_helper, "page", None) or self.page
+
+    @staticmethod
+    def _safe_page_url(page: Any) -> str:
+        try:
+            return str(getattr(page, "url", "") or "")
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _page_key_from_url(url: str | None) -> str:
+        return str(url or "about:blank").split("?")[0]
+
+    def _capture_action_outcome(
+        self,
+        step: Dict[str, Any],
+        *,
+        before_page: Any,
+        before_url: str,
+    ) -> None:
+        after_page = self._active_page()
+        after_url = self._safe_page_url(after_page)
+        step["_action_before_url"] = before_url
+        step["_action_after_url"] = after_url
+        step["_action_before_page_key"] = self._page_key_from_url(before_url)
+        step["_action_after_page_key"] = self._page_key_from_url(after_url)
+        step["_action_page_changed"] = (
+            before_page is not None
+            and after_page is not None
+            and before_page is not after_page
+        )
 
     def _should_wait_after_action(self, action: str, step: Dict[str, Any]) -> bool:
         if action not in _STABILIZE_AFTER_ACTIONS:
@@ -385,6 +435,11 @@ class StepExecutor:
         step["_resolved_coordinate"] = resolved.coordinate
         step["_resolved_vision_method"] = resolved.vision_method
         step["_resolved_vision_reason"] = resolved.vision_reason
+        step["_resolved_registry_record_id"] = resolved.registry_record_id
+        step["_resolved_cache_action"] = resolved.cache_action
+        step["_resolved_cache_target"] = resolved.cache_target
+        step["_resolved_cache_page_key"] = resolved.cache_page_key
+        step["_resolved_cache_replace_active"] = resolved.cache_replace_active
         if element_key:
             step["_resolved_element_key"] = element_key
         if resolved.healed:
@@ -522,6 +577,18 @@ class StepExecutor:
         resolved_selector: str | None,
         step: Dict[str, Any],
     ) -> None:
+        cache_allowed, reason = self._verified_selector_cache_allowed(
+            step=step,
+            resolved_selector=resolved_selector,
+        )
+        if not cache_allowed:
+            if self._has_resolved_selector_cache_work(step):
+                logger.info(f"selector cache skipped after action: {reason}")
+            return
+        self._persist_verified_registry_selector(
+            resolved_selector=resolved_selector,
+            step=step,
+        )
         self._persist_healed_selector(
             element_key=element_key,
             original_selector=original_selector,
@@ -529,6 +596,73 @@ class StepExecutor:
             healing_attempted=bool(step.get("_resolved_healing_attempted")),
             step=step,
         )
+
+    @staticmethod
+    def _has_resolved_selector_cache_work(step: Dict[str, Any]) -> bool:
+        return bool(
+            step.get("_resolved_registry_record_id")
+            or step.get("_resolved_cache_action")
+            or step.get("_resolved_healing_attempted")
+        )
+
+    def _verified_selector_cache_allowed(
+        self,
+        *,
+        step: Dict[str, Any],
+        resolved_selector: str | None,
+    ) -> tuple[bool, str]:
+        if not resolved_selector:
+            return False, "empty selector"
+        if step.get("_resolved_coordinate"):
+            return False, "coordinate fallback has no selector"
+
+        before_key = step.get("_action_before_page_key")
+        after_key = step.get("_action_after_page_key")
+        cache_key = step.get("_resolved_cache_page_key")
+        if before_key and cache_key and before_key != cache_key:
+            return (
+                False,
+                f"resolved page changed before action: resolved={cache_key} before={before_key}",
+            )
+        if before_key and after_key and before_key != after_key:
+            return (
+                False,
+                f"action navigated before cache verification: before={before_key} after={after_key}",
+            )
+        if step.get("_action_page_changed"):
+            return False, "action switched page before cache verification"
+        return True, "verified"
+
+    def _persist_verified_registry_selector(
+        self,
+        *,
+        resolved_selector: str | None,
+        step: Dict[str, Any],
+    ) -> None:
+        resolver = self.smart_resolver
+        if resolver is None:
+            return
+        try:
+            resolver.record_verified_selector(
+                action=step.get("_resolved_cache_action"),
+                target=step.get("_resolved_cache_target"),
+                selector=resolved_selector,
+                source=step.get("_resolved_selector_source"),
+                confidence=step.get("_resolved_confidence"),
+                registry_record_id=step.get("_resolved_registry_record_id"),
+                page_key=step.get("_resolved_cache_page_key"),
+                prompt_version=step.get("_resolved_prompt_version"),
+                schema_version=step.get("_resolved_schema_version"),
+                model=step.get("_resolved_model"),
+                candidate_hash=step.get("_resolved_candidate_hash"),
+                candidate_count=step.get("_resolved_candidate_count"),
+                replace_active=bool(step.get("_resolved_cache_replace_active")),
+            )
+        except Exception as exc:
+            logger.exception(
+                "selector registry persist failed after verified action: "
+                f"selector={resolved_selector} | error={exc}"
+            )
 
     def _get_element_store(self) -> ElementDefinitionStore:
         if self.element_store is None:
@@ -591,6 +725,7 @@ class StepExecutor:
         self._validate_step(action, selector, compiled_step)
         self._execute_action(action, selector, value, compiled_step)
         self._wait_after_action_stable(action, compiled_step)
+        self._sync_runtime_page_from_ui_helper()
 
     @staticmethod
     def _compile_ai_step(operation, *, timeout: int) -> Dict[str, Any] | None:
@@ -628,6 +763,7 @@ class StepExecutor:
         raise ValueError(f"AI步骤返回了不支持的动作: {operation.action}")
 
     def _get_smart_resolver(self) -> SmartResolver:
+        self._sync_runtime_page_from_ui_helper()
         if self.smart_resolver is None:
             self.smart_resolver = SmartResolver(self.page)
         return self.smart_resolver
@@ -678,6 +814,8 @@ class StepExecutor:
             ("coordinate", "_resolved_coordinate"),
             ("vision_method", "_resolved_vision_method"),
             ("vision_reason", "_resolved_vision_reason"),
+            ("registry_record_id", "_resolved_registry_record_id"),
+            ("cache_page_key", "_resolved_cache_page_key"),
             ("persist_scheduled", "_resolved_persist_scheduled"),
             ("persisted_element_file", "_resolved_persisted_element_file"),
         ]

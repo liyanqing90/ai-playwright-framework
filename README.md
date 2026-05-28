@@ -330,24 +330,21 @@ poetry run gen -p demo saucedemo_ai --no-verify
 
 生成规则：
 
-1. 命令中的 `-p demo` 决定读取 `test_data/demo/generation/saucedemo_ai.yaml`。
+1. 命令中的 `-p demo` 和规格相对路径决定项目，规格文件不需要写 `project`。
 2. 输出文件名默认和规格名一致，并默认覆盖对应生成文件。
-3. 规格可以是“步骤式”或“意图式”，都不在描述里硬塞“必须复用某元素/某组件”。
-4. 复用 `elements/modules/vars` 是系统提示词、项目上下文和 Harness 的职责。
-5. 入口 URL 遵循就近原则：优先读取自然语言 `steps` 或 `description` 中的 URL；没有则复用已有 `modules` 里的 `goto/open/navigate`；再没有才使用项目环境配置的 `base_url`。
-6. 生成完成后会写入 `cases/`、`data/`，必要时写入 `elements/`、`modules/`、`vars/`。
+3. `description` 只是可选说明，不是必填输入；`mode` 省略时默认按 `smart` 生成。
+4. 规格可以是“步骤式”或“意图式”，都不在描述里硬塞“必须复用某元素/某组件”。
+5. 复用 `elements/modules/vars` 是系统提示词、项目上下文和 Harness 的职责。
+6. 入口 URL 遵循就近原则：优先读取自然语言 `steps` 或 `description` 中的 URL；没有则复用已有 `modules` 里的 `goto/open/navigate`；再没有才使用项目环境配置的 `base_url`。
+7. 生成完成后会写入 `cases/`、`data/`，必要时写入 `elements/`、`modules/`、`vars/`。
 
 当前支持两种生成规格模式。
 
 步骤式规格适合业务流程已经明确、希望模型严格按步骤生成：
 
 ```yaml
-project: demo
-description: "步骤式规格：基于当前 demo 项目生成 Saucedemo 标准用户完整购物车流程用例"
-mode: smart
 cases:
   - name: saucedemo_standard_user_cart_logout_flow
-    description: "标准用户完成登录、添加Backpack、查看购物车并退出登录"
     steps:
       - "打开 https://www.saucedemo.com/ 登录页"
       - "使用标准用户登录"
@@ -374,9 +371,6 @@ cases:
 意图式规格适合只描述业务目标，让模型根据项目上下文自行拆分步骤并补齐断言：
 
 ```yaml
-project: demo
-description: "意图式规格：让AI基于业务目标自行拆分 Saucedemo 标准用户完整购物车流程"
-mode: smart
 cases:
   - name: saucedemo_standard_user_cart_logout_ai_generated
     intent: "打开 https://www.saucedemo.com/，标准用户登录 Saucedemo 后，添加指定商品到购物车，进入购物车确认商品和数量，然后从左侧菜单退出登录。"
