@@ -1,5 +1,7 @@
 from collections import defaultdict
 from pathlib import Path
+import re
+import sys
 from typing import Dict, List, Tuple
 
 from utils.logger import logger
@@ -45,28 +47,19 @@ def check_cases_duplicates(cases_dir: Path) -> Dict[str, List[Tuple[Path, int]]]
     duplicates = defaultdict(list)
     yaml_handler = YamlHandler()
 
-    for yaml_file in cases_dir.glob("**/*.yaml"):
+    for yaml_file in sorted(cases_dir.glob("**/*.yaml")):
         content = yaml_handler.load_yaml(yaml_file)
         with open(yaml_file, "r", encoding="utf-8") as f:
             file_content = f.read()
 
         if isinstance(content, dict) and "test_cases" in content:
-            # 记录每个用例名在当前文件中出现的所有行号
             name_lines = defaultdict(list)
             for i, line in enumerate(file_content.splitlines(), 1):
-                if "name:" in line:
-                    for case in content["test_cases"]:
-                        if "name" in case:
-                            case_name = case["name"]
-                            # 使用更灵活的匹配，确保匹配到 "name: xxx" 这种格式
-                            # 确保匹配包含完整用例名，避免匹配到子字符串
-                            pattern = f"name: {case_name}"
-                            if pattern in line and (
-                                line.strip() == pattern
-                                or line.strip().startswith(pattern + " ")
-                                or line.strip().endswith(pattern)
-                            ):
-                                name_lines[case_name].append((yaml_file, i))
+                if line.lstrip().startswith("#"):
+                    continue
+                match = re.search(r"\bname:\s*['\"]?([^#'\"\s]+)", line)
+                if match:
+                    name_lines[match.group(1)].append((yaml_file, i))
 
             # 找出当前文件中的重复用例名
             for name, locations in name_lines.items():
@@ -86,7 +79,7 @@ def check_data_duplicates(data_dir: Path) -> Dict[str, List[Tuple[Path, int]]]:
     duplicates = defaultdict(list)
     yaml_handler = YamlHandler()
 
-    for yaml_file in data_dir.glob("**/*.yaml"):
+    for yaml_file in sorted(data_dir.glob("**/*.yaml")):
         content = yaml_handler.load_yaml(yaml_file)
         with open(yaml_file, "r", encoding="utf-8") as f:
             file_content = f.read()
@@ -119,7 +112,7 @@ def check_elements_duplicates(elements_dir: Path) -> Dict[str, List[Tuple[Path, 
     element_names = defaultdict(list)
     yaml_handler = YamlHandler()
 
-    for yaml_file in elements_dir.glob("**/*.yaml"):
+    for yaml_file in sorted(elements_dir.glob("**/*.yaml")):
         content = yaml_handler.load_yaml(yaml_file)
         with open(yaml_file, "r", encoding="utf-8") as f:
             file_content = f.read()
@@ -153,7 +146,7 @@ def check_project_duplicates(project_dir: Path) -> bool:
         if case_duplicates:
             has_duplicates = True
             project_has_duplicates = True
-            print(f"\n❌ {project_name} 项目中发现重复的用例名称：")
+            print(f"\n[ERROR] {project_name} 项目中发现重复的用例名称：")
             logger.info(f"\n{project_name} 项目中发现重复的用例名称：")
             for name, locations in case_duplicates.items():
                 print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
@@ -166,7 +159,7 @@ def check_project_duplicates(project_dir: Path) -> bool:
         if data_duplicates:
             has_duplicates = True
             project_has_duplicates = True
-            print(f"\n❌ {project_name} 项目中发现重复的测试数据名称：")
+            print(f"\n[ERROR] {project_name} 项目中发现重复的测试数据名称：")
             logger.info(f"\n{project_name} 项目中发现重复的测试数据名称：")
             for name, locations in data_duplicates.items():
                 print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
@@ -179,7 +172,7 @@ def check_project_duplicates(project_dir: Path) -> bool:
         if element_duplicates:
             has_duplicates = True
             project_has_duplicates = True
-            print(f"\n❌ {project_name} 项目中发现重复的元素名称：")
+            print(f"\n[ERROR] {project_name} 项目中发现重复的元素名称：")
             logger.info(f"\n{project_name} 项目中发现重复的元素名称：")
             for name, locations in element_duplicates.items():
                 print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
@@ -209,9 +202,11 @@ def main():
     print(f"共检查了 {project_count} 个项目")
 
     if not has_any_duplicates:
-        print("✅ 所有项目中均未发现重复项")
+        print("[OK] 所有项目中均未发现重复项")
         logger.info("\n所有项目中均未发现重复项")
+        return 0
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

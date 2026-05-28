@@ -36,7 +36,7 @@ elements:
   配置重置: //button[@class='ant-btn']
 
   平安渠道: //div[contains(text(),'平安渠道')]
-  详情: //span[contains(text(),'详情')]
+  审批详情: //span[contains(text(),'详情')]
   详情位置: //th[contains(text(),'平安渠道')]
   详情权益类型: //td[contains(text(),'购车礼金')]
   详情活动名称: //td[contains(text(),'UI脚本专用001')]

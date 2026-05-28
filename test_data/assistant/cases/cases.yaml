@@ -21,7 +21,6 @@ test_cases:
   - name: test_hui_fu_lv
   - name: test_si_xin_hui_hua
   - name: test_liu_zi_zhuang_tai
-  - name: test_shi_fou_liu_zi
   - name: test_hui_fu_zhuang_tai
   - name: test_qi_zhi_shi_jian
   - name: test_chong_zhi

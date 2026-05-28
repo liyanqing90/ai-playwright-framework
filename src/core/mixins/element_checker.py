@@ -7,7 +7,7 @@ from utils.logger import logger
 
 class ElementCheckerMixin:
     """元素检查混入类"""
-    
+
     def check_element_exists(self, selector: str) -> bool:
         """检查元素是否存在"""
         try:

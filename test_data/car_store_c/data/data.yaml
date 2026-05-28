@@ -91,6 +91,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: price_8
         timeout: 15000
@@ -108,6 +109,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: price_15
         timeout: 15000
@@ -127,6 +129,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: level_sedan
         timeout: 15000
@@ -144,6 +147,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: level_suv
         timeout: 15000
@@ -160,6 +164,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: level_mpv
         timeout: 15000
@@ -178,6 +183,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: type_gasoline
         timeout: 15000
@@ -195,6 +201,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: type_electric
         timeout: 15000
@@ -211,6 +218,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: type_phev
         timeout: 15000
@@ -227,6 +235,7 @@ test_data:
       - action: navigate
         value: "/?cityid=${city_id}"
       - action: wait
+      - use_module: close_home_popup
       - action: click
         selector: type_erev
         timeout: 15000
@@ -320,3 +329,161 @@ test_data:
 
       - action: assert_exists
         selector: mall_home
+# ==================== 鸿蒙智行品牌旗舰店测试 ====================
+  test_hongmeng_auto_flagship_store:
+    description: "鸿蒙智行品牌旗舰店"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: wait_for_element_clickable
+        selector: more_brand
+        timeout: 3000
+
+#      - action: click
+#        selector: more_brand
+#        timeout: 3000
+#
+#      - action: assert_url_contains
+#        value: "/series-list"
+#
+#      - action: enter_frame
+#        selector: brand_list_iframe
+#        timeout: 3000
+#
+
+#      - action: click
+#        selector: index_bar_h_text
+#        timeout: 3000
+#
+      - action: click
+        selector: aito_brand_entry_iframe
+        timeout: 3000
+
+
+      - action: assert_text_contains
+        selector: hongmeng_flagship_store_title_text
+        value: "鸿蒙智行旗舰店"
+        timeout: 3000
+
+
+      - action: click
+        selector: price_25
+        timeout: 3000
+
+
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: price_30
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: type_gasoline1
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: type_electric1
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: hongmeng_flagship_store_img_container
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: hongmeng_flagship_store_title_text
+        value: "鸿蒙智行旗舰店"
+        timeout: 3000
+
+      - action: assert_url_contains
+        value: "/flagship-store"
+        timeout: 3000
+
+      - action: click
+        selector: buy_car_text
+        timeout: 3000
+
+      - action: click
+        selector: type_gasoline1
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+      - action: click
+        selector: type_electric1
+        timeout: 3000
+
+      - action: assert_text_contains
+        selector: wenjie_m7_title_text
+        value: "问界M"
+        timeout: 3000
+
+
+
+
+
+
+  test_mall_self_operated:
+    description: "验证之家自营店"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id}"
+      - action: assert_text_contains
+        selector: header_title_text_container
+        value: "下单送车上门"
+      - action: assert_exists
+        selector: first_discount_price
+      - action: click
+        selector: header_title_text_container
+      - action: wait
+        value: 1
+      - action: assert_exists
+        selector: tag_logo_img
+
+  test_mall_brand_service:
+    description: "验证认证店"
+    steps:
+      - action: navigate
+        value: "/?cityid=${city_id_hd}"
+      - action: assert_text_contains
+        selector: shop_banner_footer_div
+        value: "车源 低价 保障"
+      - action: click
+        selector: shop_banner_footer_div
+      - action: wait
+        value: 1
+      - action: assert_exists
+        selector: tag_logo_img
+      - action: assert_text_contains
+        selector: store_info_title_div
+        value: "邯郸钇帆汽车卖场店"
+      - action: assert_text_contains
+        selector: store_address_span
+        value: "河北省邯郸市丛台区邯临公路与和谐大街交叉口西500米时代汽车广场B馆"
+

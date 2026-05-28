@@ -1,4 +1,4 @@
-test_data:
+﻿test_data:
   test_lead_mange_search_lead:
     description: "线索&工单管理-线索管理-线索id搜索"
     steps:
@@ -57,9 +57,9 @@ test_data:
       - action: click
         selector: 线索管理筛选查询按钮
       - action: expect_popup
-        rel_action : click
+        real_action: click
         selector: 线索管理查看详情
-        variable : pop_index
+        variable_name: pop_index
       - action: wait
         value: 5
       - action: assert_text
@@ -556,9 +556,9 @@ test_data:
       - action: click
         selector: 线索管理筛选查询按钮
       - action: expect_popup
-        rel_action : click
+        real_action: click
         selector: 线索管理列表线索id
-        variable : pop_index
+        variable_name: pop_index
       - action: wait
         value: 2
       - action: assert_text
@@ -639,9 +639,9 @@ test_data:
       - action: click
         selector: 线索管理筛选查询按钮
       - action: expect_popup
-        rel_action : click
+        real_action: click
         selector: 线索管理列表线索id
-        variable : pop_index
+        variable_name: pop_index
       - action: wait
         value: 2
       - action: assert_text
@@ -698,9 +698,9 @@ test_data:
       - action: click
         selector: 线索管理筛选查询按钮
       - action: expect_popup
-        rel_action : click
+        real_action: click
         selector: 线索管理列表线索id
-        variable : pop_index
+        variable_name: pop_index
       - action: wait
         value: 2
       - action: assert_text
@@ -756,9 +756,9 @@ test_data:
       - action: click
         selector: 线索管理筛选查询按钮
       - action: expect_popup
-        rel_action : click
+        real_action: click
         selector: 线索管理列表线索id
-        variable : pop_index
+        variable_name: pop_index
       - action: wait
         value: 2
       - action: assert_text
@@ -817,9 +817,9 @@ test_data:
       - action: click
         selector: 线索管理筛选查询按钮
       - action: expect_popup
-        rel_action : click
+        real_action: click
         selector: 线索管理列表线索id
-        variable : pop_index
+        variable_name: pop_index
       - action: wait
         value: 2
       - action: click
@@ -905,9 +905,9 @@ test_data:
       - action: click
         selector: 线索管理筛选查询按钮
       - action: expect_popup
-        rel_action : click
+        real_action: click
         selector: 线索管理列表线索id
-        variable : pop_index
+        variable_name: pop_index
       - action: wait
         value: 2
       - action: click

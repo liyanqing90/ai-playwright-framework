@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, Any
 
@@ -12,7 +13,7 @@ def get_yaml_files(directory: str) -> list[Any] | None:
     if not dir_path.exists() or not dir_path.is_dir():
         logger.error(f"指定的路径 {directory} 不是一个有效的目录")
         return None
-    yaml_files = [file for file in list(dir_path.glob("**/*.yaml"))]
+    yaml_files = sorted(dir_path.glob("**/*.yaml"), key=lambda file: file.as_posix())
     return yaml_files
 
 
@@ -21,9 +22,10 @@ class YamlHandler:
         self.yaml = YAML(typ="safe")
         # 禁用日期自动解析，避免 2025-12-09 被解析为 datetime.date 对象
         # 将 timestamp 标签映射到字符串构造器，这样所有日期都会保持为字符串类型
-        if 'tag:yaml.org,2002:timestamp' in self.yaml.constructor.yaml_constructors:
-            self.yaml.constructor.yaml_constructors['tag:yaml.org,2002:timestamp'] = \
-                self.yaml.constructor.yaml_constructors['tag:yaml.org,2002:str']
+        if "tag:yaml.org,2002:timestamp" in self.yaml.constructor.yaml_constructors:
+            self.yaml.constructor.yaml_constructors["tag:yaml.org,2002:timestamp"] = (
+                self.yaml.constructor.yaml_constructors["tag:yaml.org,2002:str"]
+            )
 
     def load_yaml(self, file_path: Path) -> Dict[str, Any]:
         if not os.path.exists(file_path):
@@ -40,23 +42,30 @@ class YamlHandler:
     def merge_yaml_files(self, dir_path: Path):
         yaml_datas = self.load_yaml_dir(dir_path)
         result = {}
-        for key in set(k for d in yaml_datas for k in d.keys()):
-            value = None
-            for yaml_data in yaml_datas:
-                if not isinstance(yaml_data, dict):
-                    raise ValueError(f"YAML文件内容不是字典格式")
-                if key in yaml_data:
-                    temp = yaml_data[key]
-                    if not value:
-                        value = temp
-                    else:
-                        if isinstance(temp, dict):
-                            value.update(temp)
-                        else:
-                            value += temp
-            result[key] = value
+        for yaml_data in yaml_datas:
+            if not isinstance(yaml_data, dict):
+                raise ValueError("YAML文件内容不是字典格式")
+            for key, value in yaml_data.items():
+                if key not in result:
+                    result[key] = deepcopy(value)
+                    continue
+                result[key] = self._merge_value(result[key], value, key)
 
         return result
+
+    @staticmethod
+    def _merge_value(current, incoming, key: str):
+        if isinstance(current, dict) and isinstance(incoming, dict):
+            merged = deepcopy(current)
+            merged.update(deepcopy(incoming))
+            return merged
+        if isinstance(current, list) and isinstance(incoming, list):
+            return deepcopy(current) + deepcopy(incoming)
+        if type(current) is not type(incoming):
+            raise TypeError(
+                f"YAML键 {key} 的类型不一致: {type(current).__name__} != {type(incoming).__name__}"
+            )
+        return deepcopy(incoming)
 
     def load_yaml_dir(self, file_path):
         yaml_files = get_yaml_files(file_path)

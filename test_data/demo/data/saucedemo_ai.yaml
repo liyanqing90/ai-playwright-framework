@@ -1,0 +1,34 @@
+test_data:
+  test_saucedemo_backpack_cart:
+    description: 标准用户添加单个商品到购物车
+    mode: smart
+    steps:
+      - use_module: saucedemo_login
+        params:
+          username: ${standard_username}
+      - action: click
+        selector: add_to_cart_backpack_btn
+      - action: assert_text
+        selector: shopping_cart_badge
+        value: '1'
+  test_saucedemo_locked_user_error:
+    description: 锁定用户登录失败提示
+    mode: smart
+    steps:
+      - use_module: saucedemo_login
+        params:
+          username: ${locked_username}
+      - action: assert_text_contains
+        selector: login_error_message
+        value: locked out
+  test_saucedemo_open_cart:
+    description: 标准用户打开购物车页面
+    mode: smart
+    steps:
+      - use_module: saucedemo_login
+        params:
+          username: ${standard_username}
+      - action: click
+        selector: shopping_cart_link
+      - action: assert_visible
+        selector: cart_title

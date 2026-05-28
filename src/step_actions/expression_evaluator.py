@@ -6,6 +6,7 @@ import math
 from typing import Any
 
 from src.step_actions.flow_control import preprocess_expression
+from src.step_actions.safe_expression import safe_eval_expression
 from utils.logger import logger
 
 
@@ -59,17 +60,10 @@ def evaluate_math_expression(expression: str, variable_manager) -> Any:
             "bool": bool,
         }
 
-        # 设置安全的执行环境
-        safe_globals = {
-            "__builtins__": {},  # 清空内置函数
-            **safe_math_functions,  # 添加安全的数学函数
-        }
-
         # 预处理表达式
         processed_expr = preprocess_expression(expr_content)
 
-        # 执行表达式
-        result = eval(processed_expr, safe_globals)
+        result = safe_eval_expression(processed_expr, safe_math_functions)
         logger.debug(f"计算表达式: {expr_content} = {result}")
         return result
     except Exception as e:

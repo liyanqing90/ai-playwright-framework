@@ -4,6 +4,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from pydantic_settings import SettingsConfigDict
 from pydantic_settings import BaseSettings
 
 from src.utils import singleton
@@ -51,16 +52,30 @@ class Config(BaseSettings):
     browser_config: Optional[dict] = None
     test_file: str = ""
 
-    class Config:
-        case_sensitive = False
+    model_config = SettingsConfigDict(case_sensitive=False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._update_config_based_on_env_and_project()
         self.validate_config()
+        self._update_config_based_on_env_and_project()
+
+    def reconfigure(self, **kwargs):
+        env_or_project_changed = "env" in kwargs or "project" in kwargs
+        if env_or_project_changed and "base_url" not in kwargs:
+            self.base_url = ""
+        if env_or_project_changed and "test_dir" not in kwargs:
+            self.test_dir = ""
+        for key, value in kwargs.items():
+            if value is None or not hasattr(self, key):
+                continue
+            setattr(self, key, value)
+        self.validate_config()
+        self._update_config_based_on_env_and_project()
 
     def validate_config(self):
         """验证配置是否有效"""
+        self.browser = self._coerce_enum(self.browser, Browser, "browser")
+        self.env = self._coerce_enum(self.env, Environment, "env")
         if not isinstance(self.project, Project):
             try:
                 self.project = Project(self.project.lower())  # 转换为小写再验证
@@ -70,8 +85,22 @@ class Config(BaseSettings):
                     f"Invalid project: {self.project}. Valid projects are: {valid_projects}"
                 )
 
+    @staticmethod
+    def _coerce_enum(value, enum_type, field_name: str):
+        if isinstance(value, enum_type):
+            return value
+        try:
+            return enum_type(str(value).lower())
+        except ValueError:
+            valid_values = ", ".join([item.value for item in enum_type])
+            raise ValueError(
+                f"Invalid {field_name}: {value}. Valid values are: {valid_values}"
+            )
+
     def _update_config_based_on_env_and_project(self):
         """根据环境和项目更新配置"""
+        explicit_base_url = self.base_url or os.environ.get("BASE_URL", "")
+        explicit_test_dir = self.test_dir or os.environ.get("TEST_DIR", "")
         try:
             env_config = YamlHandler().load_yaml(Path("config/env_config.yaml"))
             if not env_config or not isinstance(env_config, dict):
@@ -88,22 +117,19 @@ class Config(BaseSettings):
 
             # 获取环境URL
             environments = project_config.get("environments", {})
-            self.base_url = environments.get(self.env.value)
+            self.base_url = explicit_base_url or environments.get(self.env.value)
             if not self.base_url:
                 raise ValueError(
                     f"Environment {self.env.value} not found for project {self.project.value}"
                 )
 
             # 设置测试数据目录
-            self.test_dir = project_config.get("test_dir")
+            self.test_dir = explicit_test_dir or project_config.get("test_dir")
             self.browser_config = project_config.get(
                 "browser_config", {"viewport": {"width": 1920, "height": 1080}}
             )
 
-            # 设置环境变量
-            os.environ["BASE_URL"] = self.base_url
-            os.environ["TEST_DIR"] = str(self.test_dir)
-            # os.environ['BROWSER_CONFIG'] = str(browser_config)
+            self._publish_environment()
 
         except Exception as e:
             logger.error(f"Failed to load config: {str(e)}")
@@ -111,15 +137,23 @@ class Config(BaseSettings):
 
     def configure_environment(self):
         """配置运行环境"""
+        self._publish_environment()
+
+    def _publish_environment(self):
         os.environ["PWHEADED"] = "1" if self.headed else "0"
         os.environ["BROWSER"] = self.browser.value
         os.environ["TEST_ENV"] = self.env.value
         os.environ["TEST_PROJECT"] = self.project.value
+        os.environ["BASE_URL"] = self.base_url
+        os.environ["TEST_DIR"] = str(self.test_dir)
 
 
 class BaseInfo:
     def __init__(self):
-        self.test_dir = os.environ["TEST_DIR"]
+        config = Config()
+        if not os.environ.get("TEST_DIR"):
+            config.configure_environment()
+        self.test_dir = os.environ.get("TEST_DIR", config.test_dir)
         self.base_dir = Path.cwd()
-        self.env = os.environ["TEST_ENV"]
-        self.project = os.environ["TEST_PROJECT"]
+        self.env = os.environ.get("TEST_ENV", config.env.value)
+        self.project = os.environ.get("TEST_PROJECT", config.project.value)

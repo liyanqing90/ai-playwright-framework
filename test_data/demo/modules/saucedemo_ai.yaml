@@ -1,0 +1,11 @@
+saucedemo_login:
+  - action: goto
+    value: https://www.saucedemo.com/
+  - action: fill
+    selector: sauce_username_input
+    value: ${username}
+  - action: fill
+    selector: sauce_password_input
+    value: ${common_password}
+  - action: click
+    selector: sauce_login_btn

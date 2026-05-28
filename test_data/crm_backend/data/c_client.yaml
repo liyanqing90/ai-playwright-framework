@@ -1,4 +1,4 @@
-test_data:
+﻿test_data:
   test_car_series_search_band:
     - description: "搜索大众"
       steps:
@@ -70,7 +70,7 @@ test_data:
           selector: order_品牌
           value: 大众
         - action: click
-          selector: 重置
+          selector: C端重置
         - action: assert_text
           selector: order_品牌
           value: 请选择品牌
@@ -189,7 +189,7 @@ test_data:
         - action: click
           selector: recommend_状态_启用
         - action: click
-          selector: 重置
+          selector: C端重置
         - action: assert_value
           selector: recommend_组合名称
           value: ""
@@ -357,7 +357,7 @@ test_data:
         - action: click
           selector: resource_状态_启用
         - action: click
-          selector: 重置
+          selector: C端重置
         - action: assert_value
           selector: resource_标题
           value: ""
@@ -521,7 +521,7 @@ test_data:
         - action: click
           selector: benefits_城市_北京
         - action: click
-          selector: 重置
+          selector: C端重置
         - action: assert_text
           selector: benefits_位置
           value: "请选择位置"
@@ -663,7 +663,7 @@ test_data:
         - action: click
           selector: city_rights_城市_北京
         - action: click
-          selector: 重置
+          selector: C端重置
         - action: assert_text
           selector: city_rights_标题
           value: ""
@@ -889,7 +889,7 @@ test_data:
         - action: click
           selector: live_启用状态_启用
         - action: click
-          selector: 重置
+          selector: C端重置
         - action: assert_value
           selector: live_标题
           value: ""
@@ -990,7 +990,7 @@ test_data:
         - action: click
           selector: car_config_启用状态_开启
         - action: click
-          selector: 重置
+          selector: C端重置
         - action: assert_text
           selector: car_config_位置
           value: "请选择位置"
@@ -1192,7 +1192,7 @@ test_data:
         - action: click
           selector: operation_位置_选项
         - action: click
-          selector: 重置
+          selector: C端重置
         - action: assert_text
           selector: operation_位置
           value: "请选择位置"

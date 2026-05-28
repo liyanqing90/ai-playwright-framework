@@ -3,6 +3,7 @@ import json
 import os
 import re
 import time
+from urllib.parse import unquote
 from typing import Callable, Literal, Optional, List, Any, Dict
 
 import allure
@@ -109,17 +110,15 @@ def check_and_screenshot(description="Assertion"):
                         import re
 
                         patterns = [
-                                    r"实际结果:\s*'([^']*)'",  # 匹配单引号包围的实际值
-                                    r"实际结果:\s*([^\n,]*)",  # 匹配到换行或逗号为止的实际值
-                                    r"实际\s*'([^']*)'",  # 匹配 "实际 'value'" 格式
-                                    r"actual\s*'([^']*)'",  # 匹配英文格式
-                                    r"received\s*'([^']*)'",  # 匹配 received 格式
+                            r"实际结果:\s*'([^']*)'",  # 匹配单引号包围的实际值
+                            r"实际结果:\s*([^\n,]*)",  # 匹配到换行或逗号为止的实际值
+                            r"实际\s*'([^']*)'",  # 匹配 "实际 'value'" 格式
+                            r"actual\s*'([^']*)'",  # 匹配英文格式
+                            r"received\s*'([^']*)'",  # 匹配 received 格式
                         ]
 
                         for pattern in patterns:
-                            actual_match = re.search(
-                                pattern, error_str, re.IGNORECASE
-                            )
+                            actual_match = re.search(pattern, error_str, re.IGNORECASE)
                             if actual_match:
                                 actual_text = actual_match.group(1)
                                 break
@@ -157,18 +156,6 @@ def check_and_screenshot(description="Assertion"):
                     logger.error(e)
                     setattr(e, "_logged", True)
 
-                    from src.step_actions.step_executor import StepExecutor
-                    import gc
-
-                    # 搜索内存中的所有 StepExecutor 实例
-                    for obj in gc.get_objects():
-                        if isinstance(obj, StepExecutor):
-                            obj.step_has_error = True
-                            obj.has_error = True
-                            setattr(obj, "_last_assertion_error", str(e))
-                            break
-
-                # 返回空值，不抛出异常，允许继续执行
                 raise AssertionError(e)
 
             # except Exception as e:
@@ -184,6 +171,54 @@ def check_and_screenshot(description="Assertion"):
 
 def base_url():
     return os.environ.get("BASE_URL")
+
+
+def _url_contains(actual: Any, expected: Any) -> bool:
+    actual_text = str(actual or "")
+    expected_text = str(expected or "")
+    if not actual_text or not expected_text:
+        return False
+    return expected_text in actual_text or expected_text in unquote(actual_text)
+
+
+def _page_context_pages(page: Any) -> list[Any]:
+    context = getattr(page, "context", None)
+    if context is None:
+        return []
+    try:
+        return list(getattr(context, "pages", []) or [])
+    except Exception:
+        return []
+
+
+def _target_blank_navigation_hint(page: Any, selector: Any) -> str | None:
+    if not selector or not hasattr(page, "locator"):
+        return None
+    try:
+        locator = page.locator(str(selector)).first
+        if callable(locator):
+            locator = locator()
+        url = locator.evaluate(
+            """(el) => {
+                const link = el.closest && el.closest('a[target="_blank"]');
+                if (link && link.href) return link.href;
+                const form = el.closest && el.closest('form[target="_blank"]');
+                if (!form) return null;
+                const action = form.action || window.location.href;
+                const method = String(form.method || 'get').toLowerCase();
+                if (method !== 'get') return null;
+                const target = new URL(action, window.location.href);
+                const data = new FormData(form);
+                for (const [key, value] of data.entries()) {
+                    if (typeof value === 'string') target.searchParams.set(key, value);
+                }
+                return String(target);
+            }"""
+        )
+        text = str(url or "").strip()
+        return text or None
+    except Exception:
+        return None
 
 
 class BasePage:
@@ -206,10 +241,9 @@ class BasePage:
     ):
         """统一的元素定位与等待方法"""
         try:
-            # 首先等待元素达到指定状态
-            self.page.wait_for_selector(selector, state=state, timeout=timeout)
-            # 然后返回定位器
-            return self.page.locator(selector)
+            locator = self.page.locator(selector)
+            locator.first.wait_for(state=state, timeout=timeout)
+            return locator
         except Exception as e:
             raise Exception(f"定位或等待元素 {selector} 失败 (state={state}): {str(e)}")
 
@@ -225,7 +259,142 @@ class BasePage:
     @handle_page_error(description="点击元素")
     def click(self, selector: str):
         """点击元素"""
+        previous_pages = _page_context_pages(self.page)
+        new_page_hint = _target_blank_navigation_hint(self.page, selector)
         self._locator(selector).first.click(timeout=DEFAULT_TIMEOUT)
+        if previous_pages:
+            self._adopt_new_page_if_opened(
+                previous_pages,
+                wait_ms=500 if new_page_hint else 2000,
+            )
+        if new_page_hint and self.page in previous_pages:
+            self._open_new_page_from_hint(new_page_hint)
+
+    def _adopt_new_page_if_opened(
+        self, previous_pages: list[Any], *, wait_ms: int = 0
+    ) -> bool:
+        import time
+
+        context = getattr(self.page, "context", None)
+        if context is None and previous_pages:
+            context = getattr(previous_pages[0], "context", None)
+        if context is None:
+            return False
+        deadline = time.monotonic() + max(wait_ms, 0) / 1000
+        while True:
+            current_pages = _page_context_pages(self.page)
+            new_pages = [page for page in current_pages if page not in previous_pages]
+            if new_pages:
+                new_page = new_pages[-1]
+                try:
+                    new_page.wait_for_load_state("domcontentloaded", timeout=5000)
+                except Exception:
+                    pass
+                self.page = new_page
+                self.pages = list(getattr(context, "pages", []) or [new_page])
+                logger.info(f"点击打开新标签页，已自动切换: {new_page.url}")
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+
+    def _open_new_page_from_hint(self, url: str) -> None:
+        context = getattr(self.page, "context", None)
+        if context is None or not hasattr(context, "new_page"):
+            return
+        new_page = context.new_page()
+        new_page.goto(url, wait_until="domcontentloaded")
+        try:
+            new_page.wait_for_load_state("domcontentloaded", timeout=5000)
+        except Exception:
+            pass
+        self.page = new_page
+        self.pages = list(getattr(context, "pages", []) or [new_page])
+        logger.info(f"按target=_blank语义打开并切换新标签页: {url}")
+
+    def wait_for_stable(
+        self,
+        timeout: Optional[int] = DEFAULT_TIMEOUT,
+        idle_ms: int = 500,
+    ) -> bool:
+        """Wait until the active page stops changing URL/title/DOM shape."""
+        timeout = int(timeout or DEFAULT_TIMEOUT)
+        idle_ms = max(int(idle_ms or 0), 0)
+        deadline = time.monotonic() + timeout / 1000
+
+        self._wait_for_load_state_best_effort("domcontentloaded", deadline)
+
+        last_signature = None
+        stable_since = None
+        while True:
+            now = time.monotonic()
+            signature = self._page_stability_signature()
+            if signature == last_signature:
+                if stable_since is None:
+                    stable_since = now
+                if (now - stable_since) * 1000 >= idle_ms:
+                    logger.debug(
+                        f"page stable wait completed: url={getattr(self.page, 'url', '')}"
+                    )
+                    return True
+            else:
+                last_signature = signature
+                stable_since = now
+
+            if now >= deadline:
+                raise TimeoutError(
+                    "page stable wait timed out: "
+                    f"timeout={timeout}ms | idle={idle_ms}ms | "
+                    f"url={getattr(self.page, 'url', '')}"
+                )
+            time.sleep(min(0.1, max(0.01, deadline - now)))
+
+    def _wait_for_load_state_best_effort(self, state: str, deadline: float) -> None:
+        if not hasattr(self.page, "wait_for_load_state"):
+            return
+        remaining_ms = max(int((deadline - time.monotonic()) * 1000), 1)
+        try:
+            self.page.wait_for_load_state(
+                state,
+                timeout=min(remaining_ms, 5000),
+            )
+        except Exception:
+            pass
+
+    def _page_stability_signature(self) -> tuple[Any, ...]:
+        page = self.page
+        url = getattr(page, "url", "")
+        title = ""
+        if hasattr(page, "title"):
+            try:
+                title = page.title()
+            except Exception:
+                title = ""
+
+        dom_state: Any = None
+        if hasattr(page, "evaluate"):
+            try:
+                dom_state = page.evaluate(
+                    """() => {
+                        const body = document.body;
+                        return {
+                            readyState: document.readyState,
+                            href: window.location.href,
+                            title: document.title,
+                            elementCount: document.getElementsByTagName('*').length,
+                            textLength: body ? body.innerText.length : 0,
+                        };
+                    }"""
+                )
+            except Exception:
+                dom_state = None
+
+        return (
+            url,
+            title,
+            len(_page_context_pages(page)),
+            json.dumps(dom_state, sort_keys=True, ensure_ascii=False),
+        )
 
     @handle_page_error(description="上传文件")
     def upload_file(self, selector: str, file_path: str):
@@ -264,7 +433,9 @@ class BasePage:
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
         assert (
             actual := self._locator(selector).first.inner_text()
-        ) == resolved_expected, f"文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
+        ) == resolved_expected, (
+            f"文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
+        )
 
     @allure.step("硬断言元素文本")
     def hard_assert_text(self, selector: str, expected: str):
@@ -275,7 +446,9 @@ class BasePage:
             )
             assert (
                 actual := self._locator(selector).first.inner_text()
-            ) == resolved_expected, f"文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
+            ) == resolved_expected, (
+                f"文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
+            )
         except AssertionError as e:
             # 截图
             if selector and hasattr(self.page, "locator"):
@@ -307,6 +480,23 @@ class BasePage:
             actual := self.page.title()
         ) == expected, f"页面标题断言失败: 期望结果: '{expected}', 实际结果: '{actual}'"
 
+    @check_and_screenshot("断言页面标题包含")
+    def assert_title_contains(self, expected: str):
+        """断言页面标题包含指定内容"""
+        resolved_expected = self.variable_manager.replace_variables_refactored(expected)
+        if hasattr(self.page, "wait_for_function"):
+            try:
+                self.page.wait_for_function(
+                    "(expected) => String(document.title || '').includes(expected)",
+                    str(resolved_expected),
+                    timeout=DEFAULT_TIMEOUT,
+                )
+            except Exception:
+                pass
+        assert (
+            actual := self.page.title()
+        ) and resolved_expected in actual, f"页面标题包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
+
     @check_and_screenshot("断言元素数量")
     def assert_element_count(self, selector: str, expected: int):
         """断言元素数量"""
@@ -326,15 +516,34 @@ class BasePage:
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
         assert (
             actual := self._locator(selector).first.inner_text()
-        ) and resolved_expected in actual, f"文本包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
+        ) and resolved_expected in actual, (
+            f"文本包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
+        )
 
     @check_and_screenshot("断言URL包含")
     def assert_url_contains(self, expected: str):
         """断言当前URL包含指定内容"""
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
-        assert (
-            actual := self.page.url
-        ) and resolved_expected in actual, f"URL包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
+        if hasattr(self.page, "wait_for_function"):
+            try:
+                self.page.wait_for_function(
+                    """(expected) => {
+                        const href = String(window.location.href || '');
+                        try {
+                            return href.includes(expected)
+                                || decodeURIComponent(href).includes(expected);
+                        } catch {
+                            return href.includes(expected);
+                        }
+                    }""",
+                    str(resolved_expected),
+                    timeout=DEFAULT_TIMEOUT,
+                )
+            except Exception:
+                pass
+        assert (actual := self.page.url) and _url_contains(
+            actual, resolved_expected
+        ), f"URL包含断言失败: 期望包含: '{resolved_expected}', 实际结果: '{actual}'"
 
     @check_and_screenshot("断言元素存在")
     def assert_exists(self, selector: str):
@@ -398,7 +607,9 @@ class BasePage:
         resolved_expected = self.variable_manager.replace_variables_refactored(expected)
         assert (
             actual := self._locator(selector).first.input_value()
-        ) == resolved_expected, f"元素值断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
+        ) == resolved_expected, (
+            f"元素值断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
+        )
 
     @check_and_screenshot("断言元素已选中")
     def assert_checked(self, selector: str):
@@ -609,7 +820,9 @@ class BasePage:
                         logger.error(f"等待新窗口打开超时（{timeout}ms）")
                         raise TimeoutError(f"等待新窗口打开超时（{timeout}ms）")
                     time.sleep(0.1)
-                logger.info(f"检测到新窗口打开，当前窗口数量: {len(self.page.context.pages)}")
+                logger.info(
+                    f"检测到新窗口打开，当前窗口数量: {len(self.page.context.pages)}"
+                )
 
             # 从 context 中动态获取所有打开的页面
             all_pages = self.page.context.pages
@@ -638,7 +851,9 @@ class BasePage:
         # 索引范围验证
         if value < 0 or value >= len(all_pages):
             logger.error(f"窗口索引超出范围: {value}, 可用窗口数量: {len(all_pages)}")
-            raise ValueError(f"无效的窗口索引: {value}，可用范围: 0-{len(all_pages) - 1}")
+            raise ValueError(
+                f"无效的窗口索引: {value}，可用范围: 0-{len(all_pages) - 1}"
+            )
 
         # 切换窗口
         self.page = all_pages[value]
@@ -742,14 +957,9 @@ class BasePage:
         timeout: Optional[int] = DEFAULT_TIMEOUT,
     ):
         """等待元素包含指定文本"""
-        start_time = time.time()
-        while time.time() - start_time < timeout / 1000:
-            locator = self._locator(selector, timeout=timeout)
-            actual_text = locator.inner_text()
-            if expected in actual_text:
-                return True
-            time.sleep(0.1)
-        raise TimeoutError(f"元素 {selector} 在 {timeout}ms 内未包含文本 '{expected}'")
+        locator = self.page.locator(selector).first
+        expect(locator).to_contain_text(expected, timeout=timeout)
+        return True
 
     @handle_page_error(description="获取所有匹配元素")
     def get_all_elements(self, selector: str) -> List[Any]:
@@ -765,22 +975,10 @@ class BasePage:
         timeout: Optional[int] = DEFAULT_TIMEOUT,
     ):
         """等待元素数量达到预期值"""
-        start_time = self.page.evaluate("() => Date.now()")
-        while True:
-            actual_count = self.get_element_count(selector)
-            if actual_count == expected_count:
-                return True
-
-            current_time = self.page.evaluate("() => Date.now()")
-            elapsed = (current_time - start_time) / 1000  # 转换为秒
-
-            if elapsed > timeout / 1000:
-                logger.error(
-                    f"等待元素 {selector} 数量为 {expected_count} 超时，当前数量为 {actual_count}"
-                )
-                raise TimeoutError(f"等待元素 {selector} 数量为 {expected_count} 超时")
-
-            self.page.wait_for_timeout(100)  # 等待100毫秒再检查
+        expect(self.page.locator(selector)).to_have_count(
+            expected_count, timeout=timeout
+        )
+        return True
 
     @handle_page_error(description="下载文件")
     def download_file(self, selector: str, save_path: Optional[str] = None) -> str:
@@ -1133,8 +1331,15 @@ class BasePage:
         #     "el => Array.from(el.selectedOptions).map(o => o.value)"
         # )
         assert (
-            actual := [option.get_attribute('value') for option in self.page.locator(selector).locator('option:checked').all()]
-        ) == resolved_values, f"元素值列表断言失败: 期望结果: '{resolved_values}', 实际结果: '{actual}'"
+            actual := [
+                option.get_attribute("value")
+                for option in self.page.locator(selector)
+                .locator("option:checked")
+                .all()
+            ]
+        ) == resolved_values, (
+            f"元素值列表断言失败: 期望结果: '{resolved_values}', 实际结果: '{actual}'"
+        )
         # allure.attach(
         #     f"断言成功: 元素 {selector} 的值\n期望: {resolved_values}\n实际: {actual_values}",
         #     name="断言结果",
@@ -1148,7 +1353,9 @@ class BasePage:
         # actual_text = self.page.locator(selector).inner_text()
         assert (
             actual := self._locator(selector).first.inner_text()
-        ) == resolved_expected, f"精确文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
+        ) == resolved_expected, (
+            f"精确文本断言失败: 期望结果: '{resolved_expected}', 实际结果: '{actual}'"
+        )
         # allure.attach(
         #     f"断言成功: 元素 {selector} 的精确文本\n期望: '{resolved_expected}'\n实际: '{actual_text}'",
         #     name="断言结果",
@@ -1159,9 +1366,9 @@ class BasePage:
     def assert_text_matches(self, selector: str, pattern: str):
         """断言元素文本匹配正则表达式"""
         # actual_text = self.get_text(selector)
-        assert (
-            actual := self._locator(selector).first.inner_text()
-        ) and re.match(pattern, actual), f"文本正则匹配断言失败: 期望匹配模式: '{pattern}', 实际结果: '{actual}'"
+        assert (actual := self._locator(selector).first.inner_text()) and re.match(
+            pattern, actual
+        ), f"文本正则匹配断言失败: 期望匹配模式: '{pattern}', 实际结果: '{actual}'"
         # allure.attach(
         #     f"断言成功: 元素 {selector} 的文本匹配正则\n正则模式: '{pattern}'\n实际文本: '{actual_text}'",
         #     name="断言结果",

@@ -7,4 +7,5 @@ stage:
   base_url: "https://mall.m.autohome.com.cn"
 prod:
   city_id: 110100
+  city_id_hd: 130400
   base_url: "https://mall.m.autohome.com.cn"

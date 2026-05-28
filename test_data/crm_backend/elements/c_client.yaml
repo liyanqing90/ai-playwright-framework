@@ -11,7 +11,7 @@ elements:
   资源位配置: //span[contains(text(),"资源位配置")]
 
   # 公共
-  重置: (//span[contains(text(),'重 置')])[1]
+  C端重置: (//span[contains(text(),'重 置')])[1]
   查询: //span[contains(text(),"查 询")]
   title: //span[@class="ant-page-header-heading-title"]
   新建: (//span[contains(text(),'新 建')])[1]

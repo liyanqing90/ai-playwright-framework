@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import time
 import types
 from datetime import datetime
@@ -11,17 +13,44 @@ from playwright.sync_api import Page, Browser, sync_playwright
 
 from config.constants import DEFAULT_TIMEOUT
 from page_objects.base_page import BasePage
-from src.case_utils import run_test_data, load_test_cases, load_moules
+from src.ai_runtime.element_store import wait_for_pending_element_updates
+from src.case_utils import run_test_data, load_test_cases, load_modules
 from src.runner import TestCaseGenerator
 from src.test_step_executor import StepExecutor
+from src.yaml_schema import validate_all_projects
 from utils.config import Config
 from utils.dingtalk_notifier import ReportNotifier
 from utils.logger import logger
+from utils.token_usage import format_token_usage_summary, get_token_usage_tracker
 
 DINGTALK_TOKEN = "636325ecf2302baf112f74ac54d8ef991de9b307c00bd168d3f2baa7df7f9113"
 DINGTALK_SECRET = "SECa7e01bee3a34e05d1b57297a95b8920d8c257088979c49fa0b50889fd60c570c"
 
 config = Config()
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--skip-yaml-schema",
+        action="store_true",
+        default=False,
+        help="跳过 test_data YAML action schema 校验",
+    )
+
+
+def pytest_sessionstart(session):
+    get_token_usage_tracker().start_run(
+        run_kind="pytest",
+        metadata={
+            "cwd": str(Path.cwd()),
+            "command": " ".join(sys.argv),
+            "project": os.getenv("TEST_PROJECT"),
+            "env": os.getenv("TEST_ENV"),
+        },
+    )
+    if session.config.getoption("--skip-yaml-schema"):
+        return
+    validate_all_projects()
 
 
 @pytest.fixture(scope="session")
@@ -155,6 +184,11 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     }
 
     # report_notifier().notify(report_data)
+    usage_summary = get_token_usage_tracker().last_summary
+    if usage_summary:
+        terminalreporter.write_sep("-", "AI Token Usage")
+        terminalreporter.write_line(format_token_usage_summary(usage_summary))
+        terminalreporter.write_line(f"details: {usage_summary['summary_file']}")
 
 
 def extract_assertion_message(log_list):
@@ -189,12 +223,13 @@ def extract_assertion_message(log_list):
 
 
 def pytest_collect_file(file_path: Path, parent):  # noqa
-    datas = run_test_data()
-    if file_path.suffix in [".yaml", "xlsx"]:
-        if test_cases := load_test_cases(file_path):
-            py_module, module = create_py_module(file_path, parent, test_cases, datas)
-            py_module._getobj = lambda: module  # 返回 pytest 模块对象
-            return py_module
+    if file_path.suffix not in {".yaml", ".yml"}:
+        return None
+    if test_cases := load_test_cases(file_path):
+        datas = run_test_data()
+        py_module, module = create_py_module(file_path, parent, test_cases, datas)
+        py_module._getobj = lambda: module  # 返回 pytest 模块对象
+        return py_module
     return None
 
 
@@ -213,7 +248,7 @@ def create_py_module(file_path: Path, parent, test_cases, datas):
 @pytest.fixture()
 def login(page, ui_helper, request):
     elements = run_test_data().get("elements")
-    login_modules = load_moules().get("login")
+    login_modules = load_modules().get("login")
     step_executor = StepExecutor(page, ui_helper, elements)
     for step in login_modules:
         step_executor.execute_step(step)
@@ -255,7 +290,6 @@ def pytest_generate_tests(metafunc):  # noqa
     )
 
 
-
 @pytest.fixture()
 def get_test_name(request):
     """返回当前测试用例的完整名称，包括参数化ID"""
@@ -292,9 +326,17 @@ def current_test_name(request):
     return base_name
 
 
-
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
+    wait_for_pending_element_updates(timeout_seconds=2.0)
+    get_token_usage_tracker().finish_run(
+        status="passed" if exitstatus == 0 else "failed",
+        metadata={
+            "exit_code": exitstatus,
+            "project": os.getenv("TEST_PROJECT"),
+            "env": os.getenv("TEST_ENV"),
+        },
+    )
     """
     测试会话结束时执行的钩子函数
     用于清理测试数据文件（在所有测试完成后只执行一次）

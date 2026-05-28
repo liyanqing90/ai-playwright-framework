@@ -1,14 +1,26 @@
-[tool.poetry]
+[project]
 name = "playwright-ui"
 version = "0.1.0"
 description = ""
-authors = ["Your Name <you@example.com>"]
+authors = [{ name = "Your Name", email = "you@example.com" }]
 readme = "README.md"
-package-mode = false
+requires-python = ">=3.12,<4.0"
+dynamic = ["dependencies"]
+
+[tool.poetry]
+package-mode = true
+packages = [
+  { include = "src" },
+  { include = "utils" },
+  { include = "page_objects" },
+]
+
+[tool.poetry.scripts]
+gen = "src.cli.generate_case:cli"
+run_case = "src.cli.run_case:cli"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-playwright = "^1.49.1"
 pytest = "^8.3.4"
 allure-python-commons = "^2.13.5"
 pyyaml = "^6.0.2"
@@ -32,8 +44,15 @@ pytest-playwright = "^0.7.0"
 pytest-check = "^2.5.0"
 black = "^25.1.0"
 jsonpath-ng = "^1.7.0"
+urllib3 = "^2.5.0"
+greenlet = "^3.3.2"
+playwright = "^1.58.0"
+
+[[tool.poetry.source]]
+name = "my_mirror"
+url = "https://mirrors.cernet.edu.cn/pypi/web/simple"
+priority = "primary"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-

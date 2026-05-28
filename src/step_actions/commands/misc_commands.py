@@ -27,6 +27,13 @@ class ScrollToCommand(Command):
     def execute(
         self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
     ) -> None:
+        action = str(step.get("action", "")).lower()
+        if action in {"滑到顶部", "滑到底部"} and selector:
+            top_expr = "0" if action == "滑到顶部" else "el.scrollHeight"
+            ui_helper._locator(selector).evaluate(
+                f"el => el.scrollTo({{top: {top_expr}, behavior: 'instant'}})"
+            )
+            return
         x = int(step.get("x", 0))
         y = int(step.get("y", 0))
         ui_helper.scroll_to(x=x, y=y)
@@ -148,3 +155,13 @@ class KeyboardTypeCommand(Command):
         text = step.get("text", value)
         delay = int(step.get("delay", DEFAULT_TYPE_DELAY))
         ui_helper.keyboard_type(text, delay)
+
+
+@CommandFactory.register(StepAction.EXECUTE_SCRIPT)
+class ExecuteScriptCommand(Command):
+    """执行JavaScript脚本命令"""
+
+    def execute(
+        self, ui_helper, selector: str, value: Any, step: Dict[str, Any]
+    ) -> None:
+        ui_helper.execute_script(script=value)
