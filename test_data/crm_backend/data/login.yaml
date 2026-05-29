@@ -1,8 +1,0 @@
-test_data:
-  test_login:
-    - description: "登录"
-      steps:
-        - use_module: login
-        - action: assert_title
-          value: "门店列表 - 新零售运营后台"
-

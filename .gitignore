@@ -18,8 +18,12 @@ __pycache__/
 /evidence/
 /.ui_auto/
 /downloads/
-/test_data/variables.json
 /config/storage_state.json
+
+# Test case data policy: keep demo cases in Git, ignore project-specific data.
+/test_data/*
+!/test_data/demo/
+!/test_data/demo/**
 
 # Local archives and imported bundles
 *.zip

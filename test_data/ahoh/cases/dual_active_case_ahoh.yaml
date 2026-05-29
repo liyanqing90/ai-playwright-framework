@@ -1,2 +1,0 @@
-test_cases:
-    - name: test_submit_daily_corporate_order # 生成当日公户用户订单，提交审核全流程--ok

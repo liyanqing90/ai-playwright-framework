@@ -1,8 +1,0 @@
-elements:
-  技巧文本: text=技巧
-  新增文本: text=新增
-  编辑技巧: text=编辑
-  引导关注行: role=row[class="edit-btn"] >> div
-  展示话术开关: role=button[id=form_item_showWordsFlag]
-  启用技巧开关: role=switch[name="启用技巧"]
-  保存按钮: role=button[name="保 存"]

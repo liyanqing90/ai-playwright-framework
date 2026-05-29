@@ -1,8 +1,0 @@
-close_home_popup:
-  - action: wait
-    value: 0.5
-  - action: execute_script
-    value: "document.querySelector('.home-popup')?.style?.setProperty('display', 'none')"
-  - action: wait
-    value: 0.3
-

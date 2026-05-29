@@ -1,5 +1,0 @@
-elements:
-  账号密码登录tab: //div[@class="ant-tabs-tab"]
-  账号输入框: //input[@id="username"]
-  密码输入框: //input[@id="password"]
-  登录按钮: //button[@class="ant-btn ant-btn-primary ant-btn-lg"]

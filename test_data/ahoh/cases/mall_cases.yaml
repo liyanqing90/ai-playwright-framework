@@ -1,8 +1,0 @@
-test_cases:
-#    - name: test_mall_order_list
-#    - name : test_mall_order_list_order_status
-#    - name : test_mall_order_list_invoice_upload
-#    - name : test_mall_order_list_other_materials_upload
-    - name : test_mall_order_list_view_invoice
-    - name: test_order_up
-    - name: test_order_check
