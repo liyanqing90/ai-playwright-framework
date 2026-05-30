@@ -170,18 +170,29 @@ def build_selector_candidates(candidate: Mapping[str, Any]) -> list[SelectorCand
     name = candidate.get("name")
     aria_label = candidate.get("aria_label")
     placeholder = candidate.get("placeholder")
+    title = candidate.get("title")
+    role = candidate.get("role")
     text = _trim_text(candidate.get("text") or "", 60)
     raw_selector = candidate.get("selector")
 
     add(_attr_selector(tag, "data-test", data_test), "testid", 0.98, "data-test")
     add(_attr_selector(tag, "data-testid", data_testid), "testid", 0.98, "data-testid")
-    add(f"#{_css_ident(element_id)}" if element_id else None, "id", 0.82, "id")
+    add(
+        f"#{_css_ident(element_id)}" if _is_stable_id(element_id) else None,
+        "id",
+        0.82,
+        "stable id",
+    )
     add(_attr_selector(tag, "name", name), "css", 0.80, "name")
     add(_attr_selector(tag, "aria-label", aria_label), "css", 0.78, "aria-label")
     add(_attr_selector(tag, "placeholder", placeholder), "css", 0.76, "placeholder")
-    if text and tag in {"button", "a"}:
-        add(f'{tag}:has-text("{_css_attr(text)}")', "text", 0.72, "element text")
-    add(str(raw_selector) if raw_selector else None, "css", 0.65, "stable selector")
+    add(_attr_selector(tag, "title", title), "css", 0.74, "title")
+    if text:
+        add(_role_text_selector(tag, role, text), "text", 0.73, "role text")
+        if tag in {"button", "a", "label"}:
+            add(f'{tag}:has-text("{_css_attr(text)}")', "text", 0.72, "element text")
+    if _selector_safe_for_ai_candidate(raw_selector):
+        add(str(raw_selector), "css", 0.65, "stable selector")
     return result
 
 
@@ -197,6 +208,78 @@ def _css_attr(value: Any) -> str:
 
 def _css_ident(value: Any) -> str:
     return re.sub(r"([^a-zA-Z0-9_-])", r"\\\1", str(value))
+
+
+def _role_text_selector(tag: str, role: Any, text: str) -> str | None:
+    role_text = str(role or "").strip()
+    if not role_text:
+        return None
+    text = _trim_text(text, 80)
+    if not text:
+        return None
+    tag_prefix = f"{tag}" if tag else "*"
+    return f'{tag_prefix}[role="{_css_attr(role_text)}"]:has-text("{_css_attr(text)}")'
+
+
+def _is_stable_id(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text or len(text) > 80:
+        return False
+    if re.fullmatch(r"\d+", text):
+        return False
+    if re.fullmatch(r"[a-f0-9]{8,}", text, flags=re.IGNORECASE):
+        return False
+    if re.search(r"\d{8,}", text):
+        return False
+    if re.fullmatch(r"ember\d+", text, flags=re.IGNORECASE):
+        return False
+    return True
+
+
+def _selector_safe_for_ai_candidate(selector: Any) -> bool:
+    text = str(selector or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if lowered in {
+        "a",
+        "button",
+        "div",
+        "input",
+        "label",
+        "li",
+        "main",
+        "section",
+        "select",
+        "span",
+        "textarea",
+        "ul",
+    }:
+        return False
+    if re.fullmatch(
+        r"(?:[a-z][\w-]*(?::nth-of-type\(\d+\))?\s*>\s*)+"
+        r"[a-z][\w-]*(?::nth-of-type\(\d+\))?",
+        lowered,
+    ):
+        return False
+    if ":nth-of-type(" in lowered and not any(
+        marker in lowered
+        for marker in (
+            "[data-testid=",
+            "[data-test=",
+            "[data-qa=",
+            "[data-cy=",
+            "[data-ui=",
+            "[aria-label=",
+            "[placeholder=",
+            "[title=",
+            "[name=",
+            ":has-text(",
+            "#",
+        )
+    ):
+        return False
+    return True
 
 
 def _trim_text(value: Any, limit: int) -> str:

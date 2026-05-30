@@ -1,0 +1,3 @@
+test_cases:
+  - name: test_crm_agent_case_steps_generated
+  - name: test_crm_agent_case_intent_generated

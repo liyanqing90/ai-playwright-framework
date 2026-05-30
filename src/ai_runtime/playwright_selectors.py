@@ -4,6 +4,10 @@ import re
 from typing import Any
 
 from src.ai_runtime.native_observe import SelectorValidation
+from src.ai_runtime.semantic_terms import (
+    semantic_text_variants,
+    strip_generic_target_words as _shared_strip_generic_target_words,
+)
 
 _SENSITIVE_PATTERNS = [
     (re.compile(r"\b1[3-9]\d{9}\b"), "<phone>"),
@@ -165,6 +169,34 @@ def verify_selector(
     return True
 
 
+def is_high_quality_selector(selector: str) -> bool:
+    selector_l = str(selector or "").lower().strip()
+    if not selector_l:
+        return False
+    if any(
+        marker in selector_l
+        for marker in (
+            "[data-testid=",
+            "[data-test=",
+            "[data-qa=",
+            "[data-cy=",
+            "[data-ui=",
+            "[aria-label=",
+            "[placeholder=",
+            "[title=",
+            "[name=",
+            ":has-text(",
+            "[role=",
+            "text=",
+            "#",
+            "//",
+            "(//",
+        )
+    ):
+        return True
+    return not _looks_like_structural_selector(selector_l)
+
+
 def _safe_locator_count(locator) -> int | None:
     try:
         return int(locator.count())
@@ -217,11 +249,28 @@ def stable_selector_for_locator(locator) -> str:
                 if (!value) return null;
                 return `${node.tagName.toLowerCase()}[${attr}="${quote(value)}"]`;
             };
+            const inputValueSelector = node => {
+                const tag = node.tagName.toLowerCase();
+                if (tag !== 'input') return null;
+                const type = (node.getAttribute('type') || '').toLowerCase();
+                if (!['submit', 'button', 'reset'].includes(type)) return null;
+                const value = node.getAttribute('value');
+                if (!value || value.length > 80) return null;
+                const selector = `${tag}[type="${quote(type)}"][value="${quote(value)}"]`;
+                return isUniqueCss(selector) ? selector : null;
+            };
             const exactTextSelector = node => {
                 const tag = node.tagName.toLowerCase();
-                if (!['button', 'a', 'label'].includes(tag)) return null;
                 const text = visibleText(node);
                 if (!text || text.length > 80) return null;
+                const role = node.getAttribute('role');
+                if (role) {
+                    const roleSelector = `${tag}[role="${quote(role)}"]:has-text("${quote(text)}")`;
+                    if (safeQueryAll(`${tag}[role="${quote(role)}"]`).filter(item => visibleText(item) === text).length === 1) {
+                        return roleSelector;
+                    }
+                }
+                if (!['button', 'a', 'label'].includes(tag)) return null;
                 const same = safeQueryAll(tag).filter(item => visibleText(item) === text);
                 if (same.length !== 1) return null;
                 return `${tag}:has-text("${quote(text)}")`;
@@ -237,6 +286,8 @@ def stable_selector_for_locator(locator) -> str:
                     const selector = attrSelector(node, attr);
                     if (selector) selectors.push(selector);
                 }
+                const valueSelector = inputValueSelector(node);
+                if (valueSelector) selectors.push(valueSelector);
                 const role = node.getAttribute('role');
                 const aria = node.getAttribute('aria-label');
                 if (role && aria) {
@@ -371,11 +422,28 @@ def collect_candidates(
                     if (/^ember\\d+$/i.test(text)) return false;
                     return true;
                 };
+                const inputValueSelector = node => {
+                    const tag = node.tagName.toLowerCase();
+                    if (tag !== 'input') return null;
+                    const type = (node.getAttribute('type') || '').toLowerCase();
+                    if (!['submit', 'button', 'reset'].includes(type)) return null;
+                    const value = node.getAttribute('value');
+                    if (!value || value.length > 80) return null;
+                    const selector = `${tag}[type="${quote(type)}"][value="${quote(value)}"]`;
+                    return isUniqueCss(selector) ? selector : null;
+                };
                 const exactTextSelector = node => {
                     const tag = node.tagName.toLowerCase();
-                    if (!['button', 'a', 'label'].includes(tag)) return null;
                     const text = visibleText(node);
                     if (!text || text.length > 80) return null;
+                    const role = node.getAttribute('role');
+                    if (role) {
+                        const roleSelector = `${tag}[role="${quote(role)}"]:has-text("${quote(text)}")`;
+                        if (safeQueryAll(`${tag}[role="${quote(role)}"]`).filter(item => visibleText(item) === text).length === 1) {
+                            return roleSelector;
+                        }
+                    }
+                    if (!['button', 'a', 'label'].includes(tag)) return null;
                     const same = safeQueryAll(tag).filter(item => visibleText(item) === text);
                     if (same.length !== 1) return null;
                     return `${tag}:has-text("${quote(text)}")`;
@@ -391,6 +459,8 @@ def collect_candidates(
                         const selector = attrSelector(node, attr);
                         if (selector) selectors.push(selector);
                     }
+                    const valueSelector = inputValueSelector(node);
+                    if (valueSelector) selectors.push(valueSelector);
                     const role = node.getAttribute('role');
                     const aria = node.getAttribute('aria-label');
                     if (role && aria) {
@@ -534,6 +604,7 @@ def semantic_selectors(
     include_open_shadow_dom: bool = True,
 ) -> list[str]:
     """Rank visible DOM candidates by target semantics before asking the model."""
+    semantic_target = _semantic_target_text(target)
     try:
         candidates = collect_candidates(
             page,
@@ -545,12 +616,12 @@ def semantic_selectors(
         return []
 
     scored: list[tuple[float, float, int, str]] = []
-    min_score = _minimum_semantic_score(target, action)
+    min_score = _minimum_semantic_score(semantic_target, action)
     for index, candidate in enumerate(candidates):
         selector = str(candidate.get("selector") or "").strip()
         if not selector:
             continue
-        score = _candidate_semantic_score(candidate, target, action)
+        score = _candidate_semantic_score(candidate, semantic_target, action)
         if score >= min_score:
             scored.append((score, _selector_quality_score(selector), -index, selector))
 
@@ -566,12 +637,18 @@ def semantic_selectors(
 
 
 def selector_matches_target(
-    page, selector: str, target: str | None, action: str
+    page,
+    selector: str,
+    target: str | None,
+    action: str,
+    *,
+    strict_text_match: bool = True,
 ) -> bool:
     """Reject high-risk semantic mismatches before self-healing is trusted."""
     if not target:
         return True
-    target_l = str(target).lower()
+    semantic_target = _semantic_target_text(target)
+    target_l = semantic_target.lower()
     is_password_target = _contains_any(target_l, ["密码", "password", "passwd", "pwd"])
     is_username_target = _contains_any(
         target_l,
@@ -579,12 +656,36 @@ def selector_matches_target(
     )
     is_login_target = _contains_any(target_l, ["登录", "登陆", "login", "sign in"])
     is_title_target = _contains_any(target_l, ["标题", "title"])
+    requires_text_match = (
+        strict_text_match
+        and
+        _requires_concrete_text_match(target, semantic_target, action)
+        and not is_login_target
+    )
+    requires_relaxed_text_match = (
+        not strict_text_match
+        and _requires_concrete_text_match(target, semantic_target, action)
+        and not is_login_target
+    )
+    requires_fill_match = strict_text_match and _requires_fill_semantic_match(
+        target, semantic_target, action
+    )
+    requires_relaxed_fill_match = (
+        not strict_text_match
+        and _requires_fill_semantic_match(target, semantic_target, action)
+    )
+    requires_destructive_guard = action in {"click", "press", "press_key"}
     if not any(
         (
             is_password_target,
             is_username_target,
             is_login_target,
             is_title_target,
+            requires_text_match,
+            requires_relaxed_text_match,
+            requires_fill_match,
+            requires_relaxed_fill_match,
+            requires_destructive_guard,
         )
     ):
         return True
@@ -616,15 +717,33 @@ def selector_matches_target(
     if not isinstance(snapshot, dict):
         snapshot = {"selector": selector}
     snapshot["selector"] = selector
-    score = _candidate_semantic_score(snapshot, target, action)
+    score = _candidate_semantic_score(snapshot, semantic_target, action)
     tag = str(snapshot.get("tag") or "").lower()
     input_type = str(snapshot.get("type") or "").lower()
     selector_l = str(selector or "").lower()
     blob = _candidate_blob(snapshot)
+    if _is_logout_or_destructive_mismatch(blob, target_l, action):
+        return False
     if is_password_target:
         return score >= 6
     if is_username_target:
         return score >= 4
+    if requires_text_match and not _candidate_matches_semantic_text(
+        snapshot, semantic_target, include_technical=False
+    ):
+        return False
+    if requires_relaxed_text_match and not candidate_matches_semantic_terms(
+        snapshot, semantic_target, include_technical=False
+    ):
+        return False
+    if requires_fill_match and not _candidate_matches_semantic_text(
+        snapshot, semantic_target, include_technical=True
+    ):
+        return False
+    if requires_relaxed_fill_match and not candidate_matches_semantic_terms(
+        snapshot, semantic_target, include_technical=True
+    ):
+        return False
     if is_login_target and action in {"click", "assert_visible"}:
         login_like = score >= 4 or _contains_any(
             blob,
@@ -660,10 +779,12 @@ def redact_value(value: Any) -> Any:
 
 
 def heuristic_selectors(target: str, action: str) -> list[str]:
-    target_l = target.lower()
+    semantic_target = _semantic_target_text(target)
+    target_l = semantic_target.lower()
+    semantic_targets = semantic_text_variants(semantic_target) or [semantic_target]
     selectors: list[str] = []
     if (
-        "密码" in target
+        "密码" in semantic_target
         or "password" in target_l
         or "passwd" in target_l
         or "pwd" in target_l
@@ -678,9 +799,9 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
             ]
         )
     if (
-        "用户名" in target
-        or "账号" in target
-        or "帐号" in target
+        "用户名" in semantic_target
+        or "账号" in semantic_target
+        or "帐号" in semantic_target
         or "username" in target_l
         or "user name" in target_l
         or "user-name" in target_l
@@ -696,8 +817,8 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
             ]
         )
     if (
-        "登录" in target
-        or "登陆" in target
+        "登录" in semantic_target
+        or "登陆" in semantic_target
         or "login" in target_l
         or "sign in" in target_l
     ):
@@ -707,10 +828,9 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
                 'button[data-test*="login" i]',
                 'input[data-test*="login" i]',
                 'button:has-text("Login")',
-                "text=Login",
             ]
         )
-    if "error" in target_l or "错误" in target or "提示" in target:
+    if "error" in target_l or "错误" in semantic_target or "提示" in semantic_target:
         selectors.extend(
             [
                 '[role="alert"]',
@@ -719,45 +839,292 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
                 '[data-testid*="error" i]',
             ]
         )
-    selectors.extend(_target_attribute_selectors(target, action))
-    if "搜索" in target or "search" in target_l:
+    attribute_selectors: list[str] = []
+    for target_variant in semantic_targets:
+        attribute_selectors.extend(_target_attribute_selectors(target_variant, action))
+    if action == "fill":
+        selectors.extend(attribute_selectors)
+    if any(
+        term in target_l
+        for term in ("搜索", "查询", "检索", "查找", "筛选", "过滤", "search", "query", "find", "lookup", "filter")
+    ):
         selectors.extend(
             [
                 'textarea[aria-label*="Search"]',
                 'input[aria-label*="Search"]',
                 'textarea[placeholder*="搜索"]',
+                'textarea[placeholder*="查询"]',
                 'input[placeholder*="搜索"]',
+                'input[placeholder*="查询"]',
                 'input[type="search"]',
             ]
         )
     if action == "fill":
-        selectors.extend(
-            [
-                f'input[placeholder*="{target}"]',
-                f'textarea[placeholder*="{target}"]',
-                f'input[aria-label*="{target}"]',
-                "input",
-                "textarea",
-            ]
-        )
+        for target_variant in semantic_targets:
+            css_variant = _css_attr(target_variant)
+            selectors.extend(
+                [
+                    f'input[placeholder*="{css_variant}"]',
+                    f'textarea[placeholder*="{css_variant}"]',
+                    f'input[aria-label*="{css_variant}"]',
+                ]
+            )
     if action in {"click", "press", "press_key"}:
-        selectors.extend(
-            [
-                f'button:has-text("{target}")',
-                f'a:has-text("{target}")',
-                f"text={target}",
-                f'[aria-label*="{target}"]',
-                f'[title*="{target}"]',
-            ]
-        )
+        for target_variant in semantic_targets:
+            css_variant = _css_attr(target_variant)
+            display_variant = _remove_cjk_display_spaces(target_variant)
+            display_css_variant = _css_attr(display_variant)
+            selectors.extend(_text_context_selectors(target_variant, action))
+            selectors.extend(
+                [
+                    f'button:has-text("{css_variant}")',
+                    f'a:has-text("{css_variant}")',
+                    f'[aria-label*="{css_variant}"]',
+                    f'[title*="{css_variant}"]',
+                ]
+            )
+            if display_variant and display_variant != target_variant:
+                selectors.extend(
+                    [
+                        f'button:has-text("{display_css_variant}")',
+                        f'a:has-text("{display_css_variant}")',
+                    ]
+                )
+        selectors.extend(attribute_selectors)
     if action.startswith("assert"):
-        selectors.extend([f"text={target}", f'[aria-label*="{target}"]'])
+        for target_variant in semantic_targets:
+            css_variant = _css_attr(target_variant)
+            selectors.extend(_text_context_selectors(target_variant, action))
+            selectors.extend(
+                [
+                    f'*:has-text("{css_variant}")',
+                    f'[aria-label*="{css_variant}"]',
+                    f'[title*="{css_variant}"]',
+                ]
+            )
+        selectors.extend(attribute_selectors)
+    if action not in {"fill", "click", "press", "press_key"} and not action.startswith(
+        "assert"
+    ):
+        selectors.extend(attribute_selectors)
 
     deduped: list[str] = []
     for selector in selectors:
         if selector and selector not in deduped:
             deduped.append(selector)
     return deduped
+
+
+def _semantic_target_text(target: str | None) -> str:
+    text = str(target or "").strip()
+    if not text:
+        return ""
+
+    extracted = _extract_selector_text(text)
+    lowered = text.lower()
+    for prefix in ("text=", "label=", "placeholder="):
+        if lowered.startswith(prefix):
+            text = text.split("=", 1)[1].strip()
+            break
+    else:
+        if extracted and looks_like_raw_selector(text):
+            text = extracted
+
+    text = text.strip().strip(" \"'[]()（）:：,，.。;；")
+    return text or str(target or "").strip()
+
+
+def _extract_selector_text(value: str) -> str:
+    text = str(value or "").strip()
+    patterns = (
+        r":has-text\(\s*([\"'])(.*?)\1\s*\)",
+        r"normalize-space\(\)\s*=\s*([\"'])(.*?)\1",
+        r"contains\(\s*normalize-space\(\)\s*,\s*([\"'])(.*?)\1\s*\)",
+        r"\[(?:aria-label|title|placeholder)[^\]]*=\s*([\"'])(.*?)\1\]",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(2).strip()
+    return ""
+
+
+def _requires_concrete_text_match(
+    raw_target: str | None,
+    semantic_target: str,
+    action: str,
+) -> bool:
+    if action not in {"click", "press", "press_key", "assert_visible"}:
+        return False
+    raw = str(raw_target or "").strip()
+    if not semantic_target:
+        return False
+    if raw.lower().startswith(("text=", "label=")):
+        return True
+    if _extract_selector_text(raw):
+        return True
+    return bool(
+        re.search(r"[\u4e00-\u9fff]", semantic_target)
+        and len(semantic_target) >= 2
+        and not looks_like_raw_selector(raw)
+    )
+
+
+def _requires_fill_semantic_match(
+    raw_target: str | None,
+    semantic_target: str,
+    action: str,
+) -> bool:
+    if action != "fill" or not semantic_target:
+        return False
+    raw = str(raw_target or "").strip()
+    lowered = raw.lower()
+    if lowered.startswith(("text=", "label=", "placeholder=")):
+        return True
+    if _extract_selector_text(raw):
+        return True
+    if looks_like_raw_selector(raw):
+        return False
+    return bool(re.search(r"[\u4e00-\u9fff]", semantic_target))
+
+
+def _candidate_matches_semantic_text(
+    candidate: dict[str, Any],
+    semantic_target: str,
+    *,
+    include_technical: bool = True,
+) -> bool:
+    target_l = str(semantic_target or "").lower().strip()
+    if not target_l:
+        return True
+    blob = (
+        _candidate_blob(candidate)
+        if include_technical
+        else _candidate_user_facing_blob(candidate)
+    )
+    if target_l in blob:
+        return True
+    normalized_target = _remove_cjk_display_spaces(target_l)
+    normalized_blob = _remove_cjk_display_spaces(blob)
+    if normalized_target and normalized_target in normalized_blob:
+        return True
+    compact_target = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", normalized_target)
+    compact_blob = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", normalized_blob)
+    if compact_target and compact_target in compact_blob:
+        return True
+    for variant in semantic_text_variants(semantic_target):
+        normalized_variant = _remove_cjk_display_spaces(variant.lower())
+        if normalized_variant and normalized_variant in normalized_blob:
+            return True
+    tokens = _target_tokens(semantic_target)
+    if not tokens:
+        return False
+    return all(token.lower() in normalized_blob for token in tokens)
+
+
+def candidate_matches_semantic_terms(
+    candidate: dict[str, Any],
+    target: str | None,
+    *,
+    include_technical: bool = True,
+) -> bool:
+    """Return whether a candidate contains at least one precise target term."""
+    terms = semantic_match_terms(target)
+    if not terms:
+        return True
+    blob = (
+        _candidate_blob(candidate)
+        if include_technical
+        else _candidate_user_facing_blob(candidate)
+    )
+    normalized_blob = _remove_cjk_display_spaces(blob)
+    return any(term in normalized_blob for term in terms)
+
+
+def semantic_match_terms(target: str | None) -> list[str]:
+    """Extract stable semantic terms for AI result validation and scan expansion."""
+    terms: list[str] = []
+    for variant in semantic_text_variants(_semantic_target_text(target)):
+        text = _remove_cjk_display_spaces(variant.lower())
+        if not text:
+            continue
+        chunks = re.split(r"[\\/,，,;；:：|()\[\]\s]+|(?:或者|以及|和|或|及)", text)
+        for chunk in chunks:
+            normalized = _strip_generic_target_words(chunk).lower()
+            normalized = _remove_cjk_display_spaces(normalized).strip()
+            if not normalized:
+                continue
+            if normalized in {"text", "button", "link", "input", "field", "按钮", "链接", "输入框", "字段"}:
+                continue
+            if len(normalized) < 2:
+                continue
+            if normalized not in terms:
+                terms.append(normalized)
+    return terms
+
+
+def _text_context_selectors(target: str, action: str) -> list[str]:
+    text = str(target or "").strip()
+    if not text:
+        return []
+    css_text = _css_attr(text)
+    xpath_text = _xpath_literal(text)
+    exact_text = f"normalize-space()={xpath_text}"
+    has_exact_text = f".//*[{exact_text}]"
+    display_exact_text = exact_text
+    display_has_exact_text = has_exact_text
+    if re.search(r"[\u4e00-\u9fff]", text):
+        display_text = _xpath_literal(_remove_cjk_display_spaces(text))
+        display_exact_text = f"translate(normalize-space(), ' ', '')={display_text}"
+        display_has_exact_text = f".//*[{display_exact_text}]"
+    selectors = [
+        f'[role="menuitem"]:has-text("{css_text}")',
+        f'li[class*="menu" i]:has-text("{css_text}")',
+        f'span[class*="ant-pro-menu-item-title" i]:has-text("{css_text}")',
+        f'//span[contains(@class, "ant-pro-menu-item-title") and {exact_text}]',
+        f'//span[contains(@class, "ant-pro-menu-item-title") and {display_exact_text}]',
+        f'//*[@role="menuitem" and {has_exact_text}]',
+        f'//*[@role="menuitem" and {display_has_exact_text}]',
+        f'//li[contains(@class, "menu") and {has_exact_text}]',
+        f'//li[contains(@class, "menu") and {display_has_exact_text}]',
+        f'//li[{has_exact_text}]//*[self::span or self::a or self::button][{exact_text}]',
+        f'//li[{display_has_exact_text}]//*[self::span or self::a or self::button][{display_exact_text}]',
+        f'//*[contains(@class, "menu") and {has_exact_text}]//*[self::span or self::a or self::button][{exact_text}]',
+        f'//*[contains(@class, "menu") and {display_has_exact_text}]//*[self::span or self::a or self::button][{display_exact_text}]',
+    ]
+    if action in {"click", "press", "press_key"}:
+        selectors.extend(
+            [
+                f'button:has-text("{css_text}")',
+                f'a:has-text("{css_text}")',
+                f'//button[{exact_text} or .//*[{exact_text}]]',
+                f'//button[{display_exact_text} or .//*[{display_exact_text}]]',
+                f'//a[{exact_text} or .//*[{exact_text}]]',
+                f'//a[{display_exact_text} or .//*[{display_exact_text}]]',
+                f'(//span[{exact_text}])[1]',
+                f'(//span[{display_exact_text}])[1]',
+            ]
+        )
+        if re.search(r"[\u4e00-\u9fff]", text):
+            display_css_text = _css_attr(_remove_cjk_display_spaces(text))
+            selectors.extend(
+                [
+                    f'button:has-text("{display_css_text}")',
+                    f'a:has-text("{display_css_text}")',
+                ]
+            )
+    else:
+        selectors.extend(
+            [
+                f'//button[{exact_text} or .//*[{exact_text}]]',
+                f'//button[{display_exact_text} or .//*[{display_exact_text}]]',
+                f'//a[{exact_text} or .//*[{exact_text}]]',
+                f'//a[{display_exact_text} or .//*[{display_exact_text}]]',
+                f'//*[self::span or self::div or self::p or self::td][{exact_text}]',
+                f'//*[self::span or self::div or self::p or self::td][{display_exact_text}]',
+            ]
+        )
+    return selectors
 
 
 def _target_attribute_selectors(target: str, action: str) -> list[str]:
@@ -816,20 +1183,80 @@ def _target_tokens(target: str) -> list[str]:
         "可见",
         "页面",
     }
-    raw = str(target or "").replace("_", " ").replace("-", " ")
-    tokens = re.findall(r"[A-Za-z0-9]{2,}|[\u4e00-\u9fff]{2,}", raw)
+    tokens: list[str] = []
+    for raw_value in semantic_text_variants(target) or [_semantic_target_text(target)]:
+        raw = raw_value.replace("_", " ").replace("-", " ")
+        chunks = re.findall(r"[\u4e00-\u9fffA-Za-z0-9]+", raw)
+        for chunk in chunks:
+            normalized = _strip_generic_target_words(chunk).lower()
+            if not normalized or normalized in stop_words:
+                continue
+            tokens.append(normalized)
+            tokens.extend(
+                token.lower()
+                for token in re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9]{3,}", normalized)
+            )
     result: list[str] = []
     for token in tokens:
         normalized = token.lower()
         if normalized in stop_words:
+            continue
+        if _is_ambiguous_attribute_token(normalized, tokens):
             continue
         if normalized not in result:
             result.append(normalized)
     return result
 
 
+def _remove_cjk_display_spaces(value: str) -> str:
+    text = str(value or "")
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(r"([\u4e00-\u9fff])\s+([\u4e00-\u9fff])", r"\1\2", text)
+    return text
+
+
+def _is_logout_or_destructive_mismatch(blob: str, target_l: str, action: str) -> bool:
+    if action not in {"click", "press", "press_key"}:
+        return False
+    target_logout = _contains_any(target_l, ["退出", "登出", "注销", "logout", "sign out"])
+    if target_logout:
+        return False
+    return _contains_any(
+        blob,
+        [
+            "退出登录",
+            "登出",
+            "注销",
+            "logout",
+            "sign out",
+        ],
+    )
+
+
+def _strip_generic_target_words(value: str) -> str:
+    return _shared_strip_generic_target_words(value)
+
+
+def _is_ambiguous_attribute_token(token: str, all_tokens: list[str]) -> bool:
+    if token not in {"id", "no", "num", "name", "text"}:
+        return False
+    return any(other != token and len(other) >= 3 for other in all_tokens)
+
+
 def _css_attr(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _xpath_literal(value: str) -> str:
+    text = str(value)
+    if "'" not in text:
+        return f"'{text}'"
+    if '"' not in text:
+        return f'"{text}"'
+    parts = text.split("'")
+    return "concat(" + ', "\'", '.join(f"'{part}'" for part in parts) + ")"
 
 
 def _selector_quality_score(selector: str) -> float:
@@ -854,17 +1281,51 @@ def _selector_quality_score(selector: str) -> float:
         score += 24
     elif "[title=" in selector_l:
         score += 20
-    elif ":has-text(" in selector_l or selector_l.startswith("text="):
+    elif ":has-text(" in selector_l:
         score += 18
     elif "[role=" in selector_l:
         score += 16
 
+    if selector_l.startswith(("//", "(//")):
+        score += 18
+        if "normalize-space()" in selector_l:
+            score += 8
+        if "contains(@class" in selector_l or "@role=" in selector_l:
+            score += 8
+    if any(
+        marker in selector_l
+        for marker in (
+            "ant-pro-menu-item-title",
+            "ant-menu-item",
+            "menuitem",
+            "role=\"menuitem\"",
+            "role='menuitem'",
+        )
+    ):
+        score += 10
+    if selector_l.startswith("text="):
+        score -= 28
     if selector_l in {"input", "textarea", "button", "a", "select"}:
         score -= 30
     score -= selector_l.count(":nth-of-type") * 8
     score -= selector_l.count(" > ") * 2
     score -= min(len(selector_l) / 40, 12)
     return score
+
+
+def _looks_like_structural_selector(selector: str) -> bool:
+    text = str(selector or "").strip().lower()
+    if not text:
+        return True
+    if any(marker in text for marker in ("#", "[", ":has-text(", "text=", "//", "(//")):
+        return False
+    return bool(
+        re.fullmatch(
+            r"(?:[a-z]+(?::nth-of-type\(\d+\))?\s*>\s*)+"
+            r"[a-z]+(?::nth-of-type\(\d+\))?",
+            text,
+        )
+    )
 
 
 def _looks_like_generated_selector_id(value: str) -> bool:
@@ -959,6 +1420,21 @@ def _candidate_blob(candidate: dict[str, Any]) -> str:
         "type",
         "label",
         "ancestor_text",
+    )
+    return " ".join(str(candidate.get(key) or "").lower() for key in keys).replace(
+        "_", "-"
+    )
+
+
+def _candidate_user_facing_blob(candidate: dict[str, Any]) -> str:
+    keys = (
+        "text",
+        "aria_label",
+        "placeholder",
+        "title",
+        "label",
+        "ancestor_text",
+        "value",
     )
     return " ".join(str(candidate.get(key) or "").lower() for key in keys).replace(
         "_", "-"

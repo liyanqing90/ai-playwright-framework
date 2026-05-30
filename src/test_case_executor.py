@@ -3,6 +3,7 @@ from typing import Dict, Any, Set
 import allure
 
 from src.ai_runtime.agent_case_executor import AgentCaseExecutor
+from src.ai_generation.pipeline import execute_compiled_payload_steps
 # 导入重构后的StepExecutor
 from src.step_actions.step_executor import StepExecutor
 from utils.logger import logger
@@ -61,8 +62,14 @@ class CaseExecutor:
         )
 
         # 执行所有步骤
-        for step in steps:
-            step_executor.execute_step(step)
+        execute_compiled_payload_steps(
+            step_executor=step_executor,
+            payload={},
+            case_name=self._case_name(default="anonymous_case"),
+            steps=steps,
+            elements=self.elements,
+            source="static_case",
+        )
 
     def resolve_steps_and_mode(self) -> tuple[list[dict[str, Any]], str | None]:
         # 支持列表和对象两种数据来源，由 data 层 schema 保证用例形态。
@@ -97,7 +104,6 @@ class CaseExecutor:
             "Agent用例执行结果: "
             f"case={case_name} | steps_executed={result.steps_executed} "
             f"| model_calls={result.model_calls} "
-            f"| cache_replayed_steps={result.cache_replayed_steps} "
             f"| final_reason={result.final_reason}"
         )
 

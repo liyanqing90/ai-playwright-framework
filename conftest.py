@@ -17,7 +17,11 @@ from src.ai_runtime.element_store import wait_for_pending_element_updates
 from src.case_utils import run_test_data, load_test_cases, load_modules
 from src.runner import TestCaseGenerator
 from src.test_step_executor import StepExecutor
-from src.yaml_schema import validate_all_projects
+from src.step_actions.step_executor import (
+    commit_pending_selector_cache,
+    discard_pending_selector_cache,
+)
+from src.yaml_schema import validate_pytest_targets
 from utils.config import Config
 from utils.dingtalk_notifier import ReportNotifier
 from utils.logger import logger
@@ -39,18 +43,23 @@ def pytest_addoption(parser):
 
 
 def pytest_sessionstart(session):
-    get_token_usage_tracker().start_run(
-        run_kind="pytest",
-        metadata={
-            "cwd": str(Path.cwd()),
-            "command": " ".join(sys.argv),
-            "project": os.getenv("TEST_PROJECT"),
-            "env": os.getenv("TEST_ENV"),
-        },
-    )
+    tracker = get_token_usage_tracker()
+    if tracker.active_run_kind is None:
+        session.config._owns_token_usage_run = True
+        tracker.start_run(
+            run_kind="pytest",
+            metadata={
+                "cwd": str(Path.cwd()),
+                "command": " ".join(sys.argv),
+                "project": os.getenv("TEST_PROJECT"),
+                "env": os.getenv("TEST_ENV"),
+            },
+        )
+    else:
+        session.config._owns_token_usage_run = False
     if session.config.getoption("--skip-yaml-schema"):
         return
-    validate_all_projects()
+    validate_pytest_targets(session.config.args)
 
 
 @pytest.fixture(scope="session")
@@ -67,12 +76,48 @@ def browser() -> Generator[Browser, None, None]:
 @pytest.fixture(scope="function")
 def context(browser):
     """创建浏览器上下文"""
-    context_options = config.browser_config or {}
+    context_options = _browser_context_options(config.browser_config or {})
+    cookie_file = context_options.pop("_cookie_file", None)
     browser_context = browser.new_context(**context_options)
     browser_context.set_default_timeout(DEFAULT_TIMEOUT)
+    _apply_context_cookie_file(browser_context, cookie_file)
     yield browser_context
     # 测试结束后关闭上下文
     browser_context.close()
+
+
+def _browser_context_options(raw_options: dict | None) -> dict:
+    options = dict(raw_options or {})
+    cookie_path = options.pop("cookie_file", None) or options.pop("cookies_file", None)
+    if cookie_path:
+        options["_cookie_file"] = cookie_path
+    for key in ("storage_state", "storageState"):
+        if options.get(key):
+            options["storage_state"] = _resolve_context_file(options[key])
+            if key != "storage_state":
+                options.pop(key, None)
+            break
+    return options
+
+
+def _apply_context_cookie_file(browser_context, cookie_path: Any | None) -> None:
+    cookie_path = cookie_path or os.environ.get("UI_COOKIE_FILE")
+    if not cookie_path:
+        return
+    path = Path(_resolve_context_file(cookie_path))
+    if not path.exists():
+        raise FileNotFoundError(f"cookie file not found: {path}")
+    cookies = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(cookies, dict):
+        cookies = cookies.get("cookies") or []
+    browser_context.add_cookies(convert_cookies(cookies))
+
+
+def _resolve_context_file(value: Any) -> str:
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return str(path)
 
 
 @pytest.fixture(scope="function")
@@ -97,6 +142,19 @@ def pytest_runtest_makereport(item, call):
 
     # 设置测试节点的rep_call属性
     setattr(item, f"rep_{rep.when}", rep)
+    if rep.failed:
+        discard_pending_selector_cache(
+            reason=f"{getattr(rep, 'outcome', 'failed')} during {rep.when}"
+        )
+    if rep.when == "call":
+        setattr(item, "_selector_cache_call_passed", bool(rep.passed))
+    elif (
+        rep.when == "teardown"
+        and rep.passed
+        and getattr(item, "_selector_cache_call_passed", False)
+        and not os.environ.get("UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED")
+    ):
+        commit_pending_selector_cache()
 
 
 def read_cookies():
@@ -185,7 +243,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 
     # report_notifier().notify(report_data)
     usage_summary = get_token_usage_tracker().last_summary
-    if usage_summary:
+    if usage_summary and getattr(terminalreporter.config, "_owns_token_usage_run", True):
         terminalreporter.write_sep("-", "AI Token Usage")
         terminalreporter.write_line(format_token_usage_summary(usage_summary))
         terminalreporter.write_line(f"details: {usage_summary['summary_file']}")
@@ -329,14 +387,15 @@ def current_test_name(request):
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
     wait_for_pending_element_updates(timeout_seconds=2.0)
-    get_token_usage_tracker().finish_run(
-        status="passed" if exitstatus == 0 else "failed",
-        metadata={
-            "exit_code": exitstatus,
-            "project": os.getenv("TEST_PROJECT"),
-            "env": os.getenv("TEST_ENV"),
-        },
-    )
+    if getattr(session.config, "_owns_token_usage_run", True):
+        get_token_usage_tracker().finish_run(
+            status="passed" if exitstatus == 0 else "failed",
+            metadata={
+                "exit_code": exitstatus,
+                "project": os.getenv("TEST_PROJECT"),
+                "env": os.getenv("TEST_ENV"),
+            },
+        )
     """
     测试会话结束时执行的钩子函数
     用于清理测试数据文件（在所有测试完成后只执行一次）

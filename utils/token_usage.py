@@ -107,6 +107,13 @@ class TokenUsageTracker:
                 return None
             return json.loads(json.dumps(self._last_summary, ensure_ascii=False))
 
+    @property
+    def active_run_kind(self) -> str | None:
+        with self._lock:
+            if self._active_run is None:
+                return None
+            return str(self._active_run.get("run_kind") or "")
+
     def start_run(
         self,
         *,

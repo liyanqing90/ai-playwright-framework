@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from urllib.parse import unquote, urlsplit
 from typing import Any
 
 from src.ai_generation.project_context import ProjectContext
@@ -22,7 +23,15 @@ class GenerationHarness:
         payload = self._normalize_top_level(payload)
         raw_elements = payload.get("elements") or {}
         semantic_element_aliases = _semantic_element_aliases(raw_elements)
-        payload["elements"] = self._normalize_elements(raw_elements)
+        element_scope_aliases = self._element_scope_aliases(payload, raw_elements)
+        payload["elements"], element_key_aliases = self._normalize_elements(
+            raw_elements,
+            element_scope_aliases=element_scope_aliases,
+        )
+        semantic_element_aliases = {
+            element_key_aliases.get(key, key): target
+            for key, target in semantic_element_aliases.items()
+        }
         selector_element_aliases = set(self.context.elements) | {
             key
             for key, value in payload["elements"].items()
@@ -32,14 +41,38 @@ class GenerationHarness:
             payload.get("modules") or {},
             selector_element_aliases=selector_element_aliases,
             semantic_element_aliases=semantic_element_aliases,
+            element_key_aliases=element_key_aliases,
         )
         self._normalize_cases_and_data(payload)
-        for case_data in payload["data"].values():
+        module_variable_refs = _module_variable_refs(self.context.modules, payload["modules"])
+        for case_name, case_data in payload["data"].items():
             if isinstance(case_data, dict):
                 case_data["steps"] = self._normalize_steps(
                     case_data.get("steps") or [],
                     selector_element_aliases=selector_element_aliases,
                     semantic_element_aliases=semantic_element_aliases,
+                    element_key_aliases=element_key_aliases,
+                )
+                _align_module_params_with_spec_inputs(
+                    case_data["steps"],
+                    module_variable_refs=module_variable_refs,
+                    spec_inputs=self._spec_inputs_for_case(case_name),
+                )
+                _inline_spec_input_values(
+                    case_data["steps"],
+                    spec_inputs=self._spec_inputs_for_case(case_name),
+                    known_variables=set(self.context.variables)
+                    | set(payload.get("vars") or {}),
+                    module_param_names=_module_param_names(case_data["steps"]),
+                )
+                _drop_unsupported_url_assertions(
+                    case_data["steps"],
+                    spec=self.spec,
+                    context=self.context,
+                )
+                _normalize_assertions_against_step_evidence(
+                    case_data["steps"],
+                    element_selectors={**self.context.elements, **payload["elements"]},
                 )
         return payload
 
@@ -137,6 +170,11 @@ class GenerationHarness:
         payload.setdefault("elements", {})
         payload.setdefault("modules", {})
         payload.setdefault("vars", {})
+        payload["vars"] = {
+            key: value
+            for key, value in (payload.get("vars") or {}).items()
+            if key not in self.context.variables
+        }
         return payload
 
     def _normalize_cases_and_data(self, payload: dict[str, Any]) -> None:
@@ -167,6 +205,9 @@ class GenerationHarness:
             if "description" not in case_data and description:
                 case_data["description"] = description
             case_data.setdefault("mode", self._case_mode(raw_case))
+            case_params = _pop_case_level_params(case_data)
+            if case_params:
+                _apply_case_params_to_module_steps(case_data, case_params)
             normalized_cases.append({"name": name})
             normalized_data[name] = case_data
         payload["cases"] = normalized_cases
@@ -179,12 +220,27 @@ class GenerationHarness:
             raw_case.get("mode") or self.spec.get("mode") or _DEFAULT_GENERATED_MODE
         ).lower()
 
+    def _spec_inputs_for_case(self, case_name: str) -> dict[str, Any]:
+        inputs: dict[str, Any] = {}
+        if isinstance(self.spec.get("inputs"), dict):
+            inputs.update(_normalize_variable_syntax(self.spec["inputs"]))
+        for raw_case in self.spec.get("cases") or []:
+            if not isinstance(raw_case, dict):
+                continue
+            raw_name = str(raw_case.get("name") or "").strip()
+            if raw_name and raw_name not in {case_name, _safe_case_name(raw_name)}:
+                continue
+            if isinstance(raw_case.get("inputs"), dict):
+                inputs.update(_normalize_variable_syntax(raw_case["inputs"]))
+        return inputs
+
     def _normalize_steps(
         self,
         steps: list[Any],
         *,
         selector_element_aliases: set[str] | None = None,
         semantic_element_aliases: dict[str, str] | None = None,
+        element_key_aliases: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         normalized: list[dict[str, Any]] = []
         for step in steps:
@@ -212,30 +268,131 @@ class GenerationHarness:
                 item,
                 selector_element_aliases=selector_element_aliases or set(),
                 semantic_element_aliases=semantic_element_aliases or {},
+                element_key_aliases=element_key_aliases or {},
             )
             normalized.append(item)
         return normalized
 
-    @staticmethod
-    def _normalize_elements(elements: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_elements(
+        self,
+        elements: dict[str, Any],
+        *,
+        element_scope_aliases: dict[str, str],
+    ) -> tuple[dict[str, Any], dict[str, str]]:
         normalized: dict[str, Any] = {}
+        aliases: dict[str, str] = {}
+        used_keys = set(self.context.elements)
         for key, value in elements.items():
-            normalized_key = _coerce_generated_string(
+            raw_key = _coerce_generated_string(
                 key,
                 field_path="elements key",
                 preferred_keys=("key", "name", "id", "value"),
             )
             if isinstance(value, dict) and value.get("selector"):
+                normalized_key = self._generated_element_key(
+                    raw_key,
+                    used_keys,
+                    page_scope=element_scope_aliases.get(raw_key),
+                )
+                aliases[raw_key] = normalized_key
                 normalized[normalized_key] = _coerce_generated_string(
                     value["selector"],
                     field_path=f"elements.{normalized_key}.selector",
                     preferred_keys=("selector", "css", "xpath", "value", "text"),
                 )
+                used_keys.add(normalized_key)
             elif isinstance(value, dict):
                 continue
             else:
+                normalized_key = self._generated_element_key(
+                    raw_key,
+                    used_keys,
+                    page_scope=element_scope_aliases.get(raw_key),
+                )
+                aliases[raw_key] = normalized_key
                 normalized[normalized_key] = value
-        return normalized
+                used_keys.add(normalized_key)
+        return normalized, aliases
+
+    def _generated_element_key(
+        self,
+        raw_key: str,
+        used_keys: set[str],
+        *,
+        page_scope: str | None,
+    ) -> str:
+        base_key = _safe_element_key(raw_key)
+        if base_key not in used_keys:
+            return base_key
+        scope = _safe_element_key(page_scope or "page")
+        return _unique_element_key(f"{base_key}_{scope}", used_keys)
+
+    def _element_scope_aliases(
+        self,
+        payload: dict[str, Any],
+        raw_elements: dict[str, Any],
+    ) -> dict[str, str]:
+        scopes: dict[str, tuple[str, int]] = {}
+        raw_keys = {
+            _coerce_generated_string(
+                key,
+                field_path="elements key",
+                preferred_keys=("key", "name", "id", "value"),
+            )
+            for key in raw_elements
+        }
+        for raw_key, value in raw_elements.items():
+            normalized_key = _coerce_generated_string(
+                raw_key,
+                field_path="elements key",
+                preferred_keys=("key", "name", "id", "value"),
+            )
+            explicit_scope = _scope_from_element_definition(value)
+            if explicit_scope:
+                _record_element_scope(scopes, normalized_key, explicit_scope, 50)
+
+        for step_list in _payload_step_lists(payload):
+            self._collect_step_scopes(step_list, raw_keys=raw_keys, scopes=scopes)
+        return {key: value for key, (value, _priority) in scopes.items()}
+
+    def _collect_step_scopes(
+        self,
+        steps: list[Any],
+        *,
+        raw_keys: set[str],
+        scopes: dict[str, tuple[str, int]],
+    ) -> None:
+        current_scope: tuple[str, int] | None = None
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            marker = _scope_marker_from_step(step)
+            if marker:
+                current_scope = marker
+            if current_scope:
+                for key in _step_element_references(step, raw_keys):
+                    _record_element_scope(
+                        scopes,
+                        key,
+                        current_scope[0],
+                        current_scope[1],
+                    )
+
+        next_scope: tuple[str, int] | None = None
+        for step in reversed(steps):
+            if not isinstance(step, dict):
+                continue
+            marker = _scope_marker_from_step(step)
+            if marker:
+                next_scope = marker
+            if next_scope:
+                for key in _step_element_references(step, raw_keys):
+                    _record_element_scope(
+                        scopes,
+                        key,
+                        next_scope[0],
+                        next_scope[1],
+                    )
 
     def _normalize_modules(
         self,
@@ -243,6 +400,7 @@ class GenerationHarness:
         *,
         selector_element_aliases: set[str] | None = None,
         semantic_element_aliases: dict[str, str] | None = None,
+        element_key_aliases: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         normalized: dict[str, Any] = {}
         for module_name, raw_module in modules.items():
@@ -263,6 +421,7 @@ class GenerationHarness:
                 raw_steps,
                 selector_element_aliases=selector_element_aliases or set(),
                 semantic_element_aliases=semantic_element_aliases or {},
+                element_key_aliases=element_key_aliases or {},
             )
         return normalized
 
@@ -272,10 +431,13 @@ class GenerationHarness:
             return step.get("use_module")
         if "module" in step and "action" not in step:
             return step.get("module")
+        if "module_name" in step:
+            return step.get("module_name")
         action = str(step.get("action") or "").lower()
         if action in {"module", "use_module", "reuse_module", "call_module"}:
             return (
                 step.get("use_module")
+                or step.get("module_name")
                 or step.get("module")
                 or step.get("target")
                 or step.get("value")
@@ -402,6 +564,11 @@ class GenerationHarness:
             if not has_selector or not step.get("attribute") or not has_expected:
                 raise ValueError(
                     f"{case_name} step {index} 断言格式错误: {action} 需要 selector/target、attribute 和 value/expected"
+                )
+        elif action in _VALUE_ASSERTIONS:
+            if not has_selector or not has_expected:
+                raise ValueError(
+                    f"{case_name} step {index} 断言格式错误: {action} 需要 selector/target 和 value/expected"
                 )
         elif action in _MULTI_VALUE_ASSERTIONS:
             has_values = (
@@ -556,16 +723,537 @@ def _normalize_step_element_references(
     *,
     selector_element_aliases: set[str],
     semantic_element_aliases: dict[str, str],
+    element_key_aliases: dict[str, str],
 ) -> dict[str, Any]:
+    selector = step.get("selector")
+    if isinstance(selector, str) and selector in element_key_aliases:
+        step["selector"] = element_key_aliases[selector]
+
     target = step.get("target")
     if not isinstance(target, str) or not target.strip():
         return step
-    if target in selector_element_aliases and not step.get("selector"):
-        step["selector"] = target
+    if target in element_key_aliases and not step.get("selector"):
+        step["selector"] = element_key_aliases[target]
         step.pop("target", None)
     elif target in semantic_element_aliases:
         step["target"] = semantic_element_aliases[target]
+    elif target in selector_element_aliases and not step.get("selector"):
+        step["selector"] = target
+        step.pop("target", None)
     return step
+
+
+def _payload_step_lists(payload: dict[str, Any]) -> list[list[Any]]:
+    result: list[list[Any]] = []
+    for raw_module in (payload.get("modules") or {}).values():
+        if isinstance(raw_module, dict) and isinstance(raw_module.get("steps"), list):
+            result.append(raw_module["steps"])
+        elif isinstance(raw_module, list):
+            result.append(raw_module)
+    for case_data in (payload.get("data") or {}).values():
+        if isinstance(case_data, dict) and isinstance(case_data.get("steps"), list):
+            result.append(case_data["steps"])
+    return result
+
+
+def _pop_case_level_params(case_data: dict[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    for key in ("inputs", "params"):
+        raw = case_data.pop(key, None)
+        if isinstance(raw, dict):
+            params.update(_normalize_variable_syntax(raw))
+    return params
+
+
+def _apply_case_params_to_module_steps(
+    case_data: dict[str, Any],
+    params: dict[str, Any],
+) -> None:
+    steps = case_data.get("steps")
+    if not isinstance(steps, list):
+        return
+    for step in steps:
+        if not isinstance(step, dict) or "params" in step:
+            continue
+        action = str(step.get("action") or "").lower()
+        if step.get("use_module") or (step.get("module") and not action):
+            step["params"] = dict(params)
+
+
+def _module_variable_refs(
+    context_modules: dict[str, Any],
+    generated_modules: dict[str, Any],
+) -> dict[str, set[str]]:
+    refs = {
+        module_name: _extract_variable_refs(module_steps)
+        for module_name, module_steps in (context_modules or {}).items()
+    }
+    refs.update(
+        {
+            module_name: _extract_variable_refs(module_steps)
+            for module_name, module_steps in (generated_modules or {}).items()
+        }
+    )
+    return refs
+
+
+def _align_module_params_with_spec_inputs(
+    steps: list[dict[str, Any]],
+    *,
+    module_variable_refs: dict[str, set[str]],
+    spec_inputs: dict[str, Any],
+) -> None:
+    if not isinstance(spec_inputs, dict) or not spec_inputs:
+        return
+    for step in steps:
+        if not isinstance(step, dict) or not step.get("use_module"):
+            continue
+        module_name = str(step.get("use_module") or "")
+        required = module_variable_refs.get(module_name, set())
+        if not required:
+            continue
+        params = step.get("params")
+        if not isinstance(params, dict):
+            params = {}
+        params = dict(params)
+        for name in sorted(required):
+            if name in spec_inputs:
+                params[name] = spec_inputs[name]
+        if params:
+            step["params"] = params
+
+
+def _module_param_names(steps: list[dict[str, Any]]) -> set[str]:
+    names: set[str] = set()
+    for step in steps:
+        if not isinstance(step, dict) or not isinstance(step.get("params"), dict):
+            continue
+        names.update(str(key) for key in step["params"])
+    return names
+
+
+def _inline_spec_input_values(
+    value: Any,
+    *,
+    spec_inputs: dict[str, Any],
+    known_variables: set[str],
+    module_param_names: set[str],
+) -> Any:
+    if not isinstance(spec_inputs, dict) or not spec_inputs:
+        return value
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            value[index] = _inline_spec_input_values(
+                item,
+                spec_inputs=spec_inputs,
+                known_variables=known_variables,
+                module_param_names=module_param_names,
+            )
+        return value
+    if isinstance(value, dict):
+        for key, item in list(value.items()):
+            if key == "params":
+                continue
+            value[key] = _inline_spec_input_values(
+                item,
+                spec_inputs=spec_inputs,
+                known_variables=known_variables,
+                module_param_names=module_param_names,
+            )
+        return value
+    if not isinstance(value, str):
+        return value
+    match = re.fullmatch(r"\$\{([^{}]+)\}|\$<([^<>]+)>", value.strip())
+    if not match:
+        return value
+    name = (match.group(1) or match.group(2) or "").strip()
+    if not name or name in known_variables or name in module_param_names:
+        return value
+    if name not in spec_inputs:
+        return value
+    return spec_inputs[name]
+
+
+def _drop_unsupported_url_assertions(
+    steps: list[dict[str, Any]],
+    *,
+    spec: dict[str, Any],
+    context: ProjectContext,
+) -> None:
+    allowed_terms = _url_assertion_terms_from_spec(spec=spec, context=context)
+    kept: list[dict[str, Any]] = []
+    for step in steps:
+        action = str((step or {}).get("action") or "").lower()
+        if action not in {"assert_url", "assert_url_contains"}:
+            kept.append(step)
+            continue
+        expected = str(step.get("value") or step.get("expected") or "").strip()
+        if _looks_like_display_text_url_assertion(expected):
+            step["action"] = "assert_title_contains"
+            if "expected" in step and "value" not in step:
+                step["value"] = step.pop("expected")
+            kept.append(step)
+            continue
+        if expected and any(expected.lower() in term for term in allowed_terms):
+            kept.append(step)
+            continue
+    steps[:] = kept
+
+
+def _normalize_assertions_against_step_evidence(
+    steps: list[dict[str, Any]],
+    *,
+    element_selectors: dict[str, Any] | None = None,
+) -> None:
+    fills: list[dict[str, Any]] = []
+    element_selectors = element_selectors or {}
+    for step in steps:
+        action = str((step or {}).get("action") or "").lower()
+        if action in _lower_actions(StepAction.FILL, StepAction.TYPE):
+            expected = _step_expected_value(step)
+            if expected:
+                fills.append(
+                    {
+                        "selector": step.get("selector"),
+                        "target": step.get("target"),
+                        "value": expected,
+                    }
+                )
+            continue
+        if action not in {"assert_text", "assert_text_contains", "hard_assert"}:
+            continue
+        expected = _step_expected_value(step)
+        if not expected:
+            continue
+        fill = _matching_fill_for_expected(fills, expected)
+        if not fill:
+            continue
+        if not _text_assertion_should_use_previous_fill_value(
+            step,
+            fill=fill,
+            expected=expected,
+            element_selectors=element_selectors,
+        ):
+            continue
+        step["action"] = "assert_value"
+        step["value"] = expected
+        step.pop("expected", None)
+        fill_selector = fill.get("selector")
+        fill_target = fill.get("target")
+        if fill_selector:
+            step["selector"] = fill_selector
+            step.pop("target", None)
+        elif fill_target:
+            step["target"] = fill_target
+            step.pop("selector", None)
+
+
+def _looks_like_display_text_url_assertion(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if _urls_from_value(text):
+        return False
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return not re.search(r"[/?#=&%]", text)
+    return False
+
+
+def _step_expected_value(step: dict[str, Any]) -> str:
+    expected = step.get("expected")
+    if expected is None:
+        expected = step.get("value")
+    return str(expected).strip() if expected is not None else ""
+
+
+def _matching_fill_for_expected(
+    fills: list[dict[str, Any]],
+    expected: str,
+) -> dict[str, Any] | None:
+    normalized_expected = _assertion_value_key(expected)
+    if not normalized_expected:
+        return None
+    for fill in reversed(fills):
+        if _assertion_value_key(fill.get("value")) == normalized_expected:
+            return fill
+    return None
+
+
+def _text_assertion_should_use_previous_fill_value(
+    step: dict[str, Any],
+    *,
+    fill: dict[str, Any],
+    expected: str,
+    element_selectors: dict[str, Any],
+) -> bool:
+    if _same_locator_reference(step, fill, element_selectors=element_selectors):
+        return True
+    selector_text = _selector_text_query(
+        step.get("selector"),
+        element_selectors=element_selectors,
+    )
+    if not selector_text:
+        selector_text = _selector_text_query(
+            step.get("target"),
+            element_selectors=element_selectors,
+        )
+    if not selector_text:
+        return False
+    return _assertion_value_key(selector_text) != _assertion_value_key(expected)
+
+
+def _same_locator_reference(
+    step: dict[str, Any],
+    fill: dict[str, Any],
+    *,
+    element_selectors: dict[str, Any],
+) -> bool:
+    step_selector = _effective_selector_value(
+        step.get("selector"),
+        element_selectors=element_selectors,
+    )
+    fill_selector = _effective_selector_value(
+        fill.get("selector"),
+        element_selectors=element_selectors,
+    )
+    if step_selector and fill_selector and step_selector == fill_selector:
+        return True
+    step_target = str(step.get("target") or "").strip()
+    fill_target = str(fill.get("target") or "").strip()
+    return bool(step_target and fill_target and step_target == fill_target)
+
+
+def _effective_selector_value(
+    value: Any,
+    *,
+    element_selectors: dict[str, Any],
+) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    resolved = element_selectors.get(text)
+    if isinstance(resolved, str) and resolved.strip():
+        return resolved.strip()
+    return text
+
+
+def _selector_text_query(
+    value: Any,
+    *,
+    element_selectors: dict[str, Any],
+) -> str:
+    selector = _effective_selector_value(value, element_selectors=element_selectors)
+    if not selector:
+        return ""
+    if selector.lower().startswith("text="):
+        return selector[5:].strip(" \"'")
+    for pattern in (
+        r"has-text\(\s*(['\"])(.*?)\1\s*\)",
+        r"text\(\s*(['\"])(.*?)\1\s*\)",
+        r"normalize-space\(\)\s*=\s*(['\"])(.*?)\1",
+    ):
+        match = re.search(pattern, selector)
+        if match:
+            return str(match.group(2) or "").strip()
+    return ""
+
+
+def _assertion_value_key(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    if re.search(r"[\u4e00-\u9fff]", text):
+        text = re.sub(r"\s+", "", text)
+    else:
+        text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _url_assertion_terms_from_spec(
+    *,
+    spec: dict[str, Any],
+    context: ProjectContext,
+) -> set[str]:
+    terms: set[str] = set()
+    for text in _strings_from_value(spec):
+        normalized = " ".join(str(text or "").lower().split())
+        if normalized:
+            terms.add(normalized)
+    for url in _urls_from_value(spec):
+        terms.add(url.lower())
+        parts = urlsplit(url)
+        for item in (parts.netloc, parts.path, parts.fragment):
+            item = str(item or "").strip("/").lower()
+            if item:
+                terms.add(item)
+    base_url = str(context.base_url or "").strip()
+    if base_url:
+        terms.add(base_url.lower())
+        parts = urlsplit(base_url)
+        for item in (parts.netloc, parts.path, parts.fragment):
+            item = str(item or "").strip("/").lower()
+            if item:
+                terms.add(item)
+    return terms
+
+
+def _strings_from_value(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    strings: list[str] = []
+    if isinstance(value, list):
+        for item in value:
+            strings.extend(_strings_from_value(item))
+    elif isinstance(value, dict):
+        for item in value.values():
+            strings.extend(_strings_from_value(item))
+    return strings
+
+
+def _urls_from_value(value: Any) -> list[str]:
+    urls: list[str] = []
+    if isinstance(value, str):
+        urls.extend(match.group(0) for match in re.finditer(r"https?://[^\s\"'<>，,。；;、)）\]】]+", value))
+        return urls
+    if isinstance(value, list):
+        for item in value:
+            urls.extend(_urls_from_value(item))
+    elif isinstance(value, dict):
+        for item in value.values():
+            urls.extend(_urls_from_value(item))
+    return urls
+
+
+def _record_element_scope(
+    scopes: dict[str, tuple[str, int]],
+    key: str,
+    scope: str,
+    priority: int,
+) -> None:
+    normalized_scope = _safe_element_key(scope)
+    if not normalized_scope:
+        return
+    current = scopes.get(key)
+    if current is None or priority >= current[1]:
+        scopes[key] = (normalized_scope, priority)
+
+
+def _scope_from_element_definition(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    for key in (
+        "page",
+        "page_name",
+        "page_title",
+        "screen",
+        "view",
+        "route",
+        "section",
+        "context",
+    ):
+        if value.get(key):
+            return _scope_from_business_text(value[key])
+    for key in ("url", "page_url", "href"):
+        if value.get(key):
+            return _scope_from_url(value[key])
+    return None
+
+
+def _scope_marker_from_step(step: dict[str, Any]) -> tuple[str, int] | None:
+    for key in ("page", "page_name", "page_title", "screen", "view"):
+        if step.get(key):
+            scope = _scope_from_business_text(step[key])
+            if scope:
+                return scope, 40
+
+    action = str(step.get("action") or step.get("type") or "").lower()
+    if action in {"goto", "open", "navigate"}:
+        scope = _scope_from_url(
+            step.get("value") or step.get("url") or step.get("href") or step.get("link")
+        )
+        if scope:
+            return scope, 10
+
+    if action in {
+        "assert_title",
+        "assert_title_contains",
+        "title_should_be",
+        "title_contains",
+    }:
+        scope = _scope_from_business_text(
+            step.get("value") or step.get("expected") or step.get("target")
+        )
+        if scope:
+            return scope, 30
+    return None
+
+
+def _step_element_references(step: dict[str, Any], raw_keys: set[str]) -> set[str]:
+    refs: set[str] = set()
+    for field in ("selector", "target"):
+        value = step.get(field)
+        if isinstance(value, dict):
+            value = _coerce_generated_string(
+                value,
+                field_path=f"step.{field}",
+                preferred_keys=("key", "element_key", "name", "selector", "value"),
+            )
+        if isinstance(value, str) and value in raw_keys:
+            refs.add(value)
+    return refs
+
+
+def _scope_from_url(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parsed = urlsplit(text)
+    route = parsed.fragment or parsed.path
+    if route.startswith("/"):
+        route = route[1:]
+    route = route.split("?", 1)[0].split("#", 1)[0]
+    route = unquote(route)
+    segments = [
+        segment
+        for segment in re.split(r"[/\\._\-\s]+", route)
+        if segment and not segment.isdigit()
+    ]
+    ignored = {
+        "admin",
+        "api",
+        "app",
+        "v",
+        "www",
+        "html",
+        "index",
+    }
+    meaningful = [segment for segment in segments if segment.lower() not in ignored]
+    if not meaningful:
+        host = parsed.hostname or ""
+        meaningful = [
+            segment
+            for segment in re.split(r"[._\-]+", host)
+            if segment and segment.lower() not in ignored
+        ]
+    if not meaningful:
+        return None
+    route_text = "_".join(meaningful[-3:])
+    aliases = {"home": "首页", "login": "登录页"}
+    return aliases.get(route_text.lower(), route_text)
+
+
+def _scope_from_business_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    text = re.sub(r"^(?:text|css|xpath)=", "", text, flags=re.IGNORECASE).strip()
+    text = text.strip(" \"'[]()（）:：,，.。;；")
+    text = re.sub(r"\s+", "_", text)
+    if not text:
+        return None
+    if re.search(r"[\u4e00-\u9fff]", text) and not text.endswith(("页", "页面")):
+        return f"{text}页"
+    return text
 
 
 def _first_generated_string(
@@ -628,6 +1316,7 @@ _URL_TITLE_ASSERTIONS = _lower_actions(
 )
 _COUNT_ASSERTIONS = _lower_actions(StepAction.ASSERT_ELEMENT_COUNT)
 _ATTRIBUTE_ASSERTIONS = _lower_actions(StepAction.ASSERT_ATTRIBUTE)
+_VALUE_ASSERTIONS = _lower_actions(StepAction.ASSERT_VALUE)
 _MULTI_VALUE_ASSERTIONS = _lower_actions(StepAction.ASSERT_HAVE_VALUES)
 _ASSERTION_ACTIONS = (
     _TEXT_ASSERTIONS
@@ -635,12 +1324,21 @@ _ASSERTION_ACTIONS = (
     | _URL_TITLE_ASSERTIONS
     | _COUNT_ASSERTIONS
     | _ATTRIBUTE_ASSERTIONS
+    | _VALUE_ASSERTIONS
     | _MULTI_VALUE_ASSERTIONS
 )
 
 
 def _normalize_verify_step(step: dict[str, Any]) -> dict[str, Any]:
     action = str(step.get("action") or "").lower()
+    if action in _ATTRIBUTE_ASSERTIONS and str(step.get("attribute") or "").lower() in {
+        "value",
+        "input_value",
+        "input-value",
+    }:
+        step["action"] = "assert_value"
+        step.pop("attribute", None)
+        return step
     if action not in {"verify", "验证"}:
         return step
     value = step.get("value")
@@ -711,6 +1409,21 @@ def _safe_case_name(value: str) -> str:
     name = re.sub(r"[^A-Za-z0-9_\u4e00-\u9fff]+", "_", value.strip()).strip("_")
     name = name or "generated"
     return name if name.startswith("test_") else f"test_{name}"
+
+
+def _safe_element_key(value: str) -> str:
+    key = re.sub(r"[^A-Za-z0-9_\u4e00-\u9fff]+", "_", str(value).strip()).strip("_")
+    return key or "element"
+
+
+def _unique_element_key(candidate: str, used_keys: set[str]) -> str:
+    base = _safe_element_key(candidate)
+    if base not in used_keys:
+        return base
+    index = 2
+    while f"{base}_{index}" in used_keys:
+        index += 1
+    return f"{base}_{index}"
 
 
 def _looks_raw_selector(value: str) -> bool:

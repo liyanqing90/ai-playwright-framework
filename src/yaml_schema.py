@@ -219,6 +219,65 @@ def validate_all_projects(root: str | Path = "test_data") -> None:
         raise YamlSchemaValidationError(issues)
 
 
+def validate_pytest_targets(paths: Iterable[str | Path]) -> None:
+    case_files = _pytest_case_files(paths)
+    if not case_files:
+        validate_all_projects()
+        return
+
+    contexts: dict[Path, ValidationContext] = {}
+    issues: list[SchemaIssue] = []
+    for case_file in case_files:
+        project_dir = _project_dir_for_case_file(case_file)
+        if project_dir is None:
+            continue
+        context = contexts.get(project_dir)
+        if context is None:
+            context = load_validation_context(project_dir)
+            contexts[project_dir] = context
+        validate_case_file(case_file, context)
+    for context in contexts.values():
+        issues.extend(context.issues)
+    if issues:
+        raise YamlSchemaValidationError(issues)
+
+
+def _pytest_case_files(paths: Iterable[str | Path]) -> list[Path]:
+    result: list[Path] = []
+    seen: set[Path] = set()
+    for raw_path in paths:
+        path_text = str(raw_path or "")
+        if not path_text or path_text.startswith("-"):
+            continue
+        path_text = path_text.split("::", 1)[0]
+        path = Path(path_text)
+        if not path.exists():
+            continue
+        if path.is_file() and path.suffix.lower() in {".yaml", ".yml"}:
+            resolved = path.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                result.append(path)
+            continue
+        if path.is_dir():
+            for case_file in sorted(path.rglob("*.y*ml")):
+                resolved = case_file.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    result.append(case_file)
+    return result
+
+
+def _project_dir_for_case_file(case_file: Path) -> Path | None:
+    parts = case_file.parts
+    if "cases" not in parts:
+        return None
+    cases_index = len(parts) - 1 - list(reversed(parts)).index("cases")
+    if cases_index <= 0:
+        return None
+    return Path(*parts[:cases_index])
+
+
 def validate_project(
     test_dir: str | Path, *, raise_on_error: bool = True
 ) -> list[SchemaIssue]:

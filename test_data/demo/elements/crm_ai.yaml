@@ -1,0 +1,4 @@
+elements:
+  crm_product_id_input: "#product-audit-search_spuCode"
+  crm_search_btn: 'button:has-text("查 询")'
+  crm_view_log_btn: 'a:has-text("日志")'

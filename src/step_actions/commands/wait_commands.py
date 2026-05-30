@@ -65,7 +65,7 @@ class WaitForElementTextCommand(Command):
         timeout = int(step.get("timeout", DEFAULT_TIMEOUT))
         expected_text = step.get("expected_text", value)
         ui_helper.wait_for_element_text(
-            selector=selector, expected_text=expected_text, timeout=timeout
+            selector=selector, expected=expected_text, timeout=timeout
         )
 
 

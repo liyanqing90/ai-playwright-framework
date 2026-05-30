@@ -7,7 +7,7 @@ import threading
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Callable
 
 import allure
 
@@ -73,6 +73,53 @@ _STABILIZE_AFTER_ACTIONS = _lower_actions(
     StepAction.MONITOR_REQUEST,
     StepAction.MONITOR_RESPONSE,
 )
+
+_PENDING_SELECTOR_CACHE_LOCK = threading.RLock()
+_PENDING_SELECTOR_CACHE: list[tuple[str, Callable[[], None]]] = []
+_DEFERRED_SELECTOR_CACHE_MODES = {"deferred", "after_test", "after-case", "after_case"}
+
+
+def _selector_cache_commit_mode() -> str:
+    override = os.environ.get("UI_SELECTOR_CACHE_COMMIT_MODE")
+    if override is not None:
+        return override.strip().lower()
+    if os.environ.get("UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"):
+        return "deferred"
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return "deferred"
+    return "immediate"
+
+
+def _defer_selector_cache_commit(description: str, commit: Callable[[], None]) -> None:
+    with _PENDING_SELECTOR_CACHE_LOCK:
+        _PENDING_SELECTOR_CACHE.append((description, commit))
+    logger.info(f"selector cache deferred until test passes: {description}")
+
+
+def commit_pending_selector_cache() -> None:
+    with _PENDING_SELECTOR_CACHE_LOCK:
+        pending = list(_PENDING_SELECTOR_CACHE)
+        _PENDING_SELECTOR_CACHE.clear()
+    for description, commit in pending:
+        try:
+            commit()
+            logger.info(f"selector cache committed after verified test: {description}")
+        except Exception as exc:
+            logger.exception(
+                "selector cache commit failed after verified test: "
+                f"{description} | error={exc}"
+            )
+
+
+def discard_pending_selector_cache(reason: str | None = None) -> None:
+    with _PENDING_SELECTOR_CACHE_LOCK:
+        count = len(_PENDING_SELECTOR_CACHE)
+        _PENDING_SELECTOR_CACHE.clear()
+    if count:
+        logger.info(
+            "selector cache discarded before test verification completed: "
+            f"count={count} | reason={reason or 'not verified'}"
+        )
 
 
 class StepExecutor:
@@ -180,7 +227,7 @@ class StepExecutor:
             )
             if mode != "strict" and not target and pre_selector:
                 target = self.variable_manager.replace_variables_refactored(
-                    pre_selector
+                    raw_selector if element_key else pre_selector
                 )
             selector = self._resolve_selector(
                 action,
@@ -194,6 +241,8 @@ class StepExecutor:
             value = self.variable_manager.replace_variables_refactored(
                 step.get("value")
             )  # 替换变量
+            if value is not None:
+                step["_resolved_value"] = value
             self._log_step_execution(action=action, selector=selector, value=value)
             self._log_ai_mode(
                 mode=mode,
@@ -205,6 +254,7 @@ class StepExecutor:
             self._validate_step(action, selector, step)
             action_before_page = self._active_page()
             action_before_url = self._safe_page_url(action_before_page)
+            action_before_page_errors = self._page_error_count()
             self._execute_action(action, selector, value, step)
             self._wait_after_action_stable(action, step)
             self._sync_runtime_page_from_ui_helper()
@@ -212,7 +262,9 @@ class StepExecutor:
                 step,
                 before_page=action_before_page,
                 before_url=action_before_url,
+                before_page_errors=action_before_page_errors,
             )
+            self._record_action_page_errors(step)
             self._persist_resolved_selector_after_success(
                 element_key=element_key,
                 original_selector=raw_selector,
@@ -320,6 +372,15 @@ class StepExecutor:
         except Exception:
             return ""
 
+    def _page_error_count(self) -> int:
+        return len(self._page_errors())
+
+    def _page_errors(self) -> list[str]:
+        errors = getattr(self.ui_helper, "page_errors", None)
+        if isinstance(errors, list):
+            return [str(error) for error in errors]
+        return []
+
     @staticmethod
     def _page_key_from_url(url: str | None) -> str:
         return str(url or "about:blank").split("?")[0]
@@ -330,18 +391,34 @@ class StepExecutor:
         *,
         before_page: Any,
         before_url: str,
+        before_page_errors: int,
     ) -> None:
         after_page = self._active_page()
         after_url = self._safe_page_url(after_page)
+        page_errors = self._page_errors()
+        after_page_errors = len(page_errors)
+        new_page_errors = page_errors[before_page_errors:after_page_errors]
         step["_action_before_url"] = before_url
         step["_action_after_url"] = after_url
         step["_action_before_page_key"] = self._page_key_from_url(before_url)
         step["_action_after_page_key"] = self._page_key_from_url(after_url)
+        step["_action_page_error_count_delta"] = max(
+            0, after_page_errors - before_page_errors
+        )
+        if new_page_errors:
+            step["_action_page_errors"] = new_page_errors
         step["_action_page_changed"] = (
             before_page is not None
             and after_page is not None
             and before_page is not after_page
         )
+
+    def _record_action_page_errors(self, step: Dict[str, Any]) -> None:
+        if int(step.get("_action_page_error_count_delta") or 0) <= 0:
+            return
+        errors = step.get("_action_page_errors") or []
+        detail = "; ".join(str(error) for error in errors) or "unknown page error"
+        logger.warning(f"action triggered page error after execution: {detail}")
 
     def _should_wait_after_action(self, action: str, step: Dict[str, Any]) -> bool:
         if action not in _STABILIZE_AFTER_ACTIONS:
@@ -450,6 +527,8 @@ class StepExecutor:
             step["_resolved_original_selector"] = resolved.original_selector
         if resolved.original_error:
             step["_resolved_original_error"] = resolved.original_error
+        if resolved.selector:
+            step["_resolved_selector"] = resolved.selector
         return resolved.selector
 
     def _persist_healed_selector(
@@ -585,15 +664,10 @@ class StepExecutor:
             if self._has_resolved_selector_cache_work(step):
                 logger.info(f"selector cache skipped after action: {reason}")
             return
-        self._persist_verified_registry_selector(
-            resolved_selector=resolved_selector,
-            step=step,
-        )
-        self._persist_healed_selector(
+        self._schedule_verified_selector_persist(
             element_key=element_key,
             original_selector=original_selector,
             resolved_selector=resolved_selector,
-            healing_attempted=bool(step.get("_resolved_healing_attempted")),
             step=step,
         )
 
@@ -631,6 +705,8 @@ class StepExecutor:
             )
         if step.get("_action_page_changed"):
             return False, "action switched page before cache verification"
+        if int(step.get("_action_page_error_count_delta") or 0) > 0:
+            return False, "action triggered page error before cache verification"
         return True, "verified"
 
     def _persist_verified_registry_selector(
@@ -639,8 +715,14 @@ class StepExecutor:
         resolved_selector: str | None,
         step: Dict[str, Any],
     ) -> None:
+        if not (
+            step.get("_resolved_registry_record_id")
+            or step.get("_resolved_cache_action")
+            or step.get("_resolved_cache_target")
+        ):
+            return
         resolver = self.smart_resolver
-        if resolver is None:
+        if resolver is None or not hasattr(resolver, "record_verified_selector"):
             return
         try:
             resolver.record_verified_selector(
@@ -664,10 +746,74 @@ class StepExecutor:
                 f"selector={resolved_selector} | error={exc}"
             )
 
+    def _schedule_verified_selector_persist(
+        self,
+        *,
+        element_key: str | None,
+        original_selector: str | None,
+        resolved_selector: str | None,
+        step: Dict[str, Any],
+    ) -> None:
+        snapshot = dict(step)
+        description = self._selector_cache_description(
+            step=snapshot,
+            resolved_selector=resolved_selector,
+            element_key=element_key,
+        )
+
+        def commit() -> None:
+            self._persist_verified_registry_selector(
+                resolved_selector=resolved_selector,
+                step=snapshot,
+            )
+            # YAML is the authoritative asset. Runtime self-healing records verified
+            # selector evidence only; updating elements YAML must be an explicit user action.
+            self._log_healed_selector_yaml_suggestion(
+                element_key=element_key,
+                original_selector=original_selector,
+                resolved_selector=resolved_selector,
+                healing_attempted=bool(snapshot.get("_resolved_healing_attempted")),
+            )
+
+        if _selector_cache_commit_mode() in _DEFERRED_SELECTOR_CACHE_MODES:
+            _defer_selector_cache_commit(description, commit)
+            return
+        commit()
+
+    @staticmethod
+    def _selector_cache_description(
+        *,
+        step: Dict[str, Any],
+        resolved_selector: str | None,
+        element_key: str | None,
+    ) -> str:
+        return (
+            f"action={step.get('_resolved_cache_action') or step.get('action')} "
+            f"| target={step.get('_resolved_cache_target') or step.get('target') or step.get('selector')} "
+            f"| selector={resolved_selector} | element={element_key or ''}"
+        )
+
     def _get_element_store(self) -> ElementDefinitionStore:
         if self.element_store is None:
             self.element_store = ElementDefinitionStore()
         return self.element_store
+
+    @staticmethod
+    def _log_healed_selector_yaml_suggestion(
+        *,
+        element_key: str | None,
+        original_selector: str | None,
+        resolved_selector: str | None,
+        healing_attempted: bool,
+    ) -> None:
+        if not healing_attempted or not element_key or not resolved_selector:
+            return
+        if original_selector == resolved_selector:
+            return
+        logger.warning(
+            "selector self-healed and verified; YAML update recommended: "
+            f"element={element_key} | old={original_selector} | new={resolved_selector}"
+        )
 
     @staticmethod
     def _apply_nth(selector: str | None, step: Dict[str, Any]) -> str | None:

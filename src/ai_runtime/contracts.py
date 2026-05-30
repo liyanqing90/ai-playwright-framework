@@ -19,6 +19,19 @@ class SelectorDecision(StrictModel):
     reason: str | None = Field(default=None, max_length=120)
     expected: str | None = Field(default=None, max_length=120)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_status_aliases(cls, data):
+        if isinstance(data, dict):
+            normalized = dict(data)
+            status = str(normalized.get("status") or "").strip().lower()
+            if status in {"success", "succeeded", "done"}:
+                normalized["status"] = "ok"
+            elif status in {"error", "reject", "rejected"}:
+                normalized["status"] = "failed"
+            return normalized
+        return data
+
     @model_validator(mode="after")
     def validate_locator_payload(self):
         if self.status == "ok" and not (
@@ -57,6 +70,12 @@ class AiStepDecision(StrictModel):
             self.element_id or self.selector
         ):
             raise ValueError(f"{self.action} action requires element_id or selector")
+        if self.action == "press" and not (
+            self.element_id or self.selector or self.target
+        ):
+            raise ValueError(
+                "press action requires element_id, selector or target"
+            )
         if self.action == "press" and not self.key:
             raise ValueError("press action requires key")
         if self.action == "wait" and self.wait_ms is None:
@@ -66,12 +85,11 @@ class AiStepDecision(StrictModel):
         return self
 
 
-class AgentCaseDecision(StrictModel):
+class AgentCaseRuntimeDecision(StrictModel):
     status: Literal["ok", "need_more_context", "blocked", "failed"] = "ok"
     action: (
         Literal[
             "goto",
-            "use_module",
             "click",
             "fill",
             "press",
@@ -80,6 +98,7 @@ class AgentCaseDecision(StrictModel):
             "assert_text",
             "assert_url_contains",
             "assert_title",
+            "assert_title_contains",
             "done",
             "finish",
             "fail",
@@ -93,8 +112,6 @@ class AgentCaseDecision(StrictModel):
     value: str | None = None
     key: str | None = None
     wait_ms: int | None = Field(default=None, ge=0, le=60000)
-    module: str | None = None
-    params: dict[str, Any] | None = None
     reason: str | None = Field(default=None, max_length=120)
     expected: str | None = Field(default=None, max_length=120)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -111,8 +128,6 @@ class AgentCaseDecision(StrictModel):
             raise ValueError("ok decision requires action")
         if self.action == "goto" and not self.value:
             raise ValueError("goto action requires value")
-        if self.action == "use_module" and not self.module:
-            raise ValueError("use_module action requires module")
         if self.action in {"click", "assert_visible"} and not (
             self.element_id or self.selector or self.target
         ):
@@ -135,15 +150,48 @@ class AgentCaseDecision(StrictModel):
             raise ValueError(
                 "assert_text action requires element_id, selector or target"
             )
-        if (
-            self.action in {"assert_url_contains", "assert_title"}
-            and self.value is None
-        ):
+        if self.action in {
+            "assert_url_contains",
+            "assert_title",
+            "assert_title_contains",
+        } and self.value is None:
             raise ValueError(f"{self.action} action requires value")
         if self.action == "wait" and self.wait_ms is None:
             raise ValueError("wait action requires wait_ms")
         if self.action in {"done", "finish", "fail"} and not self.reason:
             raise ValueError(f"{self.action} action requires reason")
+        return self
+
+
+class AgentCaseDecision(AgentCaseRuntimeDecision):
+    action: (
+        Literal[
+            "goto",
+            "use_module",
+            "click",
+            "fill",
+            "press",
+            "wait",
+            "assert_visible",
+            "assert_text",
+            "assert_url_contains",
+            "assert_title",
+            "assert_title_contains",
+            "done",
+            "finish",
+            "fail",
+        ]
+        | None
+    ) = None
+    module: str | None = None
+    params: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_module_payload(self):
+        if self.status in {"need_more_context", "blocked", "failed"}:
+            return self
+        if self.action == "use_module" and not self.module:
+            raise ValueError("use_module action requires module")
         return self
 
 
@@ -158,6 +206,8 @@ class GeneratedCase(StrictModel):
 class GeneratedCaseData(StrictModel):
     description: str | None = None
     mode: Literal["strict", "smart"] = "smart"
+    inputs: dict[str, Any] | None = None
+    params: dict[str, Any] | None = None
     steps: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -190,3 +240,15 @@ class VisionFindResult(BaseModel):
     reason: str | None = None
     error_code: str | None = None
     candidates: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_not_found_indexes(cls, data):
+        if isinstance(data, dict):
+            normalized = dict(data)
+            for key in ("selected_candidate_index", "selected_candidate_id"):
+                value = normalized.get(key)
+                if isinstance(value, int) and value < 0:
+                    normalized[key] = None
+            return normalized
+        return data

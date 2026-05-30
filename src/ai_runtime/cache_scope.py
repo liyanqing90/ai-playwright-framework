@@ -177,10 +177,16 @@ def first_url(value: Any) -> str:
 
 
 def context_asset_fingerprint(context: ProjectContext) -> dict[str, str]:
+    elements = context.elements or {}
+    modules = context.modules or {}
+    variables = context.variables or {}
     return {
-        "element_keys": hash_payload(sorted((context.elements or {}).keys())),
-        "module_keys": hash_payload(sorted((context.modules or {}).keys())),
-        "variable_keys": hash_payload(sorted((context.variables or {}).keys())),
+        "element_keys": hash_payload(sorted(elements.keys())),
+        "element_values": hash_payload(elements),
+        "module_keys": hash_payload(sorted(modules.keys())),
+        "module_values": hash_payload(modules),
+        "variable_keys": hash_payload(sorted(variables.keys())),
+        "variable_values": hash_payload(variables),
     }
 
 

@@ -3,23 +3,27 @@ runtime:
   allow_ai_in_smart: true
   ai_enabled: true
   max_ai_calls_per_test: 3
+  smart_selector_probe_timeout_ms: 1000
   candidate_limit: 120
   ai_step_candidate_limit: 24
   llm_selector_candidate_scan_limit: 120
   llm_selector_candidate_limit: 24
   agent_candidate_scan_limit: 120
   agent_candidate_limit: 16
+  agent_model_candidate_limit: 10
+  agent_model_form_limit: 6
+  agent_model_assertion_limit: 6
   agent_context_items: 40
   agent_history_limit: 3
-  agent_model: mimo-v2.5
-  agent_reasoning_effort: low
+  agent_model: deepseek-v4-flash
+  agent_reasoning_effort: none
   agent_timeout_seconds: 45
   agent_completion_wait_seconds: 12
+  agent_execution_retry_limit: 2
   action_stable_timeout_ms: 10000
   action_stable_idle_ms: 500
   ai_cache_sqlite_path: .ui_auto/ai_cache.sqlite3
-  agent_case_cache_enabled: true
-  agent_case_cache_max_replay_steps: 30
+  agent_case_plan_cache_enabled: true
 
 native_observe:
   enabled: true
@@ -52,7 +56,7 @@ selector_registry:
   deprecated_after_failures: 5
 
 self_healing:
-  persist_elements: true
+  persist_elements: false
   min_persist_confidence: 0.85
   persist_assertion_selectors: false
 
@@ -62,7 +66,6 @@ generation:
   compile_context_items: 32
   compile_context_modules: 4
   compile_context_module_steps: 4
-  generation_cache_enabled: true
   verify_after_generate: true
   prefer_existing_modules: true
   prefer_existing_elements: true

@@ -225,13 +225,19 @@ class BasePage:
     def __init__(self, page: Page):
         self.page = page
         self.pages = [self.page]
+        self.page_errors: list[str] = []
         self.variable_manager = VariableManager()
         self._setup_page_handlers()
 
     def _setup_page_handlers(self):
         """设置页面事件处理器"""
-        self.page.on("pageerror", lambda exc: logger.error(f"页面错误: {exc}"))
+        self.page.on("pageerror", self._record_page_error)
         self.page.on("crash", lambda: logger.error("页面崩溃"))
+
+    def _record_page_error(self, exc):
+        error = str(exc)
+        self.page_errors.append(error)
+        logger.warning(f"页面错误: {error}")
 
     def _locator(
         self,
@@ -292,6 +298,7 @@ class BasePage:
                     pass
                 self.page = new_page
                 self.pages = list(getattr(context, "pages", []) or [new_page])
+                self._setup_page_handlers()
                 logger.info(f"点击打开新标签页，已自动切换: {new_page.url}")
                 return True
             if time.monotonic() >= deadline:
@@ -310,6 +317,7 @@ class BasePage:
             pass
         self.page = new_page
         self.pages = list(getattr(context, "pages", []) or [new_page])
+        self._setup_page_handlers()
         logger.info(f"按target=_blank语义打开并切换新标签页: {url}")
 
     def wait_for_stable(

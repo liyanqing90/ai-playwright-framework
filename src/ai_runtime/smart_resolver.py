@@ -20,10 +20,13 @@ from src.ai_runtime.payload_compactor import (
     selectors_for_element_id,
 )
 from src.ai_runtime.playwright_selectors import (
+    candidate_matches_semantic_terms,
     collect_candidates,
     heuristic_selectors,
+    is_high_quality_selector,
     normalize_selector,
     selector_matches_target,
+    semantic_match_terms,
     semantic_selectors,
     stable_selector_for_locator,
     validate_selector,
@@ -108,6 +111,12 @@ class SmartResolver:
             sqlite_path = Path(registry_cfg.get("sqlite_path", ".ui_auto/selectors.db"))
             self.registry = SelectorRegistry(sqlite_path)
         runtime_cfg = self.config.get("runtime", {})
+        self.smart_selector_probe_timeout_ms = int(
+            runtime_cfg.get(
+                "smart_selector_probe_timeout_ms",
+                runtime_cfg.get("smart_explicit_selector_timeout_ms", 1000),
+            )
+        )
         self.allow_ai_in_smart = bool(runtime_cfg.get("allow_ai_in_smart", True))
         self.ai_enabled = bool(runtime_cfg.get("ai_enabled", True))
         self.max_ai_calls = int(runtime_cfg.get("max_ai_calls_per_test", 3))
@@ -120,6 +129,12 @@ class SmartResolver:
         )
         self.llm_selector_candidate_scan_limit = int(
             runtime_cfg.get("llm_selector_candidate_scan_limit", self.candidate_limit)
+        )
+        self.llm_selector_candidate_expand_limit = int(
+            runtime_cfg.get(
+                "llm_selector_candidate_expand_limit",
+                min(max(self.llm_selector_candidate_scan_limit * 2, 240), 500),
+            )
         )
         self.llm_selector_candidate_limit = int(
             runtime_cfg.get(
@@ -166,8 +181,14 @@ class SmartResolver:
 
         if normalized_selector:
             try:
+                selector_timeout = (
+                    timeout if mode == "strict" else self._smart_probe_timeout(timeout)
+                )
                 verify_selector(
-                    self.page, normalized_selector, action=action, timeout=timeout
+                    self.page,
+                    normalized_selector,
+                    action=action,
+                    timeout=selector_timeout,
                 )
                 if target_text and not selector_matches_target(
                     self.page, normalized_selector, target_text, action
@@ -209,7 +230,10 @@ class SmartResolver:
             if record:
                 try:
                     verify_selector(
-                        self.page, record.selector, action=action, timeout=timeout
+                        self.page,
+                        record.selector,
+                        action=action,
+                        timeout=self._smart_probe_timeout(timeout),
                     )
                     if not selector_matches_target(
                         self.page, record.selector, target_text, action
@@ -273,9 +297,17 @@ class SmartResolver:
         for candidate in _dedupe(selector_candidates):
             try:
                 verify_selector(
-                    self.page, candidate, action=action, timeout=min(timeout, 1000)
+                    self.page,
+                    candidate,
+                    action=action,
+                    timeout=self._smart_probe_timeout(timeout),
                 )
                 stable = stable_selector_for_locator(self.page.locator(candidate))
+                if not is_high_quality_selector(stable):
+                    logger.warning(
+                        f"DOM selector质量不足，跳过: target={target_text} selector={stable}"
+                    )
+                    continue
                 if not selector_matches_target(self.page, stable, target_text, action):
                     logger.warning(
                         f"DOM语义匹配不一致，跳过: target={target_text} selector={stable}"
@@ -308,6 +340,29 @@ class SmartResolver:
                     healing_attempted=healing_attempted,
                 )
                 continue
+
+        concrete_text = self._concrete_text_target(target_text, action)
+        ai_fallback_available = (
+            mode == "smart" and self.allow_ai_in_smart and self.ai_enabled
+        )
+        if (
+            concrete_text
+            and not self._page_contains_visible_text(concrete_text)
+            and not ai_fallback_available
+        ):
+            message = (
+                "target text is not visible on current page; "
+                f"target={concrete_text} | url={self.page.url} | "
+                f"title={_safe_page_title(self.page)}"
+            )
+            self._log_heal_failed(
+                action=action,
+                target=target_text,
+                selector=normalized_selector,
+                errors=[message],
+                healing_attempted=healing_attempted,
+            )
+            raise ValueError(message)
 
         if mode == "smart" and not self.allow_ai_in_smart:
             message = f"smart模式未解析到元素，且配置禁止AI兜底: {target_text}"
@@ -361,7 +416,11 @@ class SmartResolver:
 
         if resolved.selector:
             if not selector_matches_target(
-                self.page, resolved.selector, target_text, action
+                self.page,
+                resolved.selector,
+                target_text,
+                action,
+                strict_text_match=not _is_ai_backed_resolution(resolved),
             ):
                 raise ValueError(
                     f"智能定位结果与目标语义不匹配: target={target_text}, selector={resolved.selector}"
@@ -395,6 +454,43 @@ class SmartResolver:
             original_selector=normalized_selector,
             original_error=original_error,
         )
+
+    @staticmethod
+    def _concrete_text_target(target: str | None, action: str) -> str | None:
+        if str(action or "").lower() not in {
+            "click",
+            "press",
+            "press_key",
+            "assert_visible",
+        }:
+            return None
+        raw = str(target or "").strip()
+        if not raw:
+            return None
+        lowered = raw.lower()
+        if lowered.startswith(("text=", "label=")):
+            text = raw.split("=", 1)[1].strip()
+        elif re.search(r"[\u4e00-\u9fff]", raw) and len(raw) >= 2:
+            text = raw
+        else:
+            return None
+        text = text.strip().strip(" \"'[]():;,.")
+        return text or None
+
+    def _page_contains_visible_text(self, text: str) -> bool:
+        for exact in (True, False):
+            try:
+                locator = self.page.get_by_text(text, exact=exact)
+                count = min(int(locator.count()), 20)
+            except Exception:
+                continue
+            for index in range(count):
+                try:
+                    if locator.nth(index).is_visible():
+                        return True
+                except Exception:
+                    continue
+        return False
 
     def resolve_ai_step(self, *, instruction: str, timeout: int) -> AiStepOperation:
         if not self.ai_enabled:
@@ -647,9 +743,7 @@ class SmartResolver:
         self, *, action: str, target: str, timeout: int
     ) -> ResolvedSelector:
         self._claim_ai_call("selector")
-        candidates = self._collect_candidates(
-            limit=self.llm_selector_candidate_scan_limit,
-        )
+        candidates = self._collect_ai_locator_candidates(action=action, target=target)
         locator_context = build_locator_context(
             action=action,
             target=target,
@@ -668,6 +762,11 @@ class SmartResolver:
                         "只负责当前step的元素选择，不做业务决策。"
                         "必须返回候选元素中的element_id或selected_element_id，不要自己生成selector。"
                         "selector字段仅作为兼容字段；如填写，只能填写候选element_id。"
+                        "选择候选时必须优先稳定、可读、可维护的定位依据：data-test/data-testid/data-qa、稳定id、name、aria-label、placeholder、title、role+文本、可见文本。"
+                        "候选只有纯结构路径、nth-of-type链、main > section > div:nth-of-type(...)这类位置选择器时，不能因为它可点击就选择；应返回failed并说明缺少高质量selector候选。"
+                        "不要选择依赖列表序号、DOM层级、布局位置的候选，除非候选同时带有明确业务文本或稳定属性。"
+                        "如果候选元素里没有与目标语义匹配的元素，必须返回status=failed和reason，不能选择无关元素。"
+                        "不要用退出登录、删除、取消等破坏性元素替代普通查询、查看、提交目标。"
                         "reason不超过80个中文字符。只返回JSON对象。"
                     ),
                 },
@@ -708,7 +807,14 @@ class SmartResolver:
             action=action,
             timeout=timeout,
         )
-        if not selector_matches_target(self.page, selector, target, action):
+        if not is_high_quality_selector(selector):
+            raise ValueError(
+                "AI selector quality rejected: "
+                f"target={target}, selector={selector}"
+            )
+        if not selector_matches_target(
+            self.page, selector, target, action, strict_text_match=False
+        ):
             raise ValueError(
                 f"AI selector semantic mismatch: target={target}, selector={selector}"
             )
@@ -725,6 +831,48 @@ class SmartResolver:
             candidate_hash=self._candidate_hash(candidates),
         )
 
+    def _collect_ai_locator_candidates(
+        self,
+        *,
+        action: str,
+        target: str,
+    ) -> list[dict[str, Any]]:
+        scan_limit = max(1, int(self.llm_selector_candidate_scan_limit))
+        candidates = self._collect_candidates(limit=scan_limit)
+        if not self._should_expand_ai_locator_scan(candidates, target):
+            return candidates
+
+        expand_limit = max(scan_limit, int(self.llm_selector_candidate_expand_limit))
+        if expand_limit <= scan_limit:
+            return candidates
+        expanded = self._collect_candidates(
+            limit=expand_limit,
+            respect_config_max=False,
+        )
+        if len(expanded) > len(candidates):
+            logger.debug(
+                "AI selector候选扫描扩展: "
+                f"action={action} | target={target} | "
+                f"{len(candidates)}->{len(expanded)}"
+            )
+            return expanded
+        return candidates
+
+    def _should_expand_ai_locator_scan(
+        self,
+        candidates: list[dict[str, Any]],
+        target: str,
+    ) -> bool:
+        terms = semantic_match_terms(target)
+        if not terms:
+            return False
+        if len(candidates) < max(1, int(self.llm_selector_candidate_scan_limit)):
+            return False
+        return not any(
+            candidate_matches_semantic_terms(candidate, target, include_technical=True)
+            for candidate in candidates
+        )
+
     def _selected_element_id_from_decision(
         self,
         payload: dict[str, Any],
@@ -735,6 +883,8 @@ class SmartResolver:
     ) -> str:
         if element_id:
             if selectors_for_element_id(payload, element_id):
+                return element_id
+            if _payload_contains_element_id(payload, element_id):
                 return element_id
             raise ValueError(f"{source}返回未知element_id: {element_id}")
         if selector_ref and selectors_for_element_id(payload, selector_ref):
@@ -752,6 +902,9 @@ class SmartResolver:
         errors: list[str] = []
         for raw_selector in selectors_for_element_id(payload, element_id):
             selector = normalize_selector(raw_selector)
+            if not is_high_quality_selector(selector):
+                errors.append(f"{selector}: low quality selector")
+                continue
             validation = validate_selector(
                 self.page,
                 selector,
@@ -796,6 +949,78 @@ class SmartResolver:
             vision_reason=resolution.reason,
         )
 
+    def _resolve_from_registry(
+        self,
+        *,
+        page_key: str,
+        action: str,
+        target_text: str,
+        timeout: int,
+        healing_attempted: bool,
+    ) -> ResolvedSelector | None:
+        if not self.registry:
+            return None
+        record = self.registry.find(
+            project=self.project,
+            env=self.env,
+            page_key=page_key,
+            action=action,
+            target=target_text,
+            min_score=self.registry_min_score,
+        )
+        if not record:
+            return None
+        try:
+            verify_selector(self.page, record.selector, action=action, timeout=timeout)
+            if not selector_matches_target(
+                self.page, record.selector, target_text, action
+            ):
+                self.registry.deprecate(
+                    record.id,
+                    last_error="registry selector semantic mismatch",
+                )
+                logger.warning(
+                    "registry selector semantic mismatch; deprecated "
+                    f"target={target_text} selector={record.selector}"
+                )
+                raise ValueError("registry selector semantic mismatch")
+            self._log_heal_success(
+                source="registry",
+                selector=record.selector,
+                confidence=record.confidence,
+                healing_attempted=healing_attempted,
+            )
+            return ResolvedSelector(
+                selector=record.selector,
+                source="registry",
+                confidence=record.confidence,
+                registry_record_id=record.id,
+                cache_action=action,
+                cache_target=target_text,
+                cache_page_key=page_key,
+            )
+        except Exception as exc:
+            if str(exc) != "registry selector semantic mismatch":
+                self.registry.mark_failed(
+                    record.id,
+                    unstable_threshold=self.unstable_threshold,
+                    deprecated_after_failures=self.deprecated_after_failures,
+                    last_error="registry selector verification failed",
+                )
+            self._log_heal_rejected(
+                source="registry",
+                selector=record.selector,
+                reason=str(exc),
+                healing_attempted=healing_attempted,
+            )
+            return None
+
+    def _smart_probe_timeout(self, timeout: int) -> int:
+        probe_timeout = max(1, self.smart_selector_probe_timeout_ms)
+        if timeout <= 0:
+            return probe_timeout
+        return min(timeout, probe_timeout)
+
     def _save_selector(
         self,
         *,
@@ -813,6 +1038,11 @@ class SmartResolver:
         replace_active: bool = False,
     ) -> None:
         if not self.registry:
+            return
+        if not is_high_quality_selector(selector):
+            logger.warning(
+                f"跳过保存低质量定位结果: target={target} selector={selector}"
+            )
             return
         if not selector_matches_target(self.page, selector, target, action):
             logger.warning(
@@ -965,12 +1195,20 @@ class SmartResolver:
             )
         self.vision_call_count += 1
 
-    def _collect_candidates(self, *, limit: int) -> list[dict[str, Any]]:
+    def _collect_candidates(
+        self,
+        *,
+        limit: int,
+        respect_config_max: bool = True,
+    ) -> list[dict[str, Any]]:
         if not self.native_observe.enabled:
             return []
+        requested_limit = max(1, int(limit))
+        if respect_config_max:
+            requested_limit = min(requested_limit, self.native_observe.max_candidates)
         return collect_candidates(
             self.page,
-            limit=min(limit, self.native_observe.max_candidates),
+            limit=requested_limit,
             ignore_selectors=self.native_observe.ignore_selectors,
             include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
         )
@@ -997,6 +1235,21 @@ def _dedupe(values: list[str]) -> list[str]:
         if value and value not in result:
             result.append(value)
     return result
+
+
+def _payload_contains_element_id(payload: dict[str, Any], element_id: str) -> bool:
+    if not element_id:
+        return False
+    stack: list[Any] = [payload]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if item.get("id") == element_id:
+                return True
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
 
 
 def _safe_page_title(page: Any) -> str:
@@ -1052,6 +1305,14 @@ def _parse_wait_ms(instruction: str) -> int | None:
         unit = match.group(2) or "秒"
         return int(value if "毫秒" in unit else value * 1000)
     return None
+
+
+def _is_ai_backed_resolution(resolved: ResolvedSelector) -> bool:
+    return bool(
+        resolved.ai_called
+        or resolved.source in {"ai_selector", "vision", "vision_coordinate"}
+        or resolved.vision_method
+    )
 
 
 def _parse_click_target(instruction: str) -> str:

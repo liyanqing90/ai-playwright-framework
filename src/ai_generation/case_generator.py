@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+from copy import deepcopy
 from contextlib import redirect_stderr, redirect_stdout
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -22,17 +23,18 @@ from src.ai_generation.project_context import (
     summarize_context,
 )
 from src.ai_generation.harness import GenerationHarness
-from src.ai_runtime.ai_cache_store import AiCacheStore, ai_cache_path_from_config
-from src.ai_runtime.cache_scope import (
-    context_asset_fingerprint,
-    hash_payload,
-    resolve_entry_scope,
-)
+from src.ai_generation.pipeline import compile_case_payload
+from src.ai_runtime.cache_scope import resolve_entry_scope
 from src.ai_runtime.config import load_ai_config
 from src.ai_runtime.contracts import GeneratedCasePayload
 from src.ai_runtime.provider import (
     ChatCompletionProvider,
     load_llm_settings,
+)
+from src.step_actions.action_types import StepAction
+from src.step_actions.step_executor import (
+    commit_pending_selector_cache,
+    discard_pending_selector_cache,
 )
 from src.yaml_schema import (
     YamlSchemaValidationError,
@@ -75,7 +77,10 @@ def generate_case_files(
         context = load_project_context(project, env=env)
         _emit(progress, f"解析生成规格: {spec_ref}")
         spec_path = resolve_generation_spec_path(context, spec_ref)
-        resolved_output_name = output_name or _default_output_name(spec_ref)
+        resolved_output_name = output_name or _default_output_name(
+            spec_path,
+            context=context,
+        )
         _emit(progress, f"读取生成规格: {spec_path}")
         spec = _load_spec(spec_path)
         artifacts.write_json(
@@ -91,26 +96,21 @@ def generate_case_files(
             if verify is None
             else bool(verify)
         )
-        cache_info: dict[str, Any] = {}
-        payload = _build_payload(
-            context,
-            spec,
-            env=env,
-            output_name=resolved_output_name,
-            use_ai=use_ai,
-            cache_info=cache_info,
-            progress=progress,
-        )
-        artifacts.write_json("01_model_payload.json", payload)
-        payload, warnings = _normalize_validate_payload(
+        compiled = compile_case_payload(
             context=context,
             spec=spec,
+            env=env,
             output_name=resolved_output_name,
-            payload=payload,
+            build_payload=_build_payload,
+            normalize_payload=_normalize_validate_payload,
             use_ai=use_ai,
-            progress=progress,
+            use_cache=False,
             artifacts=artifacts,
+            progress=progress,
         )
+        artifacts.write_json("01_model_payload.json", compiled.raw_payload)
+        payload = compiled.payload
+        warnings = compiled.warnings
         artifacts.write_json("90_final_payload.json", payload)
         _emit(progress, f"准备输出文件: {resolved_output_name}")
         result = _result_paths(context, payload, output_name=resolved_output_name)
@@ -126,6 +126,10 @@ def generate_case_files(
         )
         if not dry_run:
             if verify_after_generate:
+                previous_selector_cache_hold = os.environ.get(
+                    "UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"
+                )
+                os.environ["UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"] = "1"
                 try:
                     _verify_candidate_persist_formal(
                         context=context,
@@ -137,47 +141,38 @@ def generate_case_files(
                         artifacts=artifacts,
                         progress=progress,
                     )
-                    _save_generation_cache(
-                        context=context,
-                        spec=spec,
-                        env=env,
-                        output_name=resolved_output_name,
-                        payload=payload,
-                        use_ai=use_ai,
-                        progress=progress,
-                        status="verified",
-                    )
+                    commit_pending_selector_cache()
                 except Exception as exc:
-                    if cache_info.get("key"):
-                        _mark_generation_cache_stale(
-                            cache_key=str(cache_info["key"]),
-                            reason=str(exc),
-                            progress=progress,
-                        )
+                    discard_pending_selector_cache(str(exc))
                     if not use_ai:
                         raise
-                    payload, warnings, result = _repair_and_verify_runtime_failure(
-                        context=context,
-                        spec=spec,
-                        env=env,
-                        output_name=resolved_output_name,
-                        use_ai=use_ai,
-                        overwrite=overwrite,
-                        failed_payload=payload,
-                        failed_error=str(exc),
-                        progress=progress,
-                        artifacts=artifacts,
-                    )
-                    _save_generation_cache(
-                        context=context,
-                        spec=spec,
-                        env=env,
-                        output_name=resolved_output_name,
-                        payload=payload,
-                        use_ai=use_ai,
-                        progress=progress,
-                        status="verified",
-                    )
+                    try:
+                        payload, warnings, result = _repair_and_verify_runtime_failure(
+                            context=context,
+                            spec=spec,
+                            env=env,
+                            output_name=resolved_output_name,
+                            use_ai=use_ai,
+                            overwrite=overwrite,
+                            failed_payload=payload,
+                            failed_error=str(exc),
+                            progress=progress,
+                            artifacts=artifacts,
+                        )
+                    except Exception as repair_exc:
+                        discard_pending_selector_cache(str(repair_exc))
+                        raise
+                    commit_pending_selector_cache()
+                finally:
+                    if previous_selector_cache_hold is None:
+                        os.environ.pop(
+                            "UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED",
+                            None,
+                        )
+                    else:
+                        os.environ[
+                            "UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"
+                        ] = previous_selector_cache_hold
             else:
                 _emit(progress, "写入生成文件")
                 _write_payload(
@@ -240,47 +235,6 @@ class _GenerationArtifacts:
 def _safe_artifact_name(value: str) -> str:
     name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("._")
     return name or "generated"
-
-
-class GenerationCache:
-    def __init__(self, path: str | Path):
-        self.store = AiCacheStore(path)
-        self.namespace = "generation"
-
-    def load_payload(self, key: str) -> dict[str, Any] | None:
-        return self.store.get_payload(namespace=self.namespace, key=key)
-
-    def mark_stale(self, key: str, *, reason: str = "") -> None:
-        self.store.mark_stale(namespace=self.namespace, key=key, reason=reason)
-
-    def save_payload(
-        self,
-        *,
-        key: str,
-        project: str,
-        env: str,
-        entry_scope: str,
-        output_name: str,
-        payload: dict[str, Any],
-        metadata: dict[str, Any],
-    ) -> None:
-        self.store.put_payload(
-            namespace=self.namespace,
-            key=key,
-            project=project,
-            env=env,
-            entry_scope=entry_scope,
-            case_name=output_name,
-            input_type=str(metadata.get("input_type") or ""),
-            model=str(metadata.get("model") or ""),
-            prompt_version=str(metadata.get("prompt_version") or ""),
-            schema_version=str(metadata.get("schema_version") or ""),
-            spec_hash=str(metadata.get("spec_hash") or ""),
-            asset_hash=str(metadata.get("asset_hash") or ""),
-            payload=payload,
-            metadata=metadata,
-            status=str(metadata.get("status") or "active"),
-        )
 
 
 def _normalize_validate_payload(
@@ -561,8 +515,15 @@ def _repair_and_verify_runtime_failure(
         repaired_payload = _repair_payload_with_ai(
             context=context,
             spec=spec,
-            invalid_payload=current_payload,
+            invalid_payload=_payload_with_referenced_context_modules(
+                current_payload, context=context
+            ),
             error=current_error,
+        )
+        repaired_payload = _payload_preserving_referenced_context_modules(
+            repaired_payload,
+            previous_payload=current_payload,
+            context=context,
         )
         artifacts.write_json(
             f"9{attempt + 2}_runtime_repair_payload.json", repaired_payload
@@ -591,7 +552,11 @@ def _repair_and_verify_runtime_failure(
             return payload, warnings, result
         except Exception as exc:
             last_error = exc
-            current_payload = payload
+            current_payload = _payload_preserving_referenced_context_modules(
+                payload,
+                previous_payload=current_payload,
+                context=context,
+            )
             current_error = str(exc)
             artifacts.write_text(
                 f"9{attempt + 2}_runtime_repair_error.txt",
@@ -641,6 +606,7 @@ def _verify_generated_case(
     os.environ.setdefault("BROWSER", "chromium")
     os.environ.setdefault("PWHEADED", "1")
     os.environ.setdefault("UI_AI_MODE", "strict")
+    os.environ["UI_SELECTOR_CACHE_COMMIT_MODE"] = "deferred"
     _configure_runtime_for_verification(context=context, env=env)
     _clear_runtime_data_caches()
     output_buffer = StringIO()
@@ -712,24 +678,6 @@ def _regenerate_without_cache(
     return payload, warnings, result
 
 
-def _mark_generation_cache_stale(
-    *,
-    cache_key: str,
-    reason: str,
-    progress: Callable[[str], None] | None,
-) -> None:
-    if not cache_key:
-        return
-    try:
-        GenerationCache(ai_cache_path_from_config(load_ai_config())).mark_stale(
-            cache_key,
-            reason=reason,
-        )
-        _emit(progress, f"生成缓存标记 stale: key={cache_key[:12]}")
-    except Exception as exc:
-        _emit(progress, f"生成缓存 stale 标记失败，忽略缓存状态: {exc}")
-
-
 _VERIFY_ENV_KEYS = (
     "TEST_PROJECT",
     "TEST_ENV",
@@ -738,6 +686,7 @@ _VERIFY_ENV_KEYS = (
     "BROWSER",
     "PWHEADED",
     "UI_AI_MODE",
+    "UI_SELECTOR_CACHE_COMMIT_MODE",
 )
 
 
@@ -800,8 +749,19 @@ def resolve_generation_spec_path(
     raise FileNotFoundError(f"生成规格不存在: {spec_path}. 已查找: {searched}")
 
 
-def _default_output_name(spec_path: str | Path) -> str:
+def _default_output_name(
+    spec_path: str | Path, *, context: ProjectContext | None = None
+) -> str:
     path = Path(spec_path)
+    if context is not None:
+        try:
+            generation_dir = (context.test_dir / "generation").resolve()
+            relative_path = path.resolve().relative_to(generation_dir)
+        except Exception:
+            relative_path = path
+        if relative_path.suffix:
+            relative_path = relative_path.with_suffix("")
+        return relative_path.as_posix()
     return path.stem if path.suffix else path.name
 
 
@@ -871,31 +831,39 @@ def _build_payload(
     max_items = int(generation_cfg.get("max_context_items", 160))
     prompt_version = str(prompts_cfg.get("generation_version", "generation-v1"))
     schema_version = str(llm_cfg.get("schema_version", "ui-ai-schema-v1"))
-    model = _safe_generation_model_key()
-    cache_key = _generation_cache_key(
-        context=context,
-        spec=spec,
-        env=env,
-        output_name=output_name,
-        navigation_context=navigation_context,
-        model=model,
-        prompt_version=prompt_version,
-        schema_version=schema_version,
+    runtime_compile = (
+        spec.get("runtime_compile") if isinstance(spec.get("runtime_compile"), dict) else {}
     )
+    system_extra = _runtime_compile_prompt_rules(runtime_compile)
+    required_output_shape = {
+        "cases": [{"name": "test_xxx"}],
+        "data": {
+            "test_xxx": {
+                "mode": "smart",
+                "steps": [
+                    {
+                        "action": "click",
+                        "selector": "已有元素key",
+                    },
+                    {
+                        "action": "assert_text",
+                        "selector": "已有元素key",
+                        "value": "期望文本",
+                    },
+                ],
+            }
+        },
+        "elements": {},
+        "modules": {},
+        "vars": {},
+    }
+    if system_extra:
+        required_output_shape["runtime_compile_contract"] = {
+            "modules": {},
+            "allowed_use_module": runtime_compile.get("allowed_modules") or [],
+        }
     if cache_info is not None:
-        cache_info.update({"key": cache_key, "hit": False})
-    if use_cache and bool(generation_cfg.get("generation_cache_enabled", True)):
-        try:
-            cached_payload = GenerationCache(
-                ai_cache_path_from_config(ai_config)
-            ).load_payload(cache_key)
-            if cached_payload:
-                if cache_info is not None:
-                    cache_info["hit"] = True
-                _emit(progress, f"生成缓存命中: key={cache_key[:12]}")
-                return cached_payload
-        except Exception as exc:
-            _emit(progress, f"生成缓存读取失败，继续调用模型: {exc}")
+        cache_info.update({"cache_hit": False, "model_calls": 1})
     _emit(progress, "调用模型生成用例，等待模型响应...")
     provider = ChatCompletionProvider()
     result = provider.complete_model(
@@ -914,23 +882,33 @@ def _build_payload(
                     "如果规格没有URL，优先复用project_context里已有module的goto/open/navigate；"
                     "如果module也没有入口，再使用project_context.base_url。禁止凭站点名称猜URL。"
                     "generation_spec中的自然语言用例可以是字符串，也可以是包含name、description、intent、steps、inputs、checkpoints、final的对象。"
+                    "inputs不是必需字段，只是可选的结构化补充；值可能直接写在description、intent、steps、checkpoints或final里。"
                     "当steps是字符串列表时，必须逐条理解为业务步骤，再转换为框架action步骤。"
                     "checkpoints/final是验收标准，生成结果必须把它们落实为项目格式断言步骤。"
                     "优先复用已有module、element key、变量key；只有项目资产确实不存在且业务必须新增时，才输出新的elements、modules或vars。"
                     "如果已有module能覆盖当前目标所需的前置步骤或公共流程，优先用use_module而不是重复生成步骤。"
                     "可以生成原生AI步骤 action=ai_step，但只用于自然语言探索或无法稳定拆分的低确定性步骤；"
                     "稳定业务主链路优先生成明确 action、selector/target、value 和断言。"
+                    "action必须来自valid_actions；框架会在页面操作后自动等待页面稳定，不要编造等待跳转类action。"
                     "Module output shape must be modules: {module_name: [step, ...]}, not {module_name: {steps: [...]}}. "
+                    "Call modules as a step shaped exactly like {\"use_module\":\"module_name\",\"params\":{...}}; do not use action=use_module or module_name fields. "
                     "If a module needs case-specific data, use ${param_name} inside the module and pass use_module.params in every call. "
+                    "Do not put params or inputs on data.<case>; case-specific module data belongs on the use_module step as params. "
+                    "Only reference ${name} when it is backed by project_context.variable_keys, generation_spec.inputs, use_module.params, or emitted vars; otherwise use the literal value from the natural language. "
                     "Do not invent variable names such as username_var unless they are also emitted under vars. "
+                    "Do not output vars for keys that already exist in project_context.variable_keys; reference the existing variable key instead. "
                     "When similar cases differ by input values, roles, states, or expected outcomes, parameterize shared modules via use_module.params instead of hard-coding one fixed value. "
                     "每个用例必须至少包含一个断言步骤，断言必须使用项目格式："
                     "assert_visible需要selector；assert_text/assert_text_contains需要selector和value；"
                     "assert_url/assert_url_contains/assert_title/assert_title_contains需要value。"
-                    "断言必须验证前置步骤实际造成的页面状态，不允许用空value或泛化描述充当断言。"
+                    "验证输入框/textarea/select当前值必须用assert_value，不要用assert_attribute attribute=value。"
+                    "额外断言可以用于确认后续规划所需状态，但只能使用框架原生支持的断言能力，且必须有可执行selector/target和可观察期望。"
+                    "不要为了证明click已经执行而额外生成无业务期望、无法稳定执行的断言；点击失败由执行器直接报错。"
+                    "断言必须验证前置步骤实际造成或后续规划需要的页面状态，不允许用空value或泛化描述充当断言。"
                     "所有结果验证必须断言可观察的准确信息，例如页面文案、URL、标题、状态或数量。"
                     "使用target而没有selector时，该步骤或data用例层必须声明mode为smart。"
                     "找不到元素时用 target + mode: smart，不要编造selector。"
+                    f"{system_extra}"
                     "不要输出解释。"
                 ),
             },
@@ -944,29 +922,9 @@ def _build_payload(
                         "navigation_context": navigation_context,
                         "prompt_version": prompt_version,
                         "schema_version": schema_version,
+                        "valid_actions": _valid_step_actions(),
                         "generation_spec": spec,
-                        "required_output_shape": {
-                            "cases": [{"name": "test_xxx"}],
-                            "data": {
-                                "test_xxx": {
-                                    "mode": "smart",
-                                    "steps": [
-                                        {
-                                            "action": "click",
-                                            "selector": "已有元素key",
-                                        },
-                                        {
-                                            "action": "assert_text",
-                                            "selector": "已有元素key",
-                                            "value": "期望文本",
-                                        },
-                                    ],
-                                }
-                            },
-                            "elements": {},
-                            "modules": {},
-                            "vars": {},
-                        },
+                        "required_output_shape": required_output_shape,
                     }
                 ),
             },
@@ -983,99 +941,6 @@ def _build_payload(
     return result.model_dump(exclude_none=True)
 
 
-def _save_generation_cache(
-    *,
-    context: ProjectContext,
-    spec: dict[str, Any],
-    env: str,
-    output_name: str,
-    payload: dict[str, Any],
-    use_ai: bool,
-    progress: Callable[[str], None] | None,
-    status: str = "active",
-) -> None:
-    if not use_ai or _has_explicit_steps(spec):
-        return
-    ai_config = load_ai_config()
-    generation_cfg = ai_config.get("generation", {})
-    if not bool(generation_cfg.get("generation_cache_enabled", True)):
-        return
-    prompts_cfg = ai_config.get("prompts", {})
-    llm_cfg = ai_config.get("llm", {})
-    prompt_version = str(prompts_cfg.get("generation_version", "generation-v1"))
-    schema_version = str(llm_cfg.get("schema_version", "ui-ai-schema-v1"))
-    model = _safe_generation_model_key()
-    navigation_context = _resolve_navigation_context(context, spec)
-    cache_key = _generation_cache_key(
-        context=context,
-        spec=spec,
-        env=env,
-        output_name=output_name,
-        navigation_context=navigation_context,
-        model=model,
-        prompt_version=prompt_version,
-        schema_version=schema_version,
-    )
-    try:
-        GenerationCache(ai_cache_path_from_config(ai_config)).save_payload(
-            key=cache_key,
-            project=context.project,
-            env=env,
-            entry_scope=str(navigation_context.get("normalized_entry_url") or ""),
-            output_name=output_name,
-            payload=payload,
-            metadata={
-                "input_type": _generation_input_type(spec),
-                "model": model,
-                "prompt_version": prompt_version,
-                "schema_version": schema_version,
-                "spec_hash": hash_payload(_cacheable_generation_spec(spec)),
-                "asset_hash": hash_payload(context_asset_fingerprint(context)),
-                "status": status,
-            },
-        )
-        _emit(progress, f"生成缓存写入: key={cache_key[:12]}")
-    except Exception as exc:
-        _emit(progress, f"生成缓存写入失败，忽略缓存: {exc}")
-
-
-def _generation_cache_key(
-    *,
-    context: ProjectContext,
-    spec: dict[str, Any],
-    env: str,
-    output_name: str,
-    navigation_context: dict[str, Any],
-    model: str,
-    prompt_version: str,
-    schema_version: str,
-) -> str:
-    return hash_payload(
-        {
-            "namespace": "generation",
-            "project": context.project,
-            "env": env,
-            "output_name": output_name,
-            "entry_scope": navigation_context.get("normalized_entry_url") or "",
-            "spec": _cacheable_generation_spec(spec),
-            "context": context_asset_fingerprint(context),
-            "model": model,
-            "prompt_version": prompt_version,
-            "schema_version": schema_version,
-        }
-    )
-
-
-def _cacheable_generation_spec(spec: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "description": spec.get("description"),
-        "intent": spec.get("intent"),
-        "steps": spec.get("steps"),
-        "mode": spec.get("mode"),
-        "cases": spec.get("cases"),
-    }
-
-
 def _generation_input_type(spec: dict[str, Any]) -> str:
     if spec.get("steps"):
         return "natural_steps"
@@ -1087,11 +952,119 @@ def _generation_input_type(spec: dict[str, Any]) -> str:
     return "intent"
 
 
+def _runtime_compile_prompt_rules(runtime_compile: dict[str, Any]) -> str:
+    if not runtime_compile or runtime_compile.get("allow_new_modules") is not False:
+        return ""
+    allowed_modules = [
+        str(name)
+        for name in runtime_compile.get("allowed_modules") or []
+        if str(name).strip()
+    ]
+    allowed = ", ".join(allowed_modules) if allowed_modules else "无"
+    return (
+        "运行时编译约束：当前请求来自 run_case agent_case，只能生成内存执行计划，"
+        "不能创建、修改或输出任何module资产；输出的 modules 必须是空对象 {}。"
+        "use_module 只能引用 project_context 中已存在且列在 runtime_compile.allowed_modules 的module；"
+        f"当前允许引用的module为: {allowed}。"
+        "如果已有module不能精确满足参数化需求，不要新建参数化module，也不要输出modules；"
+        "应改为在 data.<case>.steps 中生成直接 action 步骤，引用已有 element key/target 和字面值/变量。"
+    )
+
+
 def _safe_generation_model_key() -> str:
     try:
         return load_llm_settings().model
     except Exception:
         return ""
+
+
+def _valid_step_actions() -> list[str]:
+    return sorted(
+        {
+            action.lower()
+            for attr in dir(StepAction)
+            if isinstance((items := getattr(StepAction, attr)), list)
+            for action in items
+        }
+    )
+
+
+def _payload_with_referenced_context_modules(
+    payload: dict[str, Any],
+    *,
+    context: ProjectContext,
+) -> dict[str, Any]:
+    enriched = deepcopy(payload)
+    modules = enriched.setdefault("modules", {})
+    if not isinstance(modules, dict):
+        modules = {}
+        enriched["modules"] = modules
+    for module_name in sorted(_referenced_module_names(enriched)):
+        if module_name not in modules and module_name in context.modules:
+            modules[module_name] = deepcopy(context.modules[module_name])
+    return enriched
+
+
+def _payload_preserving_referenced_context_modules(
+    payload: dict[str, Any],
+    *,
+    previous_payload: dict[str, Any],
+    context: ProjectContext,
+) -> dict[str, Any]:
+    preserved = deepcopy(payload)
+    modules = preserved.setdefault("modules", {})
+    if not isinstance(modules, dict):
+        modules = {}
+        preserved["modules"] = modules
+
+    referenced = _referenced_module_names(preserved) | _referenced_module_names(
+        previous_payload
+    )
+    previous_modules = previous_payload.get("modules") or {}
+    for module_name in sorted(referenced):
+        if module_name not in context.modules:
+            continue
+        context_steps = _module_steps_for_effective_check(context.modules[module_name])
+        generated_steps = _module_steps_for_effective_check(modules.get(module_name))
+        previous_steps = _module_steps_for_effective_check(
+            previous_modules.get(module_name)
+        )
+        if not generated_steps:
+            continue
+        if context_steps and len(generated_steps) < len(context_steps):
+            modules[module_name] = deepcopy(
+                previous_modules.get(module_name) or context.modules[module_name]
+            )
+        elif previous_steps and len(generated_steps) < len(previous_steps):
+            modules[module_name] = deepcopy(previous_modules[module_name])
+    return preserved
+
+
+def _referenced_module_names(payload: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for case_data in (payload.get("data") or {}).values():
+        if isinstance(case_data, dict):
+            names.update(_module_refs_from_steps(case_data.get("steps") or []))
+    for module_steps in (payload.get("modules") or {}).values():
+        names.update(_module_refs_from_steps(module_steps or []))
+    return names
+
+
+def _module_refs_from_steps(steps: Any) -> set[str]:
+    names: set[str] = set()
+    if isinstance(steps, dict):
+        steps = steps.get("steps") or []
+    if not isinstance(steps, list):
+        return names
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        module_name = step.get("use_module")
+        if module_name is None and step.get("module") and not step.get("action"):
+            module_name = step.get("module")
+        if isinstance(module_name, str) and module_name.strip():
+            names.add(module_name.strip())
+    return names
 
 
 def _repair_payload_with_ai(
@@ -1118,10 +1091,19 @@ def _repair_payload_with_ai(
                     "你是UI自动化生成结果修正器。必须只返回当前框架格式JSON，不要解释。"
                     "修正 invalid_payload 中导致 Harness/schema/真实页面验证失败的问题，保留原业务意图。"
                     "cases层只允许name；description可省略；mode可省略，省略时默认smart；steps必须在data层；"
+                    "data.<case>层不要输出params或inputs；模块入参必须放到对应use_module步骤的params字段；"
+                    "inputs不是必需字段；如果规格把值直接写在description、intent、steps、checkpoints或final里，修正后应直接使用字面值。"
                     "selector、target、use_module、action、mode等字段必须是字符串，不能是对象。"
                     "modules必须是 {module_name: [step, ...]}。"
                     "每个用例必须至少有一个准确断言。"
+                    "验证输入框/textarea/select当前值必须用assert_value，不要用assert_attribute attribute=value。"
+                    "不要为了证明click已经执行而额外生成无业务期望的assert_visible；点击失败由执行器直接报错。"
                     "优先复用project_context已有 elements/modules/vars。"
+                    "action必须来自valid_actions；框架会在页面操作后自动等待页面稳定，不要编造等待跳转类action。"
+                    "不要输出或覆盖project_context.variable_keys中已存在的vars；直接引用已有变量key。"
+                    "只有变量被project_context.variable_keys、generation_spec.inputs、use_module.params或vars支撑时才引用${name}；否则不要把字面值改写成变量。"
+                    "invalid_payload.modules中可能包含本次失败用例引用的上下文module副本；"
+                    "如果错误发生在某个module内部，必须修改该module或移除对它的复用，不能原样返回失败module。"
                     "如果真实页面验证提示selector匹配不到元素、fixture value缺失或测试数据未参数化，"
                     "必须针对错误点修复对应steps/elements/modules/data映射；不要保留导致失败的新增element selector。"
                 ),
@@ -1136,6 +1118,7 @@ def _repair_payload_with_ai(
                         "navigation_context": navigation_context,
                         "prompt_version": prompt_version,
                         "schema_version": schema_version,
+                        "valid_actions": _valid_step_actions(),
                         "generation_spec": spec,
                         "validation_error": error,
                         "invalid_payload": invalid_payload,
@@ -1354,7 +1337,10 @@ def _write_payload(
     if result.get("modules_file"):
         files[result["modules_file"]] = payload["modules"]
     if result.get("vars_file"):
-        files[result["vars_file"]] = payload["vars"]
+        files[result["vars_file"]] = _merged_vars_payload(
+            result["vars_file"],
+            payload.get("vars") or {},
+        )
 
     yaml = YAML()
     yaml.default_flow_style = False
@@ -1402,6 +1388,18 @@ def _validate_written_case_file(result: dict[str, Any]) -> None:
     validate_case_file(case_file, context)
     if context.issues:
         raise YamlSchemaValidationError(context.issues)
+
+
+def _merged_vars_payload(path: Path, generated_vars: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    if path.exists():
+        yaml = YAML(typ="safe")
+        with path.open("r", encoding="utf-8") as fh:
+            existing = yaml.load(fh) or {}
+        if isinstance(existing, dict):
+            merged.update(deepcopy(existing))
+    merged.update(deepcopy(generated_vars))
+    return merged
 
 
 def _has_explicit_steps(spec: dict[str, Any]) -> bool:
