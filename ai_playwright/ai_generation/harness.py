@@ -518,9 +518,11 @@ class GenerationHarness:
             and not isinstance(selector, dict)
             and selector not in known_elements
             and not _looks_raw_selector(selector)
+            and not (effective_mode == "smart" and target)
         ):
-            warnings.append(
-                f"{case_name}: selector未在元素库中找到，将按原始选择器处理: {selector}"
+            raise ValueError(
+                f"{case_name} step {index} selector 未在 elements 中定义，"
+                f"也不像合法原始 selector: {selector}"
             )
         if not selector and not target and action not in _NO_SELECTOR_ACTIONS:
             raise ValueError(f"{case_name} step {index} 缺少selector/target: {step}")

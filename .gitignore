@@ -25,6 +25,7 @@ __pycache__/
 /test_data/*
 !/test_data/demo/
 !/test_data/demo/**
+**/.DS_Store
 
 # Local archives and imported bundles
 *.zip

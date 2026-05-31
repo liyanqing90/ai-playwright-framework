@@ -667,6 +667,40 @@ def test_generation_harness_normalizes_model_field_aliases(tmp_path: Path):
     assert payload["elements"]["search_input"] == "#kw"
 
 
+def test_generation_harness_rejects_unknown_selector_key(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"page_title": ".title"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {"action": "click", "selector": "shopping_cart_badge"},
+                        {"action": "assert_visible", "selector": "page_title"},
+                    ],
+                }
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="selector 未在 elements"):
+        harness.validate(payload)
+
+
 def test_generation_harness_scopes_generated_element_key_collisions_by_page_context(
     tmp_path: Path,
 ):

@@ -74,6 +74,8 @@ def main(
                 progress=report,
             )
         display_generation_result(result, dry_run=dry_run)
+        for warning in result.warnings:
+            logger.warning(f"用例生成警告: {warning}")
         display_token_usage_summary(
             tracker.finish_run(
                 status="passed",

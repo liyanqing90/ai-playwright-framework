@@ -87,6 +87,18 @@ def validate_all_projects(root: str | Path = "test_data") -> None:
 
 
 def validate_pytest_targets(paths: Iterable[str | Path]) -> None:
+    missing_case_targets = _missing_pytest_case_targets(paths)
+    if missing_case_targets:
+        raise YamlSchemaValidationError(
+            [
+                SchemaIssue(
+                    path=path,
+                    message="pytest YAML 目标不存在；请检查 --file/-f 或测试路径",
+                )
+                for path in missing_case_targets
+            ]
+        )
+
     case_files = _pytest_case_files(paths)
     if not case_files:
         validate_all_projects()
@@ -107,6 +119,26 @@ def validate_pytest_targets(paths: Iterable[str | Path]) -> None:
         issues.extend(context.issues)
     if issues:
         raise YamlSchemaValidationError(issues)
+
+
+def _missing_pytest_case_targets(paths: Iterable[str | Path]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        path_text = str(raw_path or "")
+        if not path_text or path_text.startswith("-"):
+            continue
+        path_text = path_text.split("::", 1)[0]
+        path = Path(path_text)
+        if path.exists():
+            continue
+        if path.suffix.lower() not in {".yaml", ".yml"}:
+            continue
+        if str(path) in seen:
+            continue
+        seen.add(str(path))
+        result.append(str(path))
+    return result
 
 
 def _pytest_case_files(paths: Iterable[str | Path]) -> list[Path]:

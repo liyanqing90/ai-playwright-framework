@@ -4,6 +4,7 @@ import pytest
 
 from ai_playwright.step_actions.utils import _resolve_allowed_script_path
 from ai_playwright.yaml_schema import (
+    SchemaIssue,
     ValidationContext,
     YamlSchemaValidationError,
     validate_case_file,
@@ -33,6 +34,51 @@ def test_yaml_schema_rejects_unknown_selector_key(tmp_path: Path):
 
     with pytest.raises(YamlSchemaValidationError, match="selector 未在 elements"):
         validate_project(project)
+
+
+def test_pytest_target_schema_validation_rejects_missing_yaml_target(tmp_path: Path):
+    missing_target = tmp_path / "test_data" / "demo" / "cases" / "missing.yaml"
+
+    with pytest.raises(YamlSchemaValidationError, match="YAML 目标不存在"):
+        validate_pytest_targets([missing_target])
+
+
+def test_pytest_plugin_logs_schema_error_before_exit(monkeypatch):
+    from ai_playwright import pytest_plugin
+
+    messages: list[str] = []
+
+    class FakeLogger:
+        def error(self, message: str) -> None:
+            messages.append(message)
+
+    class FakeTracker:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def finish_run(self, **kwargs):
+            self.calls.append(kwargs)
+            return None
+
+    fake_tracker = FakeTracker()
+
+    def fake_exit(message: str, returncode: int | None = None) -> None:
+        raise RuntimeError(f"{returncode}:{message}")
+
+    monkeypatch.setattr(pytest_plugin, "logger", FakeLogger())
+    monkeypatch.setattr(pytest_plugin, "get_token_usage_tracker", lambda: fake_tracker)
+    monkeypatch.setattr(pytest_plugin.pytest, "exit", fake_exit)
+
+    exc = YamlSchemaValidationError(
+        [SchemaIssue(path="test_data/demo/cases/missing.yaml", message="bad schema")]
+    )
+
+    with pytest.raises(RuntimeError, match="2:YAML schema"):
+        pytest_plugin._exit_for_yaml_schema_error(exc)
+
+    assert messages and "bad schema" in messages[0]
+    assert fake_tracker.calls[0]["status"] == "failed"
+    assert fake_tracker.calls[0]["metadata"]["phase"] == "yaml_schema"
 
 
 def test_yaml_schema_rejects_unknown_step_field(tmp_path: Path):

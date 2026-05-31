@@ -20,6 +20,7 @@ from ai_playwright.step_actions.step_executor import (
     discard_pending_selector_cache,
 )
 from ai_playwright.yaml_schema import validate_pytest_targets
+from ai_playwright.yaml_schema import YamlSchemaValidationError
 from ai_playwright.utils.config import Config
 from ai_playwright.utils.logger import configure_file_logger, logger
 from ai_playwright.utils.token_usage import (
@@ -57,7 +58,20 @@ def pytest_sessionstart(session):
         session.config._owns_token_usage_run = False
     if session.config.getoption("--skip-yaml-schema"):
         return
-    validate_pytest_targets(session.config.args)
+    try:
+        validate_pytest_targets(session.config.args)
+    except YamlSchemaValidationError as exc:
+        _exit_for_yaml_schema_error(exc)
+
+
+def _exit_for_yaml_schema_error(exc: YamlSchemaValidationError) -> None:
+    message = str(exc)
+    logger.error(message)
+    get_token_usage_tracker().finish_run(
+        status="failed",
+        metadata={"phase": "yaml_schema", "error": message},
+    )
+    pytest.exit(message, returncode=2)
 
 
 @pytest.fixture(scope="session")
