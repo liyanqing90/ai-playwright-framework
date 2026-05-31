@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import typer
 
 from ai_playwright.ai_generation import generate_case_files
@@ -46,6 +48,17 @@ def main(
         help="生成上下文环境，默认 prod；通常不需要指定",
         hidden=True,
     ),
+    headed: bool = typer.Option(
+        True,
+        "--headed/--headless",
+        help="生成验证是否以有头模式运行浏览器",
+    ),
+    slow_mo: int = typer.Option(
+        0,
+        "--slow-mo",
+        min=0,
+        help="生成验证浏览器慢速执行毫秒数",
+    ),
 ):
     configure_file_logger()
     if dry_run:
@@ -64,12 +77,14 @@ def main(
             "spec": spec,
             "overwrite": not no_overwrite,
             "verify": True,
+            "headed": headed,
+            "slow_mo": slow_mo,
         },
     )
     try:
         console.print(
             f"[cyan][gen][/cyan] project={project} spec={spec} "
-            f"overwrite={not no_overwrite} verify=True"
+            f"overwrite={not no_overwrite} verify=True headed={headed}"
         )
 
         with console.status("[cyan][gen] 准备生成...[/cyan]", spinner="dots") as status:
@@ -78,17 +93,18 @@ def main(
                 status.update(f"[cyan][gen] {message}[/cyan]")
                 console.print(f"[dim][gen] {message}[/dim]")
 
-            result = generate_case_files(
-                project=project,
-                env=context_env.value,
-                spec_path=spec,
-                output_name=None,
-                dry_run=False,
-                overwrite=not no_overwrite,
-                use_ai=True,
-                verify=True,
-                progress=report,
-            )
+            with _temporary_browser_env(headed=headed, slow_mo=slow_mo):
+                result = generate_case_files(
+                    project=project,
+                    env=context_env.value,
+                    spec_path=spec,
+                    output_name=None,
+                    dry_run=False,
+                    overwrite=not no_overwrite,
+                    use_ai=True,
+                    verify=True,
+                    progress=report,
+                )
         display_generation_result(result)
         for warning in result.warnings:
             logger.warning(f"用例生成警告: {warning}")
@@ -115,6 +131,29 @@ def main(
 
 def cli() -> None:
     app()
+
+
+class _temporary_browser_env:
+    def __init__(self, *, headed: bool, slow_mo: int) -> None:
+        self.headed = headed
+        self.slow_mo = slow_mo
+        self.previous: dict[str, str | None] = {}
+
+    def __enter__(self):
+        self.previous = {
+            "PWHEADED": os.environ.get("PWHEADED"),
+            "PWSLOWMO": os.environ.get("PWSLOWMO"),
+        }
+        os.environ["PWHEADED"] = "1" if self.headed else "0"
+        os.environ["PWSLOWMO"] = str(self.slow_mo)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        for name, value in self.previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 if __name__ == "__main__":

@@ -42,6 +42,7 @@ from ai_playwright.yaml_schema import (
     load_validation_context,
     validate_case_file,
 )
+from ai_playwright.utils.logger import logger
 from ai_playwright.utils.yaml_handler import YamlHandler
 
 
@@ -602,10 +603,26 @@ def _verify_generated_case(
     os.environ["UI_SELECTOR_CACHE_COMMIT_MODE"] = "deferred"
     _configure_runtime_for_verification(context=context, env=env)
     _clear_runtime_data_caches()
+    browser_name = os.environ.get("BROWSER", "chromium")
+    headed = _verification_headed()
+    slow_mo = _verification_slow_mo()
+    launch_message = (
+        f"{stage}浏览器验证启动参数: browser={browser_name}, "
+        f"headed={headed}, headless={not headed}, slow_mo={slow_mo}"
+    )
+    _emit(progress, launch_message)
+    logger.info(launch_message)
     output_buffer = StringIO()
     try:
         with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
-            exit_code = pytest.main(_verification_pytest_args(case_file))
+            exit_code = pytest.main(
+                _verification_pytest_args(
+                    case_file,
+                    browser=browser_name,
+                    headed=headed,
+                    slow_mo=slow_mo,
+                )
+            )
     finally:
         for name, value in previous_env.items():
             if value is None:
@@ -626,8 +643,17 @@ def _verify_generated_case(
     _emit(progress, f"{stage}用例真实页面验证通过")
 
 
-def _verification_pytest_args(case_file: Path) -> list[str]:
-    return [
+def _verification_pytest_args(
+    case_file: Path,
+    *,
+    browser: str | None = None,
+    headed: bool | None = None,
+    slow_mo: int | None = None,
+) -> list[str]:
+    resolved_browser = browser or os.environ.get("BROWSER", "chromium")
+    resolved_headed = _verification_headed() if headed is None else bool(headed)
+    resolved_slow_mo = _verification_slow_mo() if slow_mo is None else int(slow_mo or 0)
+    args = [
         str(case_file),
         "-v",
         "--tb=line",
@@ -635,11 +661,37 @@ def _verification_pytest_args(case_file: Path) -> list[str]:
         "no:warnings",
         "-p",
         "ai_playwright.pytest_plugin",
+        "--browser",
+        resolved_browser,
         "--skip-yaml-schema",
         "-s",
         "--alluredir=reports/allure-results",
         "--clean-alluredir",
     ]
+    if resolved_headed:
+        args.append("--headed")
+    if resolved_slow_mo:
+        args.append(f"--slowmo={resolved_slow_mo}")
+    return args
+
+
+def _verification_headed() -> bool:
+    return _env_bool("PWHEADED", default=True)
+
+
+def _verification_slow_mo() -> int:
+    raw = str(os.environ.get("PWSLOWMO", "0")).strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+def _env_bool(name: str, *, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in {"0", "false", "no", "off", "headless"}
 
 
 def _regenerate_without_cache(

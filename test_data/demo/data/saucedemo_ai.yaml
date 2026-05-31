@@ -1,34 +1,32 @@
 test_data:
-  test_saucedemo_backpack_cart:
-    description: 标准用户添加单个商品到购物车
+  test_saucedemo_standard_user_cart_logout_flow:
     mode: smart
     steps:
       - use_module: saucedemo_login
         params:
           username: ${standard_username}
+      - action: assert_text
+        selector: sauce_page_title
+        value: Products
       - action: click
         selector: add_to_cart_backpack_btn
       - action: assert_text
         selector: shopping_cart_badge
         value: '1'
-  test_saucedemo_locked_user_error:
-    description: 锁定用户登录失败提示
-    mode: smart
-    steps:
-      - use_module: saucedemo_login
-        params:
-          username: ${locked_username}
-      - action: assert_text_contains
-        selector: login_error_message
-        value: locked out
-  test_saucedemo_open_cart:
-    description: 标准用户打开购物车页面
-    mode: smart
-    steps:
-      - use_module: saucedemo_login
-        params:
-          username: ${standard_username}
       - action: click
         selector: shopping_cart_link
-      - action: assert_visible
+      - action: assert_text
         selector: cart_title
+        value: Your Cart
+      - action: assert_text
+        selector: cart_item_backpack_name
+        value: Sauce Labs Backpack
+      - action: click
+        selector: menu_button
+      - action: assert_visible
+        selector: logout_sidebar_link
+      - action: click
+        selector: logout_sidebar_link
+      - action: assert_visible
+        selector: sauce_login_btn
+    description: 步骤式规格：基于当前 demo 项目生成 Saucedemo 标准用户完整购物车流程用例

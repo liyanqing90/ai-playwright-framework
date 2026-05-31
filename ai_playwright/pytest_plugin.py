@@ -81,23 +81,44 @@ def browser() -> Generator[Browser, None, None]:
     """
     with sync_playwright() as playwright:
         launch_options = _browser_launch_options()
+        browser_name = os.environ.get("BROWSER") or config.browser.value
+        headed = not launch_options["headless"]
         logger.info(
             "Launching browser: "
-            f"browser={config.browser.value}, "
-            f"headed={config.headed}, "
+            f"browser={browser_name}, "
+            f"headed={headed}, "
             f"headless={launch_options['headless']}, "
             f"slow_mo={launch_options.get('slow_mo', 0)}"
         )
-        browser = getattr(playwright, config.browser).launch(**launch_options)
+        browser = getattr(playwright, browser_name).launch(**launch_options)
         yield browser
         browser.close()
 
 
 def _browser_launch_options() -> dict[str, Any]:
-    options: dict[str, Any] = {"headless": not config.headed}
-    if config.slow_mo:
-        options["slow_mo"] = config.slow_mo
+    headed = _runtime_headed()
+    slow_mo = _runtime_slow_mo()
+    options: dict[str, Any] = {"headless": not headed}
+    if slow_mo:
+        options["slow_mo"] = slow_mo
     return options
+
+
+def _runtime_headed() -> bool:
+    raw = os.environ.get("PWHEADED")
+    if raw is None:
+        return bool(config.headed)
+    return str(raw).strip().lower() not in {"0", "false", "no", "off", "headless"}
+
+
+def _runtime_slow_mo() -> int:
+    raw = os.environ.get("PWSLOWMO")
+    if raw is None:
+        return int(config.slow_mo or 0)
+    try:
+        return max(0, int(str(raw).strip()))
+    except ValueError:
+        return 0
 
 
 @pytest.fixture(scope="function")

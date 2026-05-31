@@ -536,6 +536,26 @@ def test_generation_verification_loads_framework_pytest_plugin(tmp_path: Path):
     assert plugin_index < args.index("--skip-yaml-schema")
 
 
+def test_generation_verification_defaults_to_headed_browser(
+    monkeypatch, tmp_path: Path
+):
+    monkeypatch.delenv("PWHEADED", raising=False)
+
+    args = _verification_pytest_args(tmp_path / "cases" / "generated.yaml")
+
+    assert "--browser" in args
+    assert args[args.index("--browser") + 1] == "chromium"
+    assert "--headed" in args
+
+
+def test_generation_verification_can_run_headless_from_env(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("PWHEADED", "0")
+
+    args = _verification_pytest_args(tmp_path / "cases" / "generated.yaml")
+
+    assert "--headed" not in args
+
+
 def test_generate_case_does_not_persist_when_candidate_verify_fails(
     monkeypatch, tmp_path: Path
 ):

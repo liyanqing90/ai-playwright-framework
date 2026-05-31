@@ -219,6 +219,9 @@ Generation specs live in `test_data/<project>/generation/*.yaml`.
 # Generate, verify on a real browser, then write formal YAML assets
 poetry run gen -p demo saucedemo_ai
 
+# Run generation verification in headless mode, for CI or remote servers
+poetry run gen -p demo saucedemo_ai --headless
+
 # Refuse to overwrite existing generated files
 poetry run gen -p demo saucedemo_ai --no-overwrite
 ```
@@ -227,7 +230,9 @@ Generation is intentionally verification-first. The command writes the generated
 payload into a temporary candidate workspace, runs the candidate case on a real
 browser, and only writes the formal `cases/`, `data/`, `elements/`, `modules/`,
 or `vars/` files after the candidate passes. The formal files are then validated
-again. Failed generation runs keep debugging artifacts under
+again. Verification is headed by default so local generation shows a browser;
+pass `--headless` when a visible browser is not available. Failed generation
+runs keep debugging artifacts under
 `logs/generation_runs/`.
 
 Example generation spec:

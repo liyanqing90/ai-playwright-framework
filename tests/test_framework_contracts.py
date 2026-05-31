@@ -1151,6 +1151,28 @@ def test_browser_launch_options_follow_config_headed_and_slow_mo():
         )
 
 
+def test_browser_launch_options_follow_runtime_headless_env(monkeypatch):
+    from ai_playwright import pytest_plugin
+
+    monkeypatch.setenv("PWHEADED", "0")
+    monkeypatch.setenv("PWSLOWMO", "125")
+
+    assert pytest_plugin._browser_launch_options() == {
+        "headless": True,
+        "slow_mo": 125,
+    }
+
+
+def test_browser_launch_options_default_to_headed_without_runtime_env(monkeypatch):
+    from ai_playwright import pytest_plugin
+
+    monkeypatch.delenv("PWHEADED", raising=False)
+    monkeypatch.delenv("PWSLOWMO", raising=False)
+    Config(project="demo", env="prod", headed=True, slow_mo=0)
+
+    assert pytest_plugin._browser_launch_options() == {"headless": False}
+
+
 def test_element_definition_store_updates_last_effective_elements_file(
     tmp_path: Path,
 ):

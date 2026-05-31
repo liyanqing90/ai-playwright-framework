@@ -215,11 +215,14 @@ poetry run run_case -p demo -f saucedemo_ai --ai-mode smart
 # 生成、候选真实浏览器验证、验证通过后写入正式 YAML
 poetry run gen -p demo saucedemo_ai
 
+# CI 或远程服务器使用无头验证
+poetry run gen -p demo saucedemo_ai --headless
+
 # 不覆盖已有正式生成文件
 poetry run gen -p demo saucedemo_ai --no-overwrite
 ```
 
-生成流程刻意保持简单：生成结果必须可用。`gen` 会先把模型输出写入临时候选工作区，执行候选用例的真实浏览器验证；候选通过后，才写入正式 `cases/`、`data/`、`elements/`、`modules/` 或 `vars/` 文件，并再次执行写入后校验。失败时会保留调试产物到 `logs/generation_runs/`。
+生成流程刻意保持简单：生成结果必须可用。`gen` 会先把模型输出写入临时候选工作区，执行候选用例的真实浏览器验证；候选通过后，才写入正式 `cases/`、`data/`、`elements/`、`modules/` 或 `vars/` 文件，并再次执行写入后校验。验证默认有头，便于本地直接看到浏览器；没有可视化浏览器的环境再传 `--headless`。失败时会保留调试产物到 `logs/generation_runs/`。
 
 示例生成规格：
 
