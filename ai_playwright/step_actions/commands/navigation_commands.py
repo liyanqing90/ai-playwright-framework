@@ -21,7 +21,10 @@ class NavigateCommand(Command):
             value = url
         if "http" not in value:
             value = url + value
-        ui_helper.navigate(url=value)
+        ui_helper.navigate(
+            url=value,
+            wait_until=step.get("wait_until", "domcontentloaded"),
+        )
 
 
 @CommandFactory.register(StepAction.REFRESH)

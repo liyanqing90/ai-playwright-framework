@@ -13,6 +13,7 @@ from ai_playwright.ai_generation.case_generator import (
     _GenerationArtifacts,
     _assert_effective_verification_payload,
     _build_payload,
+    _configure_runtime_for_verification,
     _default_output_name,
     _has_explicit_steps,
     _payload_from_explicit_spec,
@@ -185,6 +186,30 @@ def test_generation_spec_short_name_resolves_to_project_generation_dir(tmp_path:
 
     assert resolve_generation_spec_path(Context(), "saucedemo_ai") == spec_file
     assert resolve_generation_spec_path(Context(), "saucedemo_ai.yaml") == spec_file
+
+
+def test_generation_spec_error_lists_available_specs(tmp_path: Path):
+    spec_dir = tmp_path / "test_data" / "demo" / "generation"
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "saucedemo_ai_intent.yaml").write_text("cases: []\n", encoding="utf-8")
+
+    class Context:
+        test_dir = tmp_path / "test_data" / "demo"
+
+    with pytest.raises(FileNotFoundError, match="可用规格: saucedemo_ai_intent"):
+        resolve_generation_spec_path(Context(), "missing_spec")
+
+
+def test_generation_spec_does_not_normalize_unicode_dash(tmp_path: Path):
+    spec_dir = tmp_path / "test_data" / "demo" / "generation"
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "saucedemo_ai_intent.yaml").write_text("cases: []\n", encoding="utf-8")
+
+    class Context:
+        test_dir = tmp_path / "test_data" / "demo"
+
+    with pytest.raises(FileNotFoundError, match="saucedemo_ai—intent"):
+        resolve_generation_spec_path(Context(), "saucedemo_ai—intent")
 
 
 def test_generation_project_context_honors_test_dir_env(monkeypatch, tmp_path: Path):
@@ -554,6 +579,29 @@ def test_generation_verification_can_run_headless_from_env(monkeypatch, tmp_path
     args = _verification_pytest_args(tmp_path / "cases" / "generated.yaml")
 
     assert "--headed" not in args
+
+
+def test_generation_runtime_config_keeps_headless_verification_env(
+    monkeypatch, tmp_path: Path
+):
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="https://example.test/",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+    monkeypatch.setenv("PWHEADED", "0")
+    monkeypatch.setenv("PWSLOWMO", "125")
+    monkeypatch.setenv("BROWSER", "chromium")
+
+    _configure_runtime_for_verification(context=context, env="prod")
+
+    assert os.environ["PWHEADED"] == "0"
+    assert os.environ["PWSLOWMO"] == "125"
 
 
 def test_generate_case_does_not_persist_when_candidate_verify_fails(
@@ -2010,6 +2058,34 @@ def test_generation_write_payload_restores_files_when_post_verify_fails(tmp_path
             result,
             overwrite=True,
             verify=lambda: (_ for _ in ()).throw(RuntimeError("post verify failed")),
+        )
+
+    assert case_file.read_text(encoding="utf-8") == "old cases\n"
+    assert data_file.read_text(encoding="utf-8") == "old data\n"
+
+
+def test_generation_write_payload_restores_files_when_interrupted(tmp_path: Path):
+    case_file = tmp_path / "cases" / "generated.yaml"
+    data_file = tmp_path / "data" / "generated.yaml"
+    case_file.parent.mkdir(parents=True)
+    data_file.parent.mkdir(parents=True)
+    case_file.write_text("old cases\n", encoding="utf-8")
+    data_file.write_text("old data\n", encoding="utf-8")
+
+    result = {
+        "case_file": case_file,
+        "data_file": data_file,
+        "payload": {
+            "cases": [{"name": "test_generated"}],
+            "data": {"test_generated": {"steps": []}},
+        },
+    }
+
+    with pytest.raises(KeyboardInterrupt):
+        _write_payload(
+            result,
+            overwrite=True,
+            post_verify=lambda: (_ for _ in ()).throw(KeyboardInterrupt()),
         )
 
     assert case_file.read_text(encoding="utf-8") == "old cases\n"

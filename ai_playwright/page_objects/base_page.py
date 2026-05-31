@@ -287,6 +287,39 @@ def _locator_kwargs(values: dict[str, Any], *keys: str) -> dict[str, Any]:
     return kwargs
 
 
+_RETRYABLE_NAVIGATION_ERRORS = (
+    "net::ERR_CONNECTION_CLOSED",
+    "net::ERR_CONNECTION_RESET",
+    "net::ERR_CONNECTION_ABORTED",
+    "net::ERR_TIMED_OUT",
+    "net::ERR_NETWORK_CHANGED",
+    "NS_ERROR_NET_RESET",
+    "NS_ERROR_NET_TIMEOUT",
+)
+
+
+def _is_retryable_navigation_error(exc: Exception) -> bool:
+    message = str(exc)
+    return any(marker in message for marker in _RETRYABLE_NAVIGATION_ERRORS)
+
+
+def _navigation_attempts() -> int:
+    raw = os.environ.get("UI_NAVIGATION_ATTEMPTS", "3")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 3
+
+
+def _navigation_retry_delay_seconds(attempt: int) -> float:
+    raw = os.environ.get("UI_NAVIGATION_RETRY_DELAY_MS", "500")
+    try:
+        base_ms = max(0, int(raw))
+    except ValueError:
+        base_ms = 500
+    return min(2.0, (base_ms / 1000.0) * max(1, attempt))
+
+
 class BasePage:
     def __init__(self, page: Page):
         self.page = page
@@ -320,9 +353,21 @@ class BasePage:
             raise Exception(f"定位或等待元素 {selector} 失败 (state={state}): {str(e)}")
 
     @handle_page_error(description="导航到")
-    def navigate(self, url: str):
+    def navigate(self, url: str, wait_until: str = "domcontentloaded"):
         """导航到指定URL"""
-        self.page.goto(url, wait_until="domcontentloaded")
+        attempts = _navigation_attempts()
+        for attempt in range(1, attempts + 1):
+            try:
+                return self.page.goto(url, wait_until=wait_until)
+            except Exception as exc:
+                if attempt >= attempts or not _is_retryable_navigation_error(exc):
+                    raise
+                logger.warning(
+                    "导航失败，准备重试: "
+                    f"url={url}, attempt={attempt}/{attempts}, "
+                    f"wait_until={wait_until}, error={exc}"
+                )
+                time.sleep(_navigation_retry_delay_seconds(attempt))
 
     @handle_page_error(description="浏览器后退")
     def go_back(self, wait_until: str = "domcontentloaded"):

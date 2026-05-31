@@ -749,6 +749,9 @@ def _configure_runtime_for_verification(*, context: ProjectContext, env: str) ->
             env=env,
             base_url=str(context.base_url or ""),
             test_dir=str(context.test_dir),
+            browser=os.environ.get("BROWSER", "chromium"),
+            headed=_verification_headed(),
+            slow_mo=_verification_slow_mo(),
         )
     except Exception:
         # Environment variables above remain the source of truth for verification.
@@ -796,7 +799,16 @@ def resolve_generation_spec_path(
             return candidate
 
     searched = ", ".join(str(candidate) for candidate in candidates)
-    raise FileNotFoundError(f"生成规格不存在: {spec_path}. 已查找: {searched}")
+    generation_dir = context.test_dir / "generation"
+    available = _available_generation_specs(generation_dir)
+    suffix = f". 可用规格: {', '.join(available)}" if available else ""
+    raise FileNotFoundError(f"生成规格不存在: {spec_path}. 已查找: {searched}{suffix}")
+
+
+def _available_generation_specs(generation_dir: Path) -> list[str]:
+    if not generation_dir.exists():
+        return []
+    return sorted(path.stem for path in generation_dir.glob("*.y*ml"))
 
 
 def _default_output_name(
@@ -1421,7 +1433,7 @@ def _write_payload(
             verify()
         if post_verify:
             post_verify()
-    except Exception:
+    except BaseException:
         for path, content in backups.items():
             path.write_bytes(content)
         for path in created_files:

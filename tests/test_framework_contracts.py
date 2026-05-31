@@ -7,7 +7,7 @@ import pytest
 import requests
 from ruamel.yaml import YAML
 
-from ai_playwright.page_objects.base_page import _url_contains
+from ai_playwright.page_objects.base_page import BasePage, _url_contains
 from ai_playwright.ai_generation import case_generator as case_generator_module
 from ai_playwright.ai_generation.case_generator import (
     _GenerationArtifacts,
@@ -588,6 +588,53 @@ def test_wait_for_element_text_command_uses_base_page_expected_argument():
     )
 
     assert calls == [("#message", "ready", 1234)]
+
+
+def test_navigation_retries_transient_connection_closed(monkeypatch):
+    monkeypatch.setenv("UI_NAVIGATION_ATTEMPTS", "3")
+    monkeypatch.setenv("UI_NAVIGATION_RETRY_DELAY_MS", "0")
+    calls: list[tuple[str, str | None]] = []
+
+    class FakePage:
+        def on(self, *_args, **_kwargs):
+            pass
+
+        def goto(self, url, wait_until=None):
+            calls.append((url, wait_until))
+            if len(calls) == 1:
+                raise RuntimeError("Page.goto: net::ERR_CONNECTION_CLOSED")
+            return "ok"
+
+    page = BasePage(FakePage())
+
+    assert page.navigate("https://www.saucedemo.com/") == "ok"
+    assert calls == [
+        ("https://www.saucedemo.com/", "domcontentloaded"),
+        ("https://www.saucedemo.com/", "domcontentloaded"),
+    ]
+
+
+def test_navigation_does_not_retry_non_transient_error(monkeypatch):
+    monkeypatch.setenv("UI_NAVIGATION_ATTEMPTS", "3")
+    monkeypatch.setenv("UI_NAVIGATION_RETRY_DELAY_MS", "0")
+    calls: list[str] = []
+
+    class FakePage:
+        def on(self, *_args, **_kwargs):
+            pass
+
+        def goto(self, url, wait_until=None):
+            calls.append(url)
+            raise RuntimeError("Page.goto: invalid URL")
+
+        def screenshot(self):
+            return b"png"
+
+    page = BasePage(FakePage())
+
+    with pytest.raises(RuntimeError, match="导航到 操作失败"):
+        page.navigate("not-a-url")
+    assert calls == ["not-a-url"]
 
 
 def test_step_executor_records_registry_selector_after_verified_action(monkeypatch):
