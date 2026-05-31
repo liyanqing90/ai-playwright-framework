@@ -612,6 +612,7 @@ def _verify_generated_case(
     os.environ["BASE_URL"] = str(context.base_url or "")
     os.environ.setdefault("BROWSER", "chromium")
     os.environ.setdefault("PWHEADED", "1")
+    os.environ.setdefault("PWSLOWMO", "0")
     os.environ.setdefault("UI_AI_MODE", "strict")
     os.environ["UI_SELECTOR_CACHE_COMMIT_MODE"] = "deferred"
     _configure_runtime_for_verification(context=context, env=env)
@@ -692,6 +693,7 @@ _VERIFY_ENV_KEYS = (
     "BASE_URL",
     "BROWSER",
     "PWHEADED",
+    "PWSLOWMO",
     "UI_AI_MODE",
     "UI_SELECTOR_CACHE_COMMIT_MODE",
 )

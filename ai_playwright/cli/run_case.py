@@ -39,7 +39,13 @@ def build_pytest_args(config: Config) -> list[str]:
         "--clean-alluredir",
         "-p",
         "ai_playwright.pytest_plugin",
+        "--browser",
+        config.browser.value,
     ]
+    if config.headed:
+        pytest_args.append("--headed")
+    if config.slow_mo:
+        pytest_args.append(f"--slowmo={config.slow_mo}")
     if config.marker:
         pytest_args.extend(["-m", config.marker])
     if config.keyword:
@@ -54,6 +60,8 @@ def display_run_configuration(config: Config) -> None:
 
     table.add_row("浏览器", config.browser.value)
     table.add_row("运行模式", "有头模式" if config.headed else "无头模式")
+    if config.slow_mo:
+        table.add_row("慢速执行", f"{config.slow_mo} ms")
     table.add_row("运行环境", config.env.value)
     table.add_row("项目", config.project)
     if config.test_file:
@@ -92,6 +100,12 @@ def main(
         True, "--headed/--headless", help="是否以有头模式运行浏览器"
     ),
     browser: Browser = typer.Option(Browser.CHROMIUM, "--browser", help="浏览器"),
+    slow_mo: int = typer.Option(
+        0,
+        "--slow-mo",
+        min=0,
+        help="Playwright 慢速执行毫秒数，用于有头调试时观察浏览器",
+    ),
     keyword: Optional[str] = typer.Option(
         None, "-k", "--keyword", help="只运行匹配关键字的测试用例"
     ),
@@ -108,6 +122,7 @@ def main(
             marker=marker,
             keyword=keyword,
             headed=headed,
+            slow_mo=slow_mo,
             browser=browser,
             env=env,
             project=project,
@@ -132,6 +147,7 @@ def main(
             "env": config.env.value,
             "test_file": config.test_file,
             "ai_mode": ai_mode,
+            "slow_mo": slow_mo,
         },
     )
 

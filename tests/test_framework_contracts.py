@@ -1036,6 +1036,41 @@ def test_test_signature_uses_standard_page_fixtures():
     assert params[:4] == ["page", "ui_helper", "get_test_name", "value"]
 
 
+def test_run_case_passes_headed_options_to_pytest_playwright(tmp_path: Path):
+    from ai_playwright.cli.run_case import build_pytest_args
+
+    previous = Config()
+    previous_state = {
+        "project": previous.project,
+        "env": previous.env,
+        "base_url": previous.base_url,
+        "test_dir": previous.test_dir,
+        "headed": previous.headed,
+        "browser": previous.browser,
+        "slow_mo": previous.slow_mo,
+        "test_file": previous.test_file,
+    }
+    try:
+        config = Config(
+            project="demo",
+            env="prod",
+            test_dir=str(tmp_path),
+            headed=True,
+            browser="firefox",
+            slow_mo=250,
+            test_file="smoke.yaml",
+        )
+
+        args = build_pytest_args(config)
+
+        assert "--browser" in args
+        assert args[args.index("--browser") + 1] == "firefox"
+        assert "--headed" in args
+        assert "--slowmo=250" in args
+    finally:
+        Config(**previous_state)
+
+
 def test_config_honors_explicit_test_dir_override(tmp_path: Path):
     previous = os.environ.get("TEST_DIR")
     try:
@@ -1053,6 +1088,31 @@ def test_config_honors_explicit_test_dir_override(tmp_path: Path):
         else:
             os.environ["TEST_DIR"] = previous
         Config(project="demo", env="prod", test_dir=previous or "test_data/demo")
+
+
+def test_browser_launch_options_follow_config_headed_and_slow_mo():
+    from ai_playwright import pytest_plugin
+
+    previous_headed = pytest_plugin.config.headed
+    previous_slow_mo = pytest_plugin.config.slow_mo
+    try:
+        Config(project="demo", env="prod", headed=True, slow_mo=250)
+
+        assert pytest_plugin._browser_launch_options() == {
+            "headless": False,
+            "slow_mo": 250,
+        }
+
+        Config(project="demo", env="prod", headed=False, slow_mo=0)
+
+        assert pytest_plugin._browser_launch_options() == {"headless": True}
+    finally:
+        Config(
+            project="demo",
+            env="prod",
+            headed=previous_headed,
+            slow_mo=previous_slow_mo,
+        )
 
 
 def test_element_definition_store_updates_last_effective_elements_file(

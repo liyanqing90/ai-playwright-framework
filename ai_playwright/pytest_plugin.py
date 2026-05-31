@@ -80,9 +80,24 @@ def browser() -> Generator[Browser, None, None]:
     创建浏览器实例，session 级别的 fixture
     """
     with sync_playwright() as playwright:
-        browser = getattr(playwright, config.browser).launch(headless=not config.headed)
+        launch_options = _browser_launch_options()
+        logger.info(
+            "Launching browser: "
+            f"browser={config.browser.value}, "
+            f"headed={config.headed}, "
+            f"headless={launch_options['headless']}, "
+            f"slow_mo={launch_options.get('slow_mo', 0)}"
+        )
+        browser = getattr(playwright, config.browser).launch(**launch_options)
         yield browser
         browser.close()
+
+
+def _browser_launch_options() -> dict[str, Any]:
+    options: dict[str, Any] = {"headless": not config.headed}
+    if config.slow_mo:
+        options["slow_mo"] = config.slow_mo
+    return options
 
 
 @pytest.fixture(scope="function")

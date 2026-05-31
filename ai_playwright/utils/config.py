@@ -30,6 +30,7 @@ class Config(BaseSettings):
     marker: Optional[str] = None
     keyword: Optional[str] = None
     headed: bool = True
+    slow_mo: int = 0
     browser: Browser = Browser.CHROMIUM
     env: Environment = Environment.PROD
     project: str = "demo"
@@ -62,6 +63,12 @@ class Config(BaseSettings):
         """验证配置是否有效"""
         self.browser = self._coerce_enum(self.browser, Browser, "browser")
         self.env = self._coerce_enum(self.env, Environment, "env")
+        try:
+            self.slow_mo = int(self.slow_mo or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid slow_mo: must be a non-negative integer") from exc
+        if self.slow_mo < 0:
+            raise ValueError("Invalid slow_mo: must be a non-negative integer")
         self.project = str(self.project or "").strip().lower()
         if not self.project:
             raise ValueError("Invalid project: project cannot be empty")
@@ -130,6 +137,7 @@ class Config(BaseSettings):
 
     def _publish_environment(self):
         os.environ["PWHEADED"] = "1" if self.headed else "0"
+        os.environ["PWSLOWMO"] = str(self.slow_mo)
         os.environ["BROWSER"] = self.browser.value
         os.environ["TEST_ENV"] = self.env.value
         os.environ["TEST_PROJECT"] = self.project
