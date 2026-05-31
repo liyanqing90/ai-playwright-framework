@@ -13,8 +13,8 @@ def normalize_yaml_file_name(value: str | None) -> str:
     return value if value.endswith((".yaml", ".yml")) else f"{value}.yaml"
 
 
-def display_generation_result(result, dry_run: bool) -> None:
-    table = Table(title="AI用例生成预览" if dry_run else "AI用例生成结果")
+def display_generation_result(result) -> None:
+    table = Table(title="AI用例生成结果")
     table.add_column("类型", style="cyan")
     table.add_column("路径", style="magenta")
     table.add_row("cases", str(result.case_file))

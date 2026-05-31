@@ -25,11 +25,21 @@ app = typer.Typer(
 def main(
     spec: str = typer.Argument(..., help="生成规格名，例如 smoke"),
     project: str = typer.Option("demo", "-p", "--project", help="项目"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="只预览生成结果，不写文件"),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="已废弃：生成必须执行真实验证，不再支持只预览",
+        hidden=True,
+    ),
     no_overwrite: bool = typer.Option(
         False, "--no-overwrite", help="不覆盖已存在的生成文件"
     ),
-    no_verify: bool = typer.Option(False, "--no-verify", help="生成后不自动执行验证"),
+    no_verify: bool = typer.Option(
+        False,
+        "--no-verify",
+        help="已废弃：生成必须执行真实验证",
+        hidden=True,
+    ),
     context_env: Environment = typer.Option(
         Environment.PROD,
         "--context-env",
@@ -38,6 +48,13 @@ def main(
     ),
 ):
     configure_file_logger()
+    if dry_run:
+        console.print("[red]--dry-run 已移除：生成必须执行真实页面验证。[/red]")
+        raise typer.Exit(2)
+    if no_verify:
+        console.print("[red]--no-verify 已移除：生成必须执行真实页面验证。[/red]")
+        raise typer.Exit(2)
+
     tracker = get_token_usage_tracker()
     tracker.start_run(
         run_kind="generate_case",
@@ -45,15 +62,14 @@ def main(
             "project": project,
             "context_env": context_env.value,
             "spec": spec,
-            "dry_run": dry_run,
             "overwrite": not no_overwrite,
-            "verify": not no_verify,
+            "verify": True,
         },
     )
     try:
         console.print(
             f"[cyan][gen][/cyan] project={project} spec={spec} "
-            f"dry_run={dry_run} overwrite={not no_overwrite}"
+            f"overwrite={not no_overwrite} verify=True"
         )
 
         with console.status("[cyan][gen] 准备生成...[/cyan]", spinner="dots") as status:
@@ -67,13 +83,13 @@ def main(
                 env=context_env.value,
                 spec_path=spec,
                 output_name=None,
-                dry_run=dry_run,
+                dry_run=False,
                 overwrite=not no_overwrite,
                 use_ai=True,
-                verify=not no_verify,
+                verify=True,
                 progress=report,
             )
-        display_generation_result(result, dry_run=dry_run)
+        display_generation_result(result)
         for warning in result.warnings:
             logger.warning(f"用例生成警告: {warning}")
         display_token_usage_summary(

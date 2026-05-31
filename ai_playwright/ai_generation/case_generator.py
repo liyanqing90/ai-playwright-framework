@@ -69,6 +69,11 @@ def generate_case_files(
     verify: bool | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> CaseGenerationResult:
+    if dry_run:
+        raise ValueError("dry_run 已移除：生成必须执行真实页面验证")
+    if verify is False:
+        raise ValueError("verify=False 已移除：生成必须执行真实页面验证")
+
     spec_ref = Path(spec_path)
     artifacts = _GenerationArtifacts(
         project=project, spec_name=_default_output_name(spec_ref)
@@ -76,7 +81,7 @@ def generate_case_files(
     try:
         _emit(progress, f"加载项目上下文: project={project}, env={env}")
         context = load_project_context(project, env=env)
-        if not dry_run and is_packaged_template_path(context.test_dir):
+        if is_packaged_template_path(context.test_dir):
             raise ValueError(
                 "当前使用的是包内只读 demo 模板。请先运行 "
                 "`ai-playwright-init` 初始化本地工作区，或在当前目录提供 "
@@ -96,13 +101,6 @@ def generate_case_files(
         )
         _emit(progress, "校验生成规格与项目匹配")
         _validate_spec_project_scope(project=project, spec_path=spec_path, spec=spec)
-        ai_config = load_ai_config()
-        generation_cfg = ai_config.get("generation", {})
-        verify_after_generate = (
-            bool(generation_cfg.get("verify_after_generate", True))
-            if verify is None
-            else bool(verify)
-        )
         compiled = compile_case_payload(
             context=context,
             spec=spec,
@@ -131,66 +129,53 @@ def generate_case_files(
                 "vars_file": str(result.get("vars_file") or ""),
             },
         )
-        if not dry_run:
-            if verify_after_generate:
-                previous_selector_cache_hold = os.environ.get(
-                    "UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"
-                )
-                os.environ["UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"] = "1"
-                try:
-                    _verify_candidate_persist_formal(
-                        context=context,
-                        env=env,
-                        payload=payload,
-                        result=result,
-                        overwrite=overwrite,
-                        output_name=resolved_output_name,
-                        artifacts=artifacts,
-                        progress=progress,
-                    )
-                    commit_pending_selector_cache()
-                except Exception as exc:
-                    discard_pending_selector_cache(str(exc))
-                    if not use_ai:
-                        raise
-                    try:
-                        payload, warnings, result = _repair_and_verify_runtime_failure(
-                            context=context,
-                            spec=spec,
-                            env=env,
-                            output_name=resolved_output_name,
-                            use_ai=use_ai,
-                            overwrite=overwrite,
-                            failed_payload=payload,
-                            failed_error=str(exc),
-                            progress=progress,
-                            artifacts=artifacts,
-                        )
-                    except Exception as repair_exc:
-                        discard_pending_selector_cache(str(repair_exc))
-                        raise
-                    commit_pending_selector_cache()
-                finally:
-                    if previous_selector_cache_hold is None:
-                        os.environ.pop(
-                            "UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED",
-                            None,
-                        )
-                    else:
-                        os.environ[
-                            "UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"
-                        ] = previous_selector_cache_hold
-            else:
-                _emit(progress, "写入生成文件")
-                _write_payload(
-                    result,
+        previous_selector_cache_hold = os.environ.get(
+            "UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"
+        )
+        os.environ["UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"] = "1"
+        try:
+            _verify_candidate_persist_formal(
+                context=context,
+                env=env,
+                payload=payload,
+                result=result,
+                overwrite=overwrite,
+                output_name=resolved_output_name,
+                artifacts=artifacts,
+                progress=progress,
+            )
+            commit_pending_selector_cache()
+        except Exception as exc:
+            discard_pending_selector_cache(str(exc))
+            if not use_ai:
+                raise
+            try:
+                payload, warnings, result = _repair_and_verify_runtime_failure(
+                    context=context,
+                    spec=spec,
+                    env=env,
+                    output_name=resolved_output_name,
+                    use_ai=use_ai,
                     overwrite=overwrite,
-                    verify=lambda: _validate_written_case_file(result),
+                    failed_payload=payload,
+                    failed_error=str(exc),
+                    progress=progress,
+                    artifacts=artifacts,
                 )
-                _emit(progress, "写入后YAML schema校验通过")
-                _emit(progress, "跳过生成后执行验证")
-        else:
-            _emit(progress, "dry-run模式，跳过写入")
+            except Exception as repair_exc:
+                discard_pending_selector_cache(str(repair_exc))
+                raise
+            commit_pending_selector_cache()
+        finally:
+            if previous_selector_cache_hold is None:
+                os.environ.pop(
+                    "UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED",
+                    None,
+                )
+            else:
+                os.environ["UI_SELECTOR_CACHE_HOLD_UNTIL_GENERATION_VERIFIED"] = (
+                    previous_selector_cache_hold
+                )
         _emit(progress, "生成完成")
         artifacts.cleanup()
         return CaseGenerationResult(
@@ -620,19 +605,7 @@ def _verify_generated_case(
     output_buffer = StringIO()
     try:
         with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
-            exit_code = pytest.main(
-                [
-                    str(case_file),
-                    "-v",
-                    "--tb=line",
-                    "-p",
-                    "no:warnings",
-                    "--skip-yaml-schema",
-                    "-s",
-                    "--alluredir=reports/allure-results",
-                    "--clean-alluredir",
-                ]
-            )
+            exit_code = pytest.main(_verification_pytest_args(case_file))
     finally:
         for name, value in previous_env.items():
             if value is None:
@@ -651,6 +624,22 @@ def _verify_generated_case(
             f"{_tail_text(output)}"
         )
     _emit(progress, f"{stage}用例真实页面验证通过")
+
+
+def _verification_pytest_args(case_file: Path) -> list[str]:
+    return [
+        str(case_file),
+        "-v",
+        "--tb=line",
+        "-p",
+        "no:warnings",
+        "-p",
+        "ai_playwright.pytest_plugin",
+        "--skip-yaml-schema",
+        "-s",
+        "--alluredir=reports/allure-results",
+        "--clean-alluredir",
+    ]
 
 
 def _regenerate_without_cache(

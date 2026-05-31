@@ -19,6 +19,7 @@ from ai_playwright.ai_generation.case_generator import (
     _payload_with_referenced_context_modules,
     _result_paths,
     _resolve_navigation_context,
+    _verification_pytest_args,
     _validate_spec_project_scope,
     _write_payload,
     generate_case_files,
@@ -27,7 +28,10 @@ from ai_playwright.ai_generation.case_generator import (
 from ai_playwright.ai_generation.harness import GenerationHarness
 from ai_playwright.ai_generation.harness import _safe_case_name
 from ai_playwright.ai_generation.pipeline import execute_compiled_payload_steps
-from ai_playwright.ai_generation.project_context import ProjectContext
+from ai_playwright.ai_generation.project_context import (
+    ProjectContext,
+    load_project_context,
+)
 from ai_playwright.ai_runtime.cache_scope import normalize_entry_url
 from ai_playwright.ai_runtime.agent_case_executor import (
     AgentCasePlanCache,
@@ -181,6 +185,27 @@ def test_generation_spec_short_name_resolves_to_project_generation_dir(tmp_path:
 
     assert resolve_generation_spec_path(Context(), "saucedemo_ai") == spec_file
     assert resolve_generation_spec_path(Context(), "saucedemo_ai.yaml") == spec_file
+
+
+def test_generation_project_context_honors_test_dir_env(monkeypatch, tmp_path: Path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    explicit_test_dir = tmp_path / "external_test_data" / "demo"
+    explicit_test_dir.mkdir(parents=True)
+    (config_dir / "env_config.yaml").write_text(
+        "projects:\n"
+        "  demo:\n"
+        "    test_dir: should_not_use\n"
+        "    environments:\n"
+        "      prod: https://example.test/\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AI_PLAYWRIGHT_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("TEST_DIR", str(explicit_test_dir))
+
+    context = load_project_context("demo", env="prod")
+
+    assert context.test_dir == explicit_test_dir.resolve()
 
 
 def test_generation_spec_string_steps_still_use_ai():
@@ -398,7 +423,7 @@ def test_generation_build_payload_does_not_reuse_hidden_generation_cache(
     assert calls["count"] == 2
 
 
-def test_generate_case_verifies_candidate_before_formal_persist(
+def test_generate_case_always_verifies_candidate_before_formal_persist(
     monkeypatch, tmp_path: Path
 ):
     events: list[str] = []
@@ -446,7 +471,7 @@ def test_generate_case_verifies_candidate_before_formal_persist(
         "ai_playwright.ai_generation.case_generator.load_ai_config",
         lambda: {
             "generation": {
-                "verify_after_generate": True,
+                "verify_after_generate": False,
                 "runtime_repair_attempts": 1,
             }
         },
@@ -493,6 +518,24 @@ def test_generate_case_verifies_candidate_before_formal_persist(
     ]
 
 
+def test_generate_case_rejects_preview_or_unverified_modes():
+    with pytest.raises(ValueError, match="dry_run"):
+        generate_case_files(project="demo", spec_path="spec.yaml", dry_run=True)
+
+    with pytest.raises(ValueError, match="verify=False"):
+        generate_case_files(project="demo", spec_path="spec.yaml", verify=False)
+
+
+def test_generation_verification_loads_framework_pytest_plugin(tmp_path: Path):
+    args = _verification_pytest_args(tmp_path / "cases" / "generated.yaml")
+
+    plugin_index = args.index("ai_playwright.pytest_plugin")
+
+    assert args[plugin_index - 1] == "-p"
+    assert "--skip-yaml-schema" in args
+    assert plugin_index < args.index("--skip-yaml-schema")
+
+
 def test_generate_case_does_not_persist_when_candidate_verify_fails(
     monkeypatch, tmp_path: Path
 ):
@@ -534,7 +577,7 @@ def test_generate_case_does_not_persist_when_candidate_verify_fails(
     )
     monkeypatch.setattr(
         "ai_playwright.ai_generation.case_generator.load_ai_config",
-        lambda: {"generation": {"verify_after_generate": True}},
+        lambda: {"generation": {}},
     )
     monkeypatch.setattr(
         "ai_playwright.ai_generation.case_generator._build_payload",

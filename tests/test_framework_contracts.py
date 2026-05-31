@@ -691,6 +691,42 @@ def test_step_executor_uses_resolved_element_selector_as_smart_target_without_ex
     assert events[1] == ("execute", "click", 'button:has-text("Submit")', None)
 
 
+def test_step_executor_does_not_treat_raw_selector_as_smart_target(monkeypatch):
+    events: list[Any] = []
+
+    class FakeResolver:
+        def resolve(self, **kwargs):
+            raise AssertionError("raw selector should not invoke smart resolver")
+
+    class FakePage:
+        url = "https://example.test/products"
+
+    class FakeUiHelper:
+        pass
+
+    def fake_execute_action_with_command(ui_helper, action, selector, value, step):
+        events.append(("execute", action, selector, value))
+
+    monkeypatch.setattr(
+        "ai_playwright.step_actions.step_executor.execute_action_with_command",
+        fake_execute_action_with_command,
+    )
+
+    executor = StepExecutor(FakePage(), FakeUiHelper(), elements={})
+    executor.smart_resolver = FakeResolver()
+
+    executor.execute_step(
+        {
+            "action": "assert_text",
+            "selector": ".title",
+            "value": "Products",
+            "mode": "smart",
+        }
+    )
+
+    assert events == [("execute", "assert_text", ".title", "Products")]
+
+
 def test_step_executor_defers_selector_cache_until_test_passes(monkeypatch):
     events: list[Any] = []
 

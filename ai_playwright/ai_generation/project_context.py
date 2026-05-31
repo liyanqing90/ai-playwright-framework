@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ def load_project_context(project: str, env: str = "prod") -> ProjectContext:
     if not project_cfg:
         raise ValueError(f"项目不存在: {project}")
 
-    test_dir = resolve_project_test_dir(project_cfg, project)
+    test_dir = _project_test_dir(project_cfg, project)
     environments = project_cfg.get("environments") or {}
     base_url = environments.get(env) or next(iter(environments.values()), "")
     elements = (_merge_yaml_dir(yaml, test_dir / "elements") or {}).get("elements", {})
@@ -46,6 +47,13 @@ def load_project_context(project: str, env: str = "prod") -> ProjectContext:
         test_cases=test_cases or [],
         test_data=test_data or {},
     )
+
+
+def _project_test_dir(project_cfg: dict[str, Any], project: str) -> Path:
+    explicit_test_dir = os.environ.get("TEST_DIR")
+    if explicit_test_dir:
+        return Path(explicit_test_dir).expanduser().resolve()
+    return resolve_project_test_dir(project_cfg, project)
 
 
 def summarize_context(

@@ -67,7 +67,6 @@ generation:
   compile_context_items: 32
   compile_context_modules: 4
   compile_context_module_steps: 4
-  verify_after_generate: true
   prefer_existing_modules: true
   prefer_existing_elements: true
 

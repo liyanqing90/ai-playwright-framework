@@ -17,6 +17,7 @@ from ai_playwright.ai_runtime.element_store import (
     ElementDefinitionStore,
     register_element_update_thread,
 )
+from ai_playwright.ai_runtime.playwright_selectors import looks_like_raw_selector
 from ai_playwright.ai_runtime.smart_resolver import SmartResolver
 from ai_playwright.step_actions.action_registry import (
     NO_SELECTOR_ACTIONS,
@@ -195,9 +196,18 @@ class StepExecutor:
                 step.get("frame")
             )
             if mode != "strict" and not target and pre_selector:
-                target = self.variable_manager.replace_variables_refactored(
-                    raw_selector if element_key else pre_selector
-                )
+                fallback_target = None
+                if element_key:
+                    fallback_target = raw_selector
+                elif not (
+                    isinstance(pre_selector, str)
+                    and looks_like_raw_selector(pre_selector)
+                ):
+                    fallback_target = pre_selector
+                if fallback_target:
+                    target = self.variable_manager.replace_variables_refactored(
+                        fallback_target
+                    )
             selector = self._resolve_selector(
                 action,
                 selector,
@@ -447,6 +457,12 @@ class StepExecutor:
         if isinstance(selector, dict):
             return selector
         if mode == "strict":
+            return selector
+        if (
+            target is None
+            and isinstance(selector, str)
+            and looks_like_raw_selector(selector)
+        ):
             return selector
         resolver = self._get_smart_resolver()
         resolved = resolver.resolve(

@@ -1,8 +1,10 @@
 # AI Playwright
 
-[![CI](https://github.com/liyanqing90/ai-playwright/actions/workflows/ci.yml/badge.svg)](https://github.com/liyanqing90/ai-playwright/actions/workflows/ci.yml)
+[![CI](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+English | [简体中文](README.zh-CN.md)
 
 AI Playwright is a YAML-driven UI automation framework built on top of
 Playwright and pytest. It keeps deterministic test assets in version control and
@@ -69,8 +71,8 @@ AI Playwright separates these concerns:
 ### From Source
 
 ```bash
-git clone https://github.com/liyanqing90/ai-playwright.git
-cd ai-playwright
+git clone https://github.com/liyanqing90/ai-playwright-framework.git
+cd ai-playwright-framework
 
 poetry install
 poetry run playwright install chromium
@@ -214,15 +216,19 @@ poetry run run_case -p demo -f saucedemo_ai --ai-mode smart --headless
 Generation specs live in `test_data/<project>/generation/*.yaml`.
 
 ```bash
-# Preview without writing files
-poetry run gen -p demo saucedemo_ai --dry-run
-
-# Generate and verify by default
+# Generate, verify on a real browser, then write formal YAML assets
 poetry run gen -p demo saucedemo_ai
 
-# Generate without post-write verification
-poetry run gen -p demo saucedemo_ai --no-verify
+# Refuse to overwrite existing generated files
+poetry run gen -p demo saucedemo_ai --no-overwrite
 ```
+
+Generation is intentionally verification-first. The command writes the generated
+payload into a temporary candidate workspace, runs the candidate case on a real
+browser, and only writes the formal `cases/`, `data/`, `elements/`, `modules/`,
+or `vars/` files after the candidate passes. The formal files are then validated
+again. Failed generation runs keep debugging artifacts under
+`logs/generation_runs/`.
 
 Example generation spec:
 
@@ -341,7 +347,7 @@ projects:
 ```
 
 `config/ai_config.yaml` controls AI runtime behavior, candidate limits, selector
-registry, generation preferences, and agent guardrails.
+registry preferences, generation context limits, and agent guardrails.
 
 The CLI resolves config in this order:
 
@@ -378,7 +384,7 @@ OpenAI-compatible chat-completion providers.
 ## Project Layout
 
 ```text
-ai-playwright/
+ai-playwright-framework/
 ├── ai_playwright/                 # Framework package
 │   ├── ai_generation/             # YAML generation and validation harness
 │   ├── ai_runtime/                # Smart selector, agent runtime, LLM provider
