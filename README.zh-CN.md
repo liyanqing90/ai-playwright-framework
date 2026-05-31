@@ -14,6 +14,7 @@ AI Playwright 是一个基于 Playwright 和 pytest 的 YAML 驱动 UI 自动化
 
 - [为什么需要 AI Playwright](#为什么需要-ai-playwright)
 - [能力概览](#能力概览)
+- [演示](#演示)
 - [快速开始](#快速开始)
 - [安装](#安装)
 - [核心概念](#核心概念)
@@ -52,6 +53,14 @@ AI Playwright 将这两件事分离：
 - 支持 `agent_case` 运行时自然语言流程。
 - 默认外部模型数据脱敏策略，避免直接泄露敏感 UI 文本。
 - CI 覆盖格式检查、契约测试、YAML schema、重复定义、打包和安装后 CLI 冒烟检查。
+
+## 演示
+
+点击预览图打开 MP4 演示视频。
+
+| Agent 意图执行 | AI 用例生成 |
+|---|---|
+| [<img src="docs/assets/demo/agent-intent.jpg" alt="Agent 意图执行演示" width="420">](docs/assets/demo/agent-intent.mp4) | [<img src="docs/assets/demo/agent-case-generation.jpg" alt="AI 用例生成演示" width="420">](docs/assets/demo/agent-case-generation.mp4) |
 
 ## 快速开始
 

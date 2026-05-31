@@ -19,6 +19,7 @@ gates for the current design.
 
 - [Why AI Playwright](#why-ai-playwright)
 - [Features](#features)
+- [Demo](#demo)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Core Concepts](#core-concepts)
@@ -65,6 +66,14 @@ AI Playwright separates these concerns:
 - LLM data boundary policies for trusted local and external models.
 - Contract tests, schema validation, duplicate checks, formatting, and package
   smoke tests in CI.
+
+## Demo
+
+Click a preview to open the MP4 demo.
+
+| Agent intent execution | AI case generation |
+|---|---|
+| [<img src="docs/assets/demo/agent-intent.jpg" alt="Agent intent execution demo" width="420">](docs/assets/demo/agent-intent.mp4) | [<img src="docs/assets/demo/agent-case-generation.jpg" alt="AI case generation demo" width="420">](docs/assets/demo/agent-case-generation.mp4) |
 
 ## Quick Start
 
