@@ -1,8 +1,0 @@
-test_settings:
-  timeout: 30
-  retry_attempts: 3
-  screenshot_on_failure: true
-
-evidence:
-  screenshot_dir: ./evidence/screenshots
-  log_dir: ./evidence/logs 

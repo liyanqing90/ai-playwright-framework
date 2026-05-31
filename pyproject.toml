@@ -1,57 +1,75 @@
 [project]
-name = "playwright-ui"
+name = "ai-playwright"
 version = "0.1.0"
-description = ""
-authors = [{ name = "Your Name", email = "you@example.com" }]
+description = "YAML-driven Playwright UI automation framework with optional AI-assisted generation and smart selectors."
 readme = "README.md"
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.12,<3.15"
+license = { text = "MIT" }
+authors = [
+  { name = "AI Playwright contributors" },
+]
+keywords = ["playwright", "pytest", "ui-automation", "yaml", "llm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Testing",
+  "Topic :: Software Development :: Testing :: Acceptance",
+]
 dynamic = ["dependencies"]
+
+[project.urls]
+Homepage = "https://github.com/liyanqing90/ai-playwright"
+Repository = "https://github.com/liyanqing90/ai-playwright"
+Issues = "https://github.com/liyanqing90/ai-playwright/issues"
+
+[project.scripts]
+gen = "ai_playwright.cli.generate_case:cli"
+run_case = "ai_playwright.cli.run_case:cli"
+ai-playwright-init = "ai_playwright.cli.init_project:cli"
 
 [tool.poetry]
 package-mode = true
 packages = [
-  { include = "src" },
-  { include = "utils" },
-  { include = "page_objects" },
+  { include = "ai_playwright" },
+]
+include = [
+  { path = "ai_playwright/templates/**/*", format = ["sdist", "wheel"] },
 ]
 
-[tool.poetry.scripts]
-gen = "src.cli.generate_case:cli"
-run_case = "src.cli.run_case:cli"
-
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.12,<3.15"
 pytest = "^8.3.4"
 allure-python-commons = "^2.13.5"
-pyyaml = "^6.0.2"
 rich = "^13.9.4"
 allure-pytest = "^2.13.5"
 loguru = "^0.7.3"
-pandas = "^2.2.3"
-openpyxl = "^3.1.5"
 typer = "^0.15.1"
 pydantic = "^2.10.4"
 pydantic-settings = "^2.7.1"
+python-dotenv = "^1.0.1"
 requests = "^2.32.3"
 pytest-reportlog = "^0.4.0"
 ruamel-yaml = "^0.18.10"
-configobj = "^5.0.9"
 pytest-base-url = "^2.1.0"
 pytest-dependency = "^0.6.0"
-poetry-core = "^2.0.1"
 faker = "^37.0.0"
 pytest-playwright = "^0.7.0"
 pytest-check = "^2.5.0"
-black = "^25.1.0"
 jsonpath-ng = "^1.7.0"
-urllib3 = "^2.5.0"
-greenlet = "^3.3.2"
 playwright = "^1.58.0"
 
-[[tool.poetry.source]]
-name = "my_mirror"
-url = "https://mirrors.cernet.edu.cn/pypi/web/simple"
-priority = "primary"
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+include = '\.pyi?$'
 
 [build-system]
 requires = ["poetry-core"]

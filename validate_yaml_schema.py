@@ -1,4 +1,4 @@
-from src.yaml_schema import main
+from ai_playwright.yaml_schema import main
 
 
 if __name__ == "__main__":

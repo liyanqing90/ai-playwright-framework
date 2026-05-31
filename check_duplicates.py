@@ -4,17 +4,9 @@ import re
 import sys
 from typing import Dict, List, Tuple
 
-from utils.logger import logger
-from utils.yaml_handler import YamlHandler
+from ai_playwright.utils.yaml_handler import YamlHandler
 
-
-def get_line_numbers(content: str, target: str) -> List[int]:
-    """获取目标字符串在内容中的所有行号"""
-    line_numbers = []
-    for i, line in enumerate(content.splitlines(), 1):
-        if target in line:
-            line_numbers.append(i)
-    return line_numbers
+yaml_handler = YamlHandler()
 
 
 def format_duplicate_locations(locations: List[Tuple[Path, int]]) -> str:
@@ -45,28 +37,12 @@ def format_duplicate_locations(locations: List[Tuple[Path, int]]) -> str:
 def check_cases_duplicates(cases_dir: Path) -> Dict[str, List[Tuple[Path, int]]]:
     """检查cases目录下的用例名称重复"""
     duplicates = defaultdict(list)
-    yaml_handler = YamlHandler()
 
-    for yaml_file in sorted(cases_dir.glob("**/*.yaml")):
+    for yaml_file in _yaml_files(cases_dir):
         content = yaml_handler.load_yaml(yaml_file)
-        with open(yaml_file, "r", encoding="utf-8") as f:
-            file_content = f.read()
-
         if isinstance(content, dict) and "test_cases" in content:
-            name_lines = defaultdict(list)
-            for i, line in enumerate(file_content.splitlines(), 1):
-                if line.lstrip().startswith("#"):
-                    continue
-                match = re.search(r"\bname:\s*['\"]?([^#'\"\s]+)", line)
-                if match:
-                    name_lines[match.group(1)].append((yaml_file, i))
-
-            # 找出当前文件中的重复用例名
-            for name, locations in name_lines.items():
-                if len(locations) > 1:  # 如果同一个用例名出现多次
-                    duplicates[name].extend(locations)
-                else:  # 如果只出现一次，也记录下来，以便后续检查跨文件重复
-                    duplicates[name].extend(locations)
+            for name, locations in _case_name_locations(yaml_file).items():
+                duplicates[name].extend(locations)
 
     # 只保留真正的重复项
     return {
@@ -77,28 +53,13 @@ def check_cases_duplicates(cases_dir: Path) -> Dict[str, List[Tuple[Path, int]]]
 def check_data_duplicates(data_dir: Path) -> Dict[str, List[Tuple[Path, int]]]:
     """检查data目录下的测试数据用例名称重复"""
     duplicates = defaultdict(list)
-    yaml_handler = YamlHandler()
 
-    for yaml_file in sorted(data_dir.glob("**/*.yaml")):
+    for yaml_file in _yaml_files(data_dir):
         content = yaml_handler.load_yaml(yaml_file)
-        with open(yaml_file, "r", encoding="utf-8") as f:
-            file_content = f.read()
-
         if isinstance(content, dict) and "test_data" in content:
-            # 记录每个测试数据名在当前文件中出现的所有行号
-            name_lines = defaultdict(list)
-            for i, line in enumerate(file_content.splitlines(), 1):
-                for test_name in content["test_data"].keys():
-                    # 使用精确匹配，确保完全匹配key
-                    if line.strip() == f"{test_name}:":
-                        name_lines[test_name].append((yaml_file, i))
-
-            # 找出当前文件中的重复数据名
-            for name, locations in name_lines.items():
-                if len(locations) > 1:  # 如果同一个数据名出现多次
-                    duplicates[name].extend(locations)
-                else:  # 如果只出现一次，也记录下来，以便后续检查跨文件重复
-                    duplicates[name].extend(locations)
+            keys = set(content.get("test_data", {}))
+            for name, locations in _top_level_key_locations(yaml_file, keys).items():
+                duplicates[name].extend(locations)
 
     # 只保留真正的重复项
     return {
@@ -110,20 +71,13 @@ def check_elements_duplicates(elements_dir: Path) -> Dict[str, List[Tuple[Path, 
     """检查elements目录下的元素名称重复"""
     duplicates = defaultdict(list)
     element_names = defaultdict(list)
-    yaml_handler = YamlHandler()
 
-    for yaml_file in sorted(elements_dir.glob("**/*.yaml")):
+    for yaml_file in _yaml_files(elements_dir):
         content = yaml_handler.load_yaml(yaml_file)
-        with open(yaml_file, "r", encoding="utf-8") as f:
-            file_content = f.read()
-
         if isinstance(content, dict) and "elements" in content:
-            for element_name in content["elements"].keys():
-                # 查找元素key所在的行号
-                for i, line in enumerate(file_content.splitlines(), 1):
-                    if f"{element_name}:" in line:  # 使用冒号来匹配key
-                        element_names[element_name].append((yaml_file, i))
-                        break
+            keys = set(content.get("elements", {}))
+            for name, locations in _top_level_key_locations(yaml_file, keys).items():
+                element_names[name].extend(locations)
 
     # 找出重复的元素名称（只检查key）
     for name, locations in element_names.items():
@@ -147,10 +101,8 @@ def check_project_duplicates(project_dir: Path) -> bool:
             has_duplicates = True
             project_has_duplicates = True
             print(f"\n[ERROR] {project_name} 项目中发现重复的用例名称：")
-            logger.info(f"\n{project_name} 项目中发现重复的用例名称：")
             for name, locations in case_duplicates.items():
                 print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
-                logger.info(f'"{name}" 在 {format_duplicate_locations(locations)}')
 
     # 检查data目录
     data_dir = project_dir / "data"
@@ -160,10 +112,8 @@ def check_project_duplicates(project_dir: Path) -> bool:
             has_duplicates = True
             project_has_duplicates = True
             print(f"\n[ERROR] {project_name} 项目中发现重复的测试数据名称：")
-            logger.info(f"\n{project_name} 项目中发现重复的测试数据名称：")
             for name, locations in data_duplicates.items():
                 print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
-                logger.info(f'"{name}" 在 {format_duplicate_locations(locations)}')
 
     # 检查elements目录
     elements_dir = project_dir / "elements"
@@ -173,10 +123,8 @@ def check_project_duplicates(project_dir: Path) -> bool:
             has_duplicates = True
             project_has_duplicates = True
             print(f"\n[ERROR] {project_name} 项目中发现重复的元素名称：")
-            logger.info(f"\n{project_name} 项目中发现重复的元素名称：")
             for name, locations in element_duplicates.items():
                 print(f'  "{name}" 在 {format_duplicate_locations(locations)}')
-                logger.info(f'"{name}" 在 {format_duplicate_locations(locations)}')
 
     return project_has_duplicates
 
@@ -203,9 +151,50 @@ def main():
 
     if not has_any_duplicates:
         print("[OK] 所有项目中均未发现重复项")
-        logger.info("\n所有项目中均未发现重复项")
         return 0
     return 1
+
+
+def _yaml_files(directory: Path) -> list[Path]:
+    return sorted(
+        path
+        for pattern in ("**/*.yaml", "**/*.yml")
+        for path in directory.glob(pattern)
+    )
+
+
+def _case_name_locations(yaml_file: Path) -> Dict[str, List[Tuple[Path, int]]]:
+    locations = defaultdict(list)
+    for line_no, line in enumerate(
+        yaml_file.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        if line.lstrip().startswith("#"):
+            continue
+        match = re.search(r"\bname:\s*['\"]?([^#'\"]+?)['\"]?\s*(?:#.*)?$", line)
+        if match:
+            locations[match.group(1).strip()].append((yaml_file, line_no))
+    return locations
+
+
+def _top_level_key_locations(
+    yaml_file: Path,
+    keys: set[str],
+) -> Dict[str, List[Tuple[Path, int]]]:
+    locations = defaultdict(list)
+    if not keys:
+        return locations
+    for line_no, line in enumerate(
+        yaml_file.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        if line.lstrip().startswith("#"):
+            continue
+        stripped = line.strip()
+        if not stripped.endswith(":"):
+            continue
+        key = stripped[:-1].strip("'\"")
+        if key in keys:
+            locations[key].append((yaml_file, line_no))
+    return locations
 
 
 if __name__ == "__main__":
