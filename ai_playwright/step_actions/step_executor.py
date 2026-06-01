@@ -3,6 +3,7 @@
 """
 
 import os
+import re
 import threading
 from datetime import datetime
 from io import StringIO
@@ -198,7 +199,7 @@ class StepExecutor:
             if mode != "strict" and not target and pre_selector:
                 fallback_target = None
                 if element_key:
-                    fallback_target = raw_selector
+                    fallback_target = _target_from_element_key(element_key)
                 elif not (
                     isinstance(pre_selector, str)
                     and looks_like_raw_selector(pre_selector)
@@ -1117,3 +1118,28 @@ class StepExecutor:
 
         except Exception as e:
             logger.error(f"证据采集失败: {str(e)}")
+
+
+def _target_from_element_key(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    replacements = {
+        "btn": "button",
+        "cta": "button",
+        "ipt": "input",
+        "pwd": "password",
+        "spu": "SPU",
+        "sku": "SKU",
+        "id": "ID",
+    }
+    chunks = re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9]+", text.replace("-", "_"))
+    words: list[str] = []
+    for chunk in chunks:
+        for part in re.split(r"_+", chunk):
+            if not part:
+                continue
+            camel_parts = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+", part)
+            for item in camel_parts or [part]:
+                words.append(replacements.get(item.lower(), item))
+    return " ".join(words).strip() or text

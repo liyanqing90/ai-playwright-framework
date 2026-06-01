@@ -32,6 +32,12 @@ class GenerationHarness:
             raw_elements,
             element_scope_aliases=element_scope_aliases,
         )
+        element_target_aliases = _element_target_aliases(
+            raw_elements=raw_elements,
+            context_elements=self.context.elements,
+            normalized_elements=payload["elements"],
+            element_key_aliases=element_key_aliases,
+        )
         semantic_element_aliases = {
             element_key_aliases.get(key, key): target
             for key, target in semantic_element_aliases.items()
@@ -46,6 +52,7 @@ class GenerationHarness:
             selector_element_aliases=selector_element_aliases,
             semantic_element_aliases=semantic_element_aliases,
             element_key_aliases=element_key_aliases,
+            element_target_aliases=element_target_aliases,
         )
         self._normalize_cases_and_data(payload)
         module_variable_refs = _module_variable_refs(
@@ -58,6 +65,7 @@ class GenerationHarness:
                     selector_element_aliases=selector_element_aliases,
                     semantic_element_aliases=semantic_element_aliases,
                     element_key_aliases=element_key_aliases,
+                    element_target_aliases=element_target_aliases,
                 )
                 _align_module_params_with_spec_inputs(
                     case_data["steps"],
@@ -84,6 +92,11 @@ class GenerationHarness:
                     case_data["steps"],
                     element_selectors={**self.context.elements, **payload["elements"]},
                 )
+                _ensure_step_semantic_targets(
+                    case_data["steps"],
+                    selector_element_aliases=selector_element_aliases,
+                    element_target_aliases=element_target_aliases,
+                )
         return payload
 
     def validate(self, payload: dict[str, Any]) -> list[str]:
@@ -105,6 +118,12 @@ class GenerationHarness:
         known_elements = set(self.context.elements) | set(payload.get("elements") or {})
         known_modules = set(self.context.modules) | set(payload.get("modules") or {})
         known_variables = set(self.context.variables) | set(payload.get("vars") or {})
+        for module_name in sorted(payload.get("modules") or {}):
+            if _is_composite_module_name(module_name):
+                raise ValueError(
+                    f"modules.{module_name} 颗粒度过粗：module 只能表达单一业务意图，"
+                    "不要用 and/并/和 组合多个流程"
+                )
         generated_module_refs = {
             module_name: _extract_variable_refs(module_steps)
             for module_name, module_steps in self.context.modules.items()
@@ -115,10 +134,28 @@ class GenerationHarness:
                 for module_name, module_steps in (payload.get("modules") or {}).items()
             }
         )
+        generated_module_case_refs = _generated_module_case_reference_counts(payload)
 
         for module_name, module_steps in (payload.get("modules") or {}).items():
             if not isinstance(module_steps, list) or not module_steps:
                 raise ValueError(f"modules.{module_name} 必须是非空steps列表")
+            if (
+                module_name not in self.context.modules
+                and _is_single_step_generated_module(module_steps)
+            ):
+                raise ValueError(
+                    f"modules.{module_name} single-step module is unnecessary; "
+                    "inline one-step goto/click/fill/assert actions in data.<case>.steps"
+                )
+            if (
+                module_name not in self.context.modules
+                and generated_module_case_refs.get(module_name, 0) < 2
+            ):
+                raise ValueError(
+                    f"modules.{module_name} has no actual reuse value; "
+                    "generated modules must be referenced by at least two case steps, "
+                    "otherwise inline the steps in data.<case>.steps"
+                )
             for index, step in enumerate(module_steps, start=1):
                 self._validate_step(
                     case_name=f"modules.{module_name}",
@@ -251,6 +288,7 @@ class GenerationHarness:
         selector_element_aliases: set[str] | None = None,
         semantic_element_aliases: dict[str, str] | None = None,
         element_key_aliases: dict[str, str] | None = None,
+        element_target_aliases: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         normalized: list[dict[str, Any]] = []
         for step in steps:
@@ -281,6 +319,12 @@ class GenerationHarness:
                 selector_element_aliases=selector_element_aliases or set(),
                 semantic_element_aliases=semantic_element_aliases or {},
                 element_key_aliases=element_key_aliases or {},
+                element_target_aliases=element_target_aliases or {},
+            )
+            _ensure_step_semantic_target(
+                item,
+                selector_element_aliases=selector_element_aliases or set(),
+                element_target_aliases=element_target_aliases or {},
             )
             normalized.append(item)
         return normalized
@@ -413,6 +457,7 @@ class GenerationHarness:
         selector_element_aliases: set[str] | None = None,
         semantic_element_aliases: dict[str, str] | None = None,
         element_key_aliases: dict[str, str] | None = None,
+        element_target_aliases: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         normalized: dict[str, Any] = {}
         for module_name, raw_module in modules.items():
@@ -434,6 +479,7 @@ class GenerationHarness:
                 selector_element_aliases=selector_element_aliases or set(),
                 semantic_element_aliases=semantic_element_aliases or {},
                 element_key_aliases=element_key_aliases or {},
+                element_target_aliases=element_target_aliases or {},
             )
         return normalized
 
@@ -490,6 +536,11 @@ class GenerationHarness:
         if module_name:
             if module_name not in known_modules:
                 raise ValueError(f"{case_name} 引用了不存在的公共组件: {module_name}")
+            if _is_composite_module_name(module_name):
+                raise ValueError(
+                    f"{case_name} step {index} module颗粒度过粗: {module_name}；"
+                    "请拆成多个单一业务意图module或直接action步骤"
+                )
             GenerationHarness._validate_module_params(
                 case_name=case_name,
                 index=index,
@@ -518,7 +569,6 @@ class GenerationHarness:
             and not isinstance(selector, dict)
             and selector not in known_elements
             and not _looks_raw_selector(selector)
-            and not (effective_mode == "smart" and target)
         ):
             raise ValueError(
                 f"{case_name} step {index} selector 未在 elements 中定义，"
@@ -737,12 +787,102 @@ def _semantic_element_aliases(elements: dict[str, Any]) -> dict[str, str]:
     return aliases
 
 
+def _is_composite_module_name(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    normalized = re.sub(r"[\s\-]+", "_", text.lower())
+    if re.search(r"(?:^|_)and(?:_|$)|(?:^|_)then(?:_|$)", normalized):
+        return True
+    return any(token in text for token in ("并", "和", "及", "与"))
+
+
+def _is_single_step_generated_module(steps: Any) -> bool:
+    if not isinstance(steps, list):
+        return False
+    executable_steps = [
+        step
+        for step in steps
+        if isinstance(step, dict)
+        and (step.get("action") or step.get("selector") or step.get("target"))
+    ]
+    return len(executable_steps) <= 1
+
+
+def _generated_module_case_reference_counts(payload: dict[str, Any]) -> dict[str, int]:
+    generated_modules = {
+        str(name)
+        for name in (payload.get("modules") or {})
+        if str(name).strip()
+    }
+    counts = {name: 0 for name in generated_modules}
+    for case_data in (payload.get("data") or {}).values():
+        if not isinstance(case_data, dict):
+            continue
+        steps = case_data.get("steps")
+        if not isinstance(steps, list):
+            continue
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            module_name = step.get("use_module")
+            if isinstance(module_name, str) and module_name in counts:
+                counts[module_name] += 1
+    return counts
+
+
+def _element_target_aliases(
+    *,
+    raw_elements: dict[str, Any],
+    context_elements: dict[str, Any],
+    normalized_elements: dict[str, Any],
+    element_key_aliases: dict[str, str],
+) -> dict[str, str]:
+    aliases: dict[str, str] = {
+        str(key): _target_from_element_key(str(key))
+        for key in (context_elements or {})
+        if str(key).strip()
+    }
+    aliases.update(
+        {
+            str(key): _target_from_element_key(str(key))
+            for key in (normalized_elements or {})
+            if str(key).strip()
+        }
+    )
+    for raw_key, value in (raw_elements or {}).items():
+        key = _coerce_generated_string(
+            raw_key,
+            field_path="elements key",
+            preferred_keys=("key", "name", "id", "value"),
+        )
+        if not key:
+            continue
+        normalized_key = element_key_aliases.get(key, key)
+        target = ""
+        if isinstance(value, dict):
+            preferred_keys = (
+                ("target", "description", "label", "text", "name")
+                if value.get("selector")
+                else ("target", "description", "desc", "label", "text", "name")
+            )
+            target = _first_generated_string(
+                value,
+                preferred_keys=preferred_keys,
+            )
+        if not target:
+            target = _target_from_element_key(normalized_key)
+        aliases[normalized_key] = target
+    return {key: value for key, value in aliases.items() if value}
+
+
 def _normalize_step_element_references(
     step: dict[str, Any],
     *,
     selector_element_aliases: set[str],
     semantic_element_aliases: dict[str, str],
     element_key_aliases: dict[str, str],
+    element_target_aliases: dict[str, str],
 ) -> dict[str, Any]:
     selector = step.get("selector")
     if isinstance(selector, str) and selector in element_key_aliases:
@@ -751,15 +891,141 @@ def _normalize_step_element_references(
     target = step.get("target")
     if not isinstance(target, str) or not target.strip():
         return step
-    if target in element_key_aliases and not step.get("selector"):
-        step["selector"] = element_key_aliases[target]
-        step.pop("target", None)
+    if target in element_key_aliases:
+        normalized_key = element_key_aliases[target]
+        if not step.get("selector"):
+            step["selector"] = normalized_key
+        step["target"] = element_target_aliases.get(
+            normalized_key
+        ) or _target_from_element_key(normalized_key)
     elif target in semantic_element_aliases:
         step["target"] = semantic_element_aliases[target]
-    elif target in selector_element_aliases and not step.get("selector"):
-        step["selector"] = target
-        step.pop("target", None)
+    elif target in selector_element_aliases:
+        if not step.get("selector"):
+            step["selector"] = target
+        step["target"] = element_target_aliases.get(target) or _target_from_element_key(
+            target
+        )
     return step
+
+
+def _ensure_step_semantic_targets(
+    steps: list[dict[str, Any]],
+    *,
+    selector_element_aliases: set[str],
+    element_target_aliases: dict[str, str],
+) -> None:
+    for step in steps:
+        if isinstance(step, dict):
+            _ensure_step_semantic_target(
+                step,
+                selector_element_aliases=selector_element_aliases,
+                element_target_aliases=element_target_aliases,
+            )
+
+
+def _ensure_step_semantic_target(
+    step: dict[str, Any],
+    *,
+    selector_element_aliases: set[str],
+    element_target_aliases: dict[str, str],
+) -> None:
+    action = str(step.get("action") or "").lower()
+    if not action or action in _NO_SELECTOR_ACTIONS:
+        return
+    selector = step.get("selector")
+    if not selector or isinstance(selector, dict):
+        return
+    target = step.get("target")
+    if _is_usable_semantic_target(target, selector_element_aliases):
+        return
+    candidate = _target_from_step_description(step)
+    if not candidate:
+        candidate = element_target_aliases.get(str(selector).strip())
+    if not candidate:
+        candidate = _target_from_selector(selector)
+    if not candidate:
+        candidate = _target_from_element_key(str(selector))
+    if candidate:
+        step["target"] = candidate
+
+
+def _is_usable_semantic_target(
+    target: Any,
+    selector_element_aliases: set[str],
+) -> bool:
+    text = str(target or "").strip()
+    if not text:
+        return False
+    if text in selector_element_aliases:
+        return False
+    if _looks_raw_selector(text):
+        return False
+    return True
+
+
+def _target_from_step_description(step: dict[str, Any]) -> str:
+    description = str(step.get("description") or "").strip()
+    if not description or _looks_raw_selector(description):
+        return ""
+    if len(description) > 120:
+        return ""
+    return description
+
+
+def _target_from_selector(value: Any) -> str:
+    selector = str(value or "").strip()
+    if not selector:
+        return ""
+    text = _selector_text_query(selector, element_selectors={})
+    if text:
+        return text
+    attr_match = re.search(
+        r"\[(?:aria-label|title|placeholder|name|data-test|data-testid|data-qa|"
+        r"data-cy|data-ui|id)[^\]]*=\s*(['\"])(.*?)\1",
+        selector,
+        flags=re.IGNORECASE,
+    )
+    if attr_match:
+        return _target_from_identifier(attr_match.group(2))
+    if selector.startswith("#"):
+        return _target_from_identifier(selector[1:])
+    return ""
+
+
+def _target_from_element_key(value: str) -> str:
+    return _target_from_identifier(value)
+
+
+def _target_from_identifier(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"^(?:css|xpath|text)=", "", text, flags=re.IGNORECASE)
+    text = text.strip(" \"'[]()（）:：,，.。;；#.")
+    if not text:
+        return ""
+    replacements = {
+        "btn": "button",
+        "cta": "button",
+        "ipt": "input",
+        "pwd": "password",
+        "spu": "SPU",
+        "sku": "SKU",
+        "id": "ID",
+    }
+    chunks = re.findall(r"[\u4e00-\u9fff]+|[A-Za-z0-9]+", text.replace("-", "_"))
+    words: list[str] = []
+    for chunk in chunks:
+        for part in re.split(r"_+", chunk):
+            if not part:
+                continue
+            camel_parts = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+", part)
+            for item in camel_parts or [part]:
+                lowered = item.lower()
+                words.append(replacements.get(lowered, item))
+    result = " ".join(words).strip()
+    return result or text
 
 
 def _payload_step_lists(payload: dict[str, Any]) -> list[list[Any]]:
@@ -976,7 +1242,8 @@ def _normalize_assertions_against_step_evidence(
         fill_target = fill.get("target")
         if fill_selector:
             step["selector"] = fill_selector
-            step.pop("target", None)
+            if fill_target:
+                step["target"] = fill_target
         elif fill_target:
             step["target"] = fill_target
             step.pop("selector", None)

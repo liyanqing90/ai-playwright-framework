@@ -908,10 +908,12 @@ def _build_payload(
                     {
                         "action": "click",
                         "selector": "已有元素key",
+                        "target": "业务语义目标，不是selector或元素key",
                     },
                     {
                         "action": "assert_text",
                         "selector": "已有元素key",
+                        "target": "业务语义目标，不是selector或元素key",
                         "value": "期望文本",
                     },
                 ],
@@ -962,6 +964,10 @@ def _build_payload(
                     "Do not invent variable names such as username_var unless they are also emitted under vars. "
                     "Do not output vars for keys that already exist in project_context.variable_keys; reference the existing variable key instead. "
                     "When similar cases differ by input values, roles, states, or expected outcomes, parameterize shared modules via use_module.params instead of hard-coding one fixed value. "
+                    "Module granularity must stay single-intent and non-atomic: a module may wrap one reusable multi-step business capability such as OA login, open product audit page, or search product by ID, but must not combine login + navigation + search + verification in one module. "
+                    "Only create a new module when it has real reuse value in the current output: the same generated module must be referenced by at least two data.<case>.steps entries; otherwise inline its steps in each case. "
+                    "Do not create modules for one-step actions such as goto/open page, click a menu item, click log, fill one field, or a single assertion; put those actions directly in data.<case>.steps. "
+                    "Do not create or reuse coarse modules whose names contain conjunctions such as and, then, _and_, 与, 和, 并, 及; split them into multiple use_module steps or direct action steps. "
                     "每个用例必须至少包含一个断言步骤，断言必须使用项目格式："
                     "assert_visible需要selector；assert_text/assert_text_contains需要selector和value；"
                     "assert_url/assert_url_contains/assert_title/assert_title_contains需要value。"
@@ -970,8 +976,16 @@ def _build_payload(
                     "不要为了证明click已经执行而额外生成无业务期望、无法稳定执行的断言；点击失败由执行器直接报错。"
                     "断言必须验证前置步骤实际造成或后续规划需要的页面状态，不允许用空value或泛化描述充当断言。"
                     "所有结果验证必须断言可观察的准确信息，例如页面文案、URL、标题、状态或数量。"
+                    "smart模式下，凡是普通UI步骤写了selector，都必须同时写target；"
+                    "target是用于selector失效后自愈的业务语义锚点，必须描述用户看到或业务理解的目标，"
+                    "不能写元素key、内部字段名、CSS、XPath、data-test或id。"
+                    "例如selector=product_search_btn时target应写product search button；"
+                    "selector=add_to_cart_backpack_btn时target应写Sauce Labs Backpack add to cart button。"
                     "使用target而没有selector时，该步骤或data用例层必须声明mode为smart。"
                     "找不到元素时用 target + mode: smart，不要编造selector。"
+                    "复用use_module前必须确认该module内部普通UI步骤已经有target；"
+                    "如果已有module缺少target或硬编码值不能精确表达当前业务输入，"
+                    "不要复用该module，应在data.<case>.steps中展开为直接action步骤并补齐selector+target。"
                     f"{system_extra}"
                     "不要输出解释。"
                 ),
@@ -1159,10 +1173,20 @@ def _repair_payload_with_ai(
                     "inputs不是必需字段；如果规格把值直接写在description、intent、steps、checkpoints或final里，修正后应直接使用字面值。"
                     "selector、target、use_module、action、mode等字段必须是字符串，不能是对象。"
                     "modules必须是 {module_name: [step, ...]}。"
+                    "Module granularity must stay single-intent and non-atomic; do not create modules for one-step actions such as goto/open page, click log, fill one field, or a single assertion. "
+                    "Only keep a generated module when it is referenced by at least two data.<case>.steps entries; otherwise inline its steps in each case. "
+                    "Do not create or reuse coarse modules whose names contain conjunctions such as and, then, _and_, 与, 和, 并, 及. "
+                    "If a module combines login + navigation + search + verification, split it into multiple use_module steps or direct action steps. "
                     "每个用例必须至少有一个准确断言。"
                     "验证输入框/textarea/select当前值必须用assert_value，不要用assert_attribute attribute=value。"
                     "不要为了证明click已经执行而额外生成无业务期望的assert_visible；点击失败由执行器直接报错。"
                     "优先复用project_context已有 elements/modules/vars。"
+                    "smart模式下，凡是普通UI步骤写了selector，都必须同时写target；"
+                    "target是用于selector失效后自愈的业务语义锚点，必须描述用户看到或业务理解的目标，"
+                    "不能写元素key、内部字段名、CSS、XPath、data-test或id。"
+                    "复用use_module前必须确认该module内部普通UI步骤已经有target；"
+                    "如果已有module缺少target或硬编码值不能精确表达当前业务输入，"
+                    "不要复用该module，应在data.<case>.steps中展开为直接action步骤并补齐selector+target。"
                     "action必须来自valid_actions；框架会在页面操作后自动等待页面稳定，不要编造等待跳转类action。"
                     "不要输出或覆盖project_context.variable_keys中已存在的vars；直接引用已有变量key。"
                     "只有变量被project_context.variable_keys、generation_spec.inputs、use_module.params或vars支撑时才引用${name}；否则不要把字面值改写成变量。"
@@ -1191,17 +1215,19 @@ def _repair_payload_with_ai(
                             "data": {
                                 "test_xxx": {
                                     "mode": "smart",
-                                    "steps": [
-                                        {
-                                            "action": "click",
-                                            "selector": "已有元素key或原始selector",
-                                        },
-                                        {
-                                            "action": "assert_text",
-                                            "selector": "已有元素key或原始selector",
-                                            "value": "期望文本",
-                                        },
-                                    ],
+                            "steps": [
+                                {
+                                    "action": "click",
+                                    "selector": "已有元素key或原始selector",
+                                    "target": "业务语义目标，不是selector或元素key",
+                                },
+                                {
+                                    "action": "assert_text",
+                                    "selector": "已有元素key或原始selector",
+                                    "target": "业务语义目标，不是selector或元素key",
+                                    "value": "期望文本",
+                                },
+                            ],
                                 }
                             },
                             "elements": {},
