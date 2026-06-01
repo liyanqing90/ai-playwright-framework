@@ -1,0 +1,15 @@
+description: "意图式规格：让AI基于业务目标自行拆分 Saucedemo 标准用户完整购物车流程"
+cases:
+  - name: saucedemo_standard_user_cart_logout_ai_generated
+    intent: "打开 https://www.saucedemo.com/，标准用户登录 Saucedemo 后，添加指定商品到购物车，进入购物车确认商品和数量，然后从左侧菜单退出登录。"
+    inputs:
+      user_type: standard
+      product_name: Sauce Labs Backpack
+    checkpoints:
+      - "登录后进入商品列表页，页面标题为 Products"
+      - "购物车角标数量为 1"
+      - "进入购物车页，页面标题为 Your Cart"
+      - "购物车中存在 Sauce Labs Backpack 商品"
+      - "左侧菜单中 Logout 退出登录入口可见"
+    final:
+      - "退出登录后回到登录页，Login 按钮可见"

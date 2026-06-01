@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        run: python -m pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Check package entry points
+        run: |
+          poetry run gen --help
+          poetry run run_case --help
+          poetry run ai-playwright-init --help
+
+      - name: Compile Python
+        run: poetry run python -m compileall ai_playwright conftest.py check_duplicates.py validate_yaml_schema.py
+
+      - name: Check Poetry metadata
+        run: poetry check --lock
+
+      - name: Check formatting
+        run: poetry run black --check .
+
+      - name: Run framework contract tests
+        run: poetry run pytest tests -q
+
+      - name: Validate YAML action schema
+        run: poetry run python validate_yaml_schema.py
+
+      - name: Check duplicate YAML definitions
+        run: poetry run python check_duplicates.py
+
+      - name: Collect generated YAML tests
+        run: poetry run pytest --collect-only -q
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Build package
+        run: poetry build
+
+      - name: Check installed CLI from tempdir
+        run: |
+          venv="$(poetry env info --path)"
+          "$venv/bin/python" -m ensurepip --upgrade
+          tmpdir="$(mktemp -d)"
+          pkgdir="$tmpdir/pkg"
+          workdir="$tmpdir/work"
+          mkdir -p "$pkgdir" "$workdir"
+          "$venv/bin/python" -m pip install --target "$pkgdir" --no-deps dist/*.whl
+          cd "$workdir"
+          PKGDIR="$pkgdir" PYTHONPATH="$pkgdir" "$venv/bin/python" - <<'PY'
+          import importlib.metadata as md
+          import os
+          import pathlib
+
+          import ai_playwright
+
+          pkgdir = pathlib.Path(os.environ["PKGDIR"]).resolve()
+          package_file = pathlib.Path(ai_playwright.__file__).resolve()
+          assert package_file.is_relative_to(pkgdir), package_file
+          scripts = {
+              ep.name
+              for ep in md.entry_points(group="console_scripts")
+              if ep.value.startswith("ai_playwright.")
+          }
+          assert {"run_case", "gen", "ai-playwright-init"} <= scripts, scripts
+          PY
+          PYTHONPATH="$pkgdir" "$venv/bin/python" -m ai_playwright.cli.run_case --help
+          PYTHONPATH="$pkgdir" "$venv/bin/python" -m ai_playwright.cli.generate_case --help
+          PYTHONPATH="$pkgdir" "$venv/bin/python" -m ai_playwright.cli.init_project --help
+          set +e
+          PYTHONPATH="$pkgdir" "$venv/bin/python" -m ai_playwright.cli.run_case -p demo -f saucedemo_ai --headless -k __never_matches__
+          status="$?"
+          set -e
+          test "$status" -eq 5

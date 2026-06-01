@@ -1,0 +1,4 @@
+test_cases:
+  - name: test_saucedemo_backpack_cart
+  - name: test_saucedemo_locked_user_error
+  - name: test_saucedemo_open_cart

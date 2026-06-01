@@ -1,0 +1,13 @@
+projects:
+  demo:
+    test_dir: "test_data/demo"
+    environments:
+      dev: "https://www.saucedemo.com/"
+      test: "https://www.saucedemo.com/"
+      stage: "https://www.saucedemo.com/"
+      prod: "https://www.saucedemo.com/"
+    browser_config:
+      viewport:
+        width: 1280
+        height: 720
+      tracing: off

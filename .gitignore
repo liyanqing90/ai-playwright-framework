@@ -1,0 +1,31 @@
+# IDE / local environment
+/.idea/
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Test/runtime outputs
+/logs/
+/reports/
+/evidence/
+/.ui_auto/
+/downloads/
+/dist/
+/config/storage_state.json
+
+# Test case data policy: keep demo cases in Git, ignore project-specific data.
+/test_data/*
+!/test_data/demo/
+!/test_data/demo/**
+**/.DS_Store
+
+# Local archives and imported bundles
+*.zip
