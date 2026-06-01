@@ -684,7 +684,7 @@ def test_step_executor_records_registry_selector_after_verified_action(monkeypat
     assert events[2][1]["selector"] == "#login"
 
 
-def test_step_executor_uses_resolved_element_selector_as_smart_target_without_explicit_target(
+def test_step_executor_uses_element_key_semantics_as_smart_target_without_explicit_target(
     monkeypatch,
 ):
     events: list[Any] = []
@@ -733,7 +733,7 @@ def test_step_executor_uses_resolved_element_selector_as_smart_target_without_ex
     assert events[0] == (
         "resolve",
         'button:has-text("Submit")',
-        'button:has-text("Submit")',
+        "action button",
     )
     assert events[1] == ("execute", "click", 'button:has-text("Submit")', None)
 

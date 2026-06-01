@@ -853,6 +853,7 @@ def test_generation_harness_scopes_generated_element_key_collisions_by_page_cont
     assert steps[2] == {
         "action": "click",
         "selector": "search_input_Catalog_Review",
+        "target": "search input Catalog Review",
     }
 
 
@@ -1157,10 +1158,16 @@ def test_generation_harness_maps_title_assertion_to_visible_title_element(
     )
 
     assert payload["data"]["test_generated"]["steps"] == [
-        {"action": "assert_text", "selector": "page_title", "value": "Products"},
+        {
+            "action": "assert_text",
+            "selector": "page_title",
+            "target": "page title",
+            "value": "Products",
+        },
         {
             "action": "assert_text_contains",
             "selector": "page_title",
+            "target": "page title",
             "value": "Cart",
         },
     ]
@@ -1211,6 +1218,7 @@ def test_generation_harness_rewrites_element_key_targets(tmp_path: Path):
         "action": "fill",
         "value": "x",
         "selector": "known_search_input",
+        "target": "known search input",
     }
     assert steps[1] == {"action": "click", "target": "椤甸潰椤堕儴鎼滅储鎸夐挳"}
     assert payload["elements"] == {}
@@ -1306,7 +1314,7 @@ def test_generation_harness_normalizes_module_steps_and_params(tmp_path: Path):
     )
     payload = harness.normalize(
         {
-            "cases": [{"name": "test_generated"}],
+            "cases": [{"name": "test_generated"}, {"name": "test_generated_again"}],
             "data": {
                 "test_generated": {
                     "mode": "smart",
@@ -1318,7 +1326,17 @@ def test_generation_harness_normalizes_module_steps_and_params(tmp_path: Path):
                         },
                         {"action": "assert_visible", "selector": "title"},
                     ],
-                }
+                },
+                "test_generated_again": {
+                    "mode": "smart",
+                    "steps": [
+                        {
+                            "use_module": "login",
+                            "params": {"username": "${standard_username}"},
+                        },
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                },
             },
             "modules": {
                 "login": {
@@ -1344,6 +1362,181 @@ def test_generation_harness_normalizes_module_steps_and_params(tmp_path: Path):
         "username": "${standard_username}"
     }
     assert harness.validate(payload) == []
+
+
+def test_generation_harness_rejects_composite_context_module_reuse(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"title": ".title"},
+            modules={
+                "login_and_open_catalog": [
+                    {"action": "goto", "value": "https://example.test/login"},
+                ]
+            },
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {"use_module": "login_and_open_catalog"},
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                }
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="module颗粒度过粗"):
+        harness.validate(payload)
+
+
+def test_generation_harness_rejects_generated_composite_module_assets(
+    tmp_path: Path,
+):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"title": ".title"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {"use_module": "search_and_view_log"},
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                },
+            },
+            "modules": {
+                "search_and_view_log": [
+                    {"action": "click", "selector": "title", "target": "title"},
+                ]
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="颗粒度过粗"):
+        harness.validate(payload)
+
+
+def test_generation_harness_rejects_generated_single_step_module_assets(
+    tmp_path: Path,
+):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"log_link": "a.log"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {"use_module": "open_log"},
+                        {"action": "assert_visible", "selector": "log_link"},
+                    ],
+                }
+            },
+            "modules": {
+                "open_log": [
+                    {"action": "click", "selector": "log_link", "target": "日志入口"},
+                ]
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="single-step module"):
+        harness.validate(payload)
+
+
+def test_generation_harness_rejects_generated_module_without_reuse_value(
+    tmp_path: Path,
+):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"username": "#user-name", "login_btn": "#login", "title": ".title"},
+            modules={},
+            variables={"standard_username": "standard_user"},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {
+                            "use_module": "login",
+                            "params": {"username": "${standard_username}"},
+                        },
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                },
+                "test_generated_again": {
+                    "mode": "smart",
+                    "steps": [
+                        {
+                            "use_module": "login",
+                            "params": {"username": "${standard_username}"},
+                        },
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                },
+            },
+            "modules": {
+                "login": [
+                    {"action": "fill", "selector": "username", "value": "${username}"},
+                    {"action": "click", "selector": "login_btn", "target": "登录按钮"},
+                ]
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="actual reuse value"):
+        harness.validate(payload)
 
 
 def test_generation_harness_moves_case_level_params_to_module_step(tmp_path: Path):
@@ -1428,7 +1621,17 @@ def test_generation_harness_prefers_spec_inputs_for_module_params(tmp_path: Path
                         },
                         {"action": "assert_visible", "selector": "title"},
                     ],
-                }
+                },
+                "test_generated_again": {
+                    "mode": "smart",
+                    "steps": [
+                        {
+                            "use_module": "login",
+                            "params": {"username": "${standard_username}"},
+                        },
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                },
             },
         }
     )
@@ -1471,7 +1674,17 @@ def test_generation_harness_infers_single_module_for_module_action(tmp_path: Pat
                         },
                         {"action": "assert_visible", "selector": "title"},
                     ],
-                }
+                },
+                "test_generated_again": {
+                    "mode": "smart",
+                    "steps": [
+                        {
+                            "use_module": "login",
+                            "params": {"username": "${standard_username}"},
+                        },
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                },
             },
         }
     )
@@ -1646,6 +1859,7 @@ def test_generation_harness_normalizes_input_value_attribute_assertion(tmp_path:
     assert step == {
         "action": "assert_value",
         "selector": "product_id",
+        "target": "product ID",
         "value": "DEMO-SKU-001",
     }
     assert harness.validate(payload) == []
@@ -1800,6 +2014,7 @@ def test_generation_harness_normalizes_fill_value_text_assertion_to_supported_va
     assert steps[1] == {
         "action": "assert_value",
         "selector": "product_id",
+        "target": "product ID",
         "value": "DEMO-SKU-001",
     }
     assert harness.validate(payload) == []
@@ -1885,6 +2100,7 @@ def test_generation_harness_drops_unbacked_generated_url_assertions(tmp_path: Pa
         {
             "action": "assert_text_contains",
             "selector": "title",
+            "target": "title",
             "value": "Catalog Review",
         }
     ]
@@ -2032,6 +2248,7 @@ def test_generation_harness_normalizes_model_dict_scalar_fields(tmp_path: Path):
     assert payload["data"]["test_generated"]["steps"][1] == {
         "action": "assert_visible",
         "selector": "title",
+        "target": "title",
     }
     assert harness.validate(payload) == []
 
@@ -2124,7 +2341,7 @@ def test_generation_harness_rejects_missing_module_params(tmp_path: Path):
     )
     payload = harness.normalize(
         {
-            "cases": [{"name": "test_generated"}],
+            "cases": [{"name": "test_generated"}, {"name": "test_generated_again"}],
             "data": {
                 "test_generated": {
                     "mode": "smart",
@@ -2132,11 +2349,19 @@ def test_generation_harness_rejects_missing_module_params(tmp_path: Path):
                         {"use_module": "login"},
                         {"action": "assert_visible", "selector": "title"},
                     ],
-                }
+                },
+                "test_generated_again": {
+                    "mode": "smart",
+                    "steps": [
+                        {"use_module": "login"},
+                        {"action": "assert_visible", "selector": "title"},
+                    ],
+                },
             },
             "modules": {
                 "login": [
-                    {"action": "fill", "selector": "username", "value": "${username}"}
+                    {"action": "fill", "selector": "username", "value": "${username}"},
+                    {"action": "click", "selector": "title", "target": "title"},
                 ]
             },
         }

@@ -180,11 +180,18 @@ class SmartResolver:
                     timeout=selector_timeout,
                 )
                 if target_text and not selector_matches_target(
-                    self.page, normalized_selector, target_text, action
+                    self.page,
+                    normalized_selector,
+                    target_text,
+                    action,
+                    strict_text_match=False,
                 ):
-                    raise ValueError(
-                        f"explicit selector semantic mismatch: target={target_text}, selector={normalized_selector}"
+                    message = (
+                        "explicit selector semantic mismatch: "
+                        f"target={target_text}, selector={normalized_selector}"
                     )
+                    if _blocks_explicit_selector_mismatch(target_text, action):
+                        raise ValueError(message)
                 return ResolvedSelector(
                     selector=normalized_selector,
                     source="explicit",
@@ -1254,6 +1261,40 @@ def _parse_wait_ms(instruction: str) -> int | None:
 
 def _is_ai_backed_resolution(resolved: ResolvedSelector) -> bool:
     return bool(resolved.ai_called or resolved.source == "ai_selector")
+
+
+def _blocks_explicit_selector_mismatch(target: str | None, action: str) -> bool:
+    text = str(target or "").strip().lower()
+    if not text:
+        return False
+    if text.startswith(("text=", "label=", "placeholder=")):
+        return True
+    high_risk_terms = (
+        "密码",
+        "password",
+        "passwd",
+        "pwd",
+        "用户名",
+        "账号",
+        "帐号",
+        "username",
+        "user name",
+        "登录",
+        "登陆",
+        "login",
+        "sign in",
+        "退出",
+        "登出",
+        "注销",
+        "logout",
+        "sign out",
+        "删除",
+        "remove",
+        "delete",
+    )
+    if any(term in text for term in high_risk_terms):
+        return True
+    return str(action or "").lower() in {"check", "uncheck", "set_checked"}
 
 
 def _parse_click_target(instruction: str) -> str:

@@ -328,6 +328,69 @@ def test_smart_resolver_verifies_explicit_selector_before_registry_fallback(
     assert verify_calls == [("input[name='password']", 1000), ("#ipt_password", 1000)]
 
 
+def test_smart_resolver_uses_target_when_explicit_selector_is_stale(
+    monkeypatch, tmp_path: Path
+):
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.load_ai_config",
+        lambda: {
+            "selector_registry": {"enabled": False},
+            "runtime": {"smart_selector_probe_timeout_ms": 1000},
+            "native_observe": {"enabled": False},
+        },
+    )
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.selector_matches_target",
+        lambda page, selector, target, action, **kwargs: (
+            selector == "#new-login" and target == "login button"
+        ),
+    )
+    verify_calls = []
+
+    def fake_verify_selector(page, selector, *, action, timeout):
+        verify_calls.append((selector, timeout))
+        if selector == "#old-login":
+            raise TimeoutError("yaml selector is stale")
+
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.verify_selector",
+        fake_verify_selector,
+    )
+
+    class FakePage:
+        url = "https://example.test/login"
+
+    registry = SelectorRegistry(tmp_path / "selectors.db")
+    registry.save(
+        project="demo",
+        env="test",
+        page_key="https://example.test/login",
+        action="click",
+        target="login button",
+        selector="#new-login",
+        source="heuristic",
+        confidence=0.9,
+    )
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = registry
+    resolved = resolver.resolve(
+        action="click",
+        target="login button",
+        selector="#old-login",
+        mode="smart",
+        timeout=10000,
+    )
+
+    assert resolved.selector == "#new-login"
+    assert resolved.source == "registry"
+    assert resolved.healed is True
+    assert resolved.healing_attempted is True
+    assert resolved.original_selector == "#old-login"
+    assert resolved.cache_target == "login button"
+    assert verify_calls == [("#old-login", 1000), ("#new-login", 1000)]
+
+
 def test_smart_resolver_target_only_can_use_verified_registry_first(
     monkeypatch, tmp_path: Path
 ):
@@ -1248,7 +1311,7 @@ def test_step_executor_records_healed_selector_without_writing_elements_yaml(
 
     class FakeResolver:
         def resolve(self, **kwargs):
-            assert kwargs["target"] == "#old-login"
+            assert kwargs["target"] == "login button"
             return ResolvedSelector(
                 selector="#login-button",
                 source="heuristic",
@@ -1303,7 +1366,7 @@ def test_step_executor_records_healed_selector_without_writing_elements_yaml(
     assert executor.elements["login_button"] == "#old-login"
     assert "#login-button" not in elements_file.read_text(encoding="utf-8")
     assert cache_events[0]["selector"] == "#login-button"
-    assert cache_events[0]["target"] == "#old-login"
+    assert cache_events[0]["target"] == "login button"
 
 
 def test_step_executor_does_not_call_element_store_when_healed_selector_verified(
@@ -1313,7 +1376,7 @@ def test_step_executor_does_not_call_element_store_when_healed_selector_verified
 
     class FakeResolver:
         def resolve(self, **kwargs):
-            assert kwargs["target"] == "#old-login"
+            assert kwargs["target"] == "login button"
             return ResolvedSelector(
                 selector="#login-button",
                 source="heuristic",
