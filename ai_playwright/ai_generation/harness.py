@@ -811,9 +811,7 @@ def _is_single_step_generated_module(steps: Any) -> bool:
 
 def _generated_module_case_reference_counts(payload: dict[str, Any]) -> dict[str, int]:
     generated_modules = {
-        str(name)
-        for name in (payload.get("modules") or {})
-        if str(name).strip()
+        str(name) for name in (payload.get("modules") or {}) if str(name).strip()
     }
     counts = {name: 0 for name in generated_modules}
     for case_data in (payload.get("data") or {}).values():

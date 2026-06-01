@@ -1215,19 +1215,19 @@ def _repair_payload_with_ai(
                             "data": {
                                 "test_xxx": {
                                     "mode": "smart",
-                            "steps": [
-                                {
-                                    "action": "click",
-                                    "selector": "已有元素key或原始selector",
-                                    "target": "业务语义目标，不是selector或元素key",
-                                },
-                                {
-                                    "action": "assert_text",
-                                    "selector": "已有元素key或原始selector",
-                                    "target": "业务语义目标，不是selector或元素key",
-                                    "value": "期望文本",
-                                },
-                            ],
+                                    "steps": [
+                                        {
+                                            "action": "click",
+                                            "selector": "已有元素key或原始selector",
+                                            "target": "业务语义目标，不是selector或元素key",
+                                        },
+                                        {
+                                            "action": "assert_text",
+                                            "selector": "已有元素key或原始selector",
+                                            "target": "业务语义目标，不是selector或元素key",
+                                            "value": "期望文本",
+                                        },
+                                    ],
                                 }
                             },
                             "elements": {},

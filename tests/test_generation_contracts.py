@@ -1492,7 +1492,11 @@ def test_generation_harness_rejects_generated_module_without_reuse_value(
             project="demo",
             test_dir=tmp_path,
             base_url="",
-            elements={"username": "#user-name", "login_btn": "#login", "title": ".title"},
+            elements={
+                "username": "#user-name",
+                "login_btn": "#login",
+                "title": ".title",
+            },
             modules={},
             variables={"standard_username": "standard_user"},
             test_cases=[],
