@@ -42,6 +42,8 @@ package-check: build
 	"$$venv/bin/python" -m pip install --target "$$pkgdir" --no-deps dist/*.whl; \
 	cd "$$workdir"; \
 	PKGDIR="$$pkgdir" PYTHONPATH="$$pkgdir" "$$venv/bin/python" -c 'import importlib.metadata as md, os, pathlib, ai_playwright; pkgdir = pathlib.Path(os.environ["PKGDIR"]).resolve(); package_file = pathlib.Path(ai_playwright.__file__).resolve(); assert package_file.is_relative_to(pkgdir), package_file; scripts = {ep.name for ep in md.entry_points(group="console_scripts") if ep.value.startswith("ai_playwright.")}; assert {"run_case", "gen", "ai-playwright-init"} <= scripts, scripts'; \
+	test -f "$$pkgdir/test_data/demo/cases/saucedemo_ai.yaml"; \
+	test ! -d "$$pkgdir/ai_playwright/templates/test_data"; \
 	PYTHONPATH="$$pkgdir" "$$venv/bin/python" -m ai_playwright.cli.run_case --help; \
 	PYTHONPATH="$$pkgdir" "$$venv/bin/python" -m ai_playwright.cli.generate_case --help; \
 	PYTHONPATH="$$pkgdir" "$$venv/bin/python" -m ai_playwright.cli.init_project --help; \

@@ -100,7 +100,8 @@ EOF
 run_case -p demo -f saucedemo_ai --headless
 ```
 
-`ai-playwright-init` 会复制安全的 `config/` 和 `test_data/demo/` 起始模板。源码仓库已经包含这些文件，开发源码时通常不需要执行初始化。
+`ai-playwright-init` 会复制安全的 `config/` 模板和唯一维护的
+`test_data/demo/` demo。源码仓库已经包含这些文件，开发源码时通常不需要执行初始化。
 
 ## 安装
 
@@ -124,7 +125,7 @@ poetry build
 python -m pip install dist/ai_playwright-*.whl
 ```
 
-包内包含默认配置和 demo 测试数据模板，因此 CLI 可以在源码仓库外运行。
+包内包含默认配置模板和唯一 demo 测试数据，因此 CLI 可以在源码仓库外运行。
 
 ## 核心概念
 
@@ -383,10 +384,10 @@ ai-playwright-framework/
 │   ├── cli/                       # run_case、gen、ai-playwright-init
 │   ├── page_objects/              # Playwright 页面封装
 │   ├── step_actions/              # 标准命令执行器
-│   ├── templates/                 # 包内配置和 demo starter
+│   ├── templates/                 # 包内配置 starter
 │   └── utils/                     # 配置、YAML、日志、token usage
 ├── config/                        # 源码仓库默认配置
-├── test_data/demo/                # 开源 demo 项目
+├── test_data/demo/                # 唯一维护的开源 demo 项目
 ├── tests/                         # 契约和回归测试
 ├── .github/workflows/ci.yml       # CI 门禁
 ├── Makefile                       # 本地质量门禁

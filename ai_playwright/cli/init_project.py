@@ -6,7 +6,7 @@ from pathlib import Path
 import typer
 
 from ai_playwright.cli.common import console
-from ai_playwright.project_paths import TEMPLATE_ROOT
+from ai_playwright.project_paths import TEMPLATE_ROOT, demo_template_root
 
 
 app = typer.Typer(
@@ -26,7 +26,11 @@ def main(
 ) -> None:
     target = target_dir.expanduser().resolve()
     _copy_template_dir(TEMPLATE_ROOT / "config", target / "config", force=force)
-    _copy_template_dir(TEMPLATE_ROOT / "test_data", target / "test_data", force=force)
+    _copy_template_dir(
+        demo_template_root(),
+        target / "test_data" / "demo",
+        force=force,
+    )
     console.print(f"[green]Initialized AI Playwright workspace:[/green] {target}")
     console.print("Next: edit `.env`, then run `run_case -p demo --headless`.")
 
@@ -34,6 +38,8 @@ def main(
 def _copy_template_dir(source: Path, target: Path, *, force: bool) -> None:
     if not source.exists():
         raise typer.BadParameter(f"模板目录不存在: {source}")
+    if source.resolve() == target.resolve():
+        return
     for source_path in source.rglob("*"):
         if source_path.is_dir():
             continue

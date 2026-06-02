@@ -107,9 +107,10 @@ EOF
 run_case -p demo -f saucedemo_ai --headless
 ```
 
-`ai-playwright-init` copies the safe starter `config/` and `test_data/demo/`
-templates into the current directory. Source checkouts already contain these
-files, so repository development usually does not need to run it.
+`ai-playwright-init` copies the safe starter `config/` template and the single
+canonical `test_data/demo/` demo into the current directory. Source checkouts
+already contain these files, so repository development usually does not need to
+run it.
 
 ## Installation
 
@@ -133,8 +134,8 @@ poetry build
 python -m pip install dist/ai_playwright-*.whl
 ```
 
-The package includes the default config and demo test-data templates so the CLI
-can run outside the source tree.
+The package includes the default config template and the canonical demo
+test-data so the CLI can run outside the source tree.
 
 ## Core Concepts
 
@@ -367,7 +368,7 @@ The CLI resolves config in this order:
 
 1. `AI_PLAYWRIGHT_CONFIG_DIR` if set.
 2. `./config` in the current working directory.
-3. Packaged starter templates.
+3. Packaged starter config template.
 
 ## AI And Data Boundary
 
@@ -405,10 +406,10 @@ ai-playwright-framework/
 │   ├── cli/                       # run_case, gen, ai-playwright-init
 │   ├── page_objects/              # Playwright page helpers
 │   ├── step_actions/              # Standard command executors
-│   ├── templates/                 # Packaged config and demo starter files
+│   ├── templates/                 # Packaged config starter files
 │   └── utils/                     # Config, YAML, logging, token usage
 ├── config/                        # Source checkout default config
-├── test_data/demo/                # Open-source demo project
+├── test_data/demo/                # Single canonical open-source demo project
 ├── tests/                         # Contract and regression tests
 ├── .github/workflows/ci.yml       # CI gate
 ├── Makefile                       # Local quality gate

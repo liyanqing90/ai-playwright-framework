@@ -38,7 +38,8 @@ packages = [
   { include = "ai_playwright" },
 ]
 include = [
-  { path = "ai_playwright/templates/**/*", format = ["sdist", "wheel"] },
+  { path = "ai_playwright/templates/config/**/*", format = ["sdist", "wheel"] },
+  { path = "test_data/demo/**/*", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.dependencies]
