@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "YAML-driven Playwright UI automation framework with optional AI-assisted generation and smart selectors."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
   { name = "AI Playwright contributors" },
 ]
@@ -12,7 +12,6 @@ keywords = ["playwright", "pytest", "ui-automation", "yaml", "llm"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -20,7 +19,28 @@ classifiers = [
   "Topic :: Software Development :: Testing",
   "Topic :: Software Development :: Testing :: Acceptance",
 ]
-dynamic = ["dependencies"]
+dependencies = [
+  "pytest>=8.3.4,<9.0.0",
+  "allure-python-commons>=2.13.5,<3.0.0",
+  "rich>=13.9.4,<14.0.0",
+  "allure-pytest>=2.13.5,<3.0.0",
+  "loguru>=0.7.3,<0.8.0",
+  "typer>=0.15.1,<0.16.0",
+  "pydantic>=2.10.4,<3.0.0",
+  "pydantic-settings>=2.7.1,<3.0.0",
+  "python-dotenv>=1.0.1,<2.0.0",
+  "requests>=2.32.3,<3.0.0",
+  "pytest-reportlog>=0.4.0,<0.5.0",
+  "ruamel-yaml>=0.18.10,<0.19.0",
+  "pytest-base-url>=2.1.0,<3.0.0",
+  "pytest-dependency>=0.6.0,<0.7.0",
+  "faker>=37.0.0,<38.0.0",
+  "pytest-playwright>=0.7.0,<0.8.0",
+  "pytest-check>=2.5.0,<3.0.0",
+  "jsonpath-ng>=1.7.0,<2.0.0",
+  "playwright>=1.58.0,<2.0.0",
+  "configobj>=5.0.9,<6.0.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/liyanqing90/ai-playwright"
@@ -31,47 +51,31 @@ Issues = "https://github.com/liyanqing90/ai-playwright/issues"
 gen = "ai_playwright.cli.generate_case:cli"
 run_case = "ai_playwright.cli.run_case:cli"
 ai-playwright-init = "ai_playwright.cli.init_project:cli"
+ai-playwright-install-browser = "ai_playwright.cli.install_browser:main"
 
-[tool.poetry]
-package-mode = true
-packages = [
-  { include = "ai_playwright" },
+[dependency-groups]
+dev = [
+  "black>=25.1.0,<26.0.0",
 ]
-include = [
-  { path = "ai_playwright/templates/config/**/*", format = ["sdist", "wheel"] },
-  { path = "test_data/demo/**/*", format = ["sdist", "wheel"] },
-]
-
-[tool.poetry.dependencies]
-python = ">=3.12,<3.15"
-pytest = "^8.3.4"
-allure-python-commons = "^2.13.5"
-rich = "^13.9.4"
-allure-pytest = "^2.13.5"
-loguru = "^0.7.3"
-typer = "^0.15.1"
-pydantic = "^2.10.4"
-pydantic-settings = "^2.7.1"
-python-dotenv = "^1.0.1"
-requests = "^2.32.3"
-pytest-reportlog = "^0.4.0"
-ruamel-yaml = "^0.18.10"
-pytest-base-url = "^2.1.0"
-pytest-dependency = "^0.6.0"
-faker = "^37.0.0"
-pytest-playwright = "^0.7.0"
-pytest-check = "^2.5.0"
-jsonpath-ng = "^1.7.0"
-playwright = "^1.58.0"
-
-[tool.poetry.group.dev.dependencies]
-black = "^25.1.0"
 
 [tool.black]
 line-length = 88
 target-version = ["py312"]
 include = '\.pyi?$'
 
+[[tool.uv.index]]
+name = "tuna"
+url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/"
+default = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai_playwright*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+ai_playwright = ["templates/**/*"]
+
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"

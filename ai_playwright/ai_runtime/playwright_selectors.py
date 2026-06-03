@@ -10,6 +10,17 @@ from ai_playwright.ai_runtime.semantic_terms import (
     strip_generic_target_words as _shared_strip_generic_target_words,
 )
 
+_LOGOUT_TARGET_TERMS = (
+    "退出登录",
+    "登出",
+    "注销",
+    "logout",
+    "log out",
+    "sign out",
+    "signout",
+)
+_LOGOUT_CANDIDATE_TERMS = _LOGOUT_TARGET_TERMS + ("logout-sidebar",)
+
 
 def normalize_selector(selector: str, selector_type: str | None = None) -> str:
     selector = str(selector).strip()
@@ -189,6 +200,41 @@ def is_high_quality_selector(selector: str) -> bool:
     ):
         return True
     return not _looks_like_structural_selector(selector_l)
+
+
+def selector_probe_score(selector: str, action: str | None = None) -> float:
+    selector_l = str(selector or "").lower().strip()
+    if not selector_l:
+        return -100.0
+    score = _selector_quality_score(selector_l)
+    normalized_action = str(action or "").lower()
+    has_tag_prefix = bool(re.match(r"^[a-z][\w-]*\[", selector_l))
+
+    if _looks_like_structural_selector(selector_l):
+        score -= 80
+    if re.search(
+        r'^[a-z][\w-]*\[type\s*=\s*["\']?(?:password|search)["\']?',
+        selector_l,
+    ):
+        score += 50
+    if re.search(
+        r'^[a-z][\w-]*\[type\s*=\s*["\']?(?:submit|button)["\']?',
+        selector_l,
+    ):
+        score += 42
+    if has_tag_prefix and "*=" in selector_l:
+        score += 18
+    elif selector_l.startswith("[") and "*=" in selector_l:
+        score -= 10
+    if normalized_action == "fill" and selector_l.startswith(("input", "textarea")):
+        score += 16
+    if normalized_action in {"click", "press", "press_key"} and selector_l.startswith(
+        ("button", "a", "input")
+    ):
+        score += 10
+    if selector_l.startswith(("text=", "*:has-text(")):
+        score -= 12
+    return score
 
 
 def _safe_locator_count(locator) -> int | None:
@@ -649,16 +695,19 @@ def selector_matches_target(
         ["用户名", "账号", "帐号", "用户", "username", "user name", "user-name"],
     )
     is_login_target = _contains_any(target_l, ["登录", "登陆", "login", "sign in"])
+    is_logout_target = _is_logout_target_text(target_l)
     is_title_target = _contains_any(target_l, ["标题", "title"])
     requires_text_match = (
         strict_text_match
         and _requires_concrete_text_match(target, semantic_target, action)
         and not is_login_target
+        and not is_logout_target
     )
     requires_relaxed_text_match = (
         not strict_text_match
         and _requires_concrete_text_match(target, semantic_target, action)
         and not is_login_target
+        and not is_logout_target
     )
     requires_fill_match = strict_text_match and _requires_fill_semantic_match(
         target, semantic_target, action
@@ -673,6 +722,7 @@ def selector_matches_target(
             is_password_target,
             is_username_target,
             is_login_target,
+            is_logout_target,
             is_title_target,
             requires_text_match,
             requires_relaxed_text_match,
@@ -717,6 +767,13 @@ def selector_matches_target(
     blob = _candidate_blob(snapshot)
     if _is_logout_or_destructive_mismatch(blob, target_l, action):
         return False
+    if is_logout_target and action in {
+        "click",
+        "press",
+        "press_key",
+        "assert_visible",
+    }:
+        return _candidate_is_logout_like(snapshot, blob, selector_l, score, action)
     if is_password_target:
         return score >= 6
     if is_username_target:
@@ -1392,6 +1449,10 @@ def _candidate_semantic_score(
         if _contains_any(blob, ["login", "sign in", "登录", "登陆"]):
             score += 5
 
+    if _is_logout_target_text(target_l):
+        if _contains_any(blob, list(_LOGOUT_CANDIDATE_TERMS)):
+            score += 5
+
     if _contains_any(target_l, ["错误", "提示", "error"]):
         if _contains_any(blob, ["error", "sadface", "错误"]):
             score += 5
@@ -1445,6 +1506,35 @@ def _candidate_user_facing_blob(candidate: dict[str, Any]) -> str:
 
 def _contains_any(value: str, terms: list[str]) -> bool:
     return any(term.lower() in value for term in terms)
+
+
+def _is_logout_target_text(value: str) -> bool:
+    return _contains_any(value, list(_LOGOUT_TARGET_TERMS))
+
+
+def _candidate_is_logout_like(
+    candidate: dict[str, Any],
+    blob: str,
+    selector_l: str,
+    score: float,
+    action: str,
+) -> bool:
+    logout_like = score >= 4 or _contains_any(
+        f"{blob} {selector_l}",
+        list(_LOGOUT_CANDIDATE_TERMS),
+    )
+    if not logout_like:
+        return False
+    if action == "assert_visible":
+        return True
+    tag = str(candidate.get("tag") or "").lower()
+    role = str(candidate.get("role") or "").lower()
+    input_type = str(candidate.get("type") or "").lower()
+    return (
+        tag in {"button", "a"}
+        or role in {"button", "link", "menuitem"}
+        or (tag == "input" and input_type in {"submit", "button"})
+    )
 
 
 def _minimum_semantic_score(target: str, action: str) -> float:

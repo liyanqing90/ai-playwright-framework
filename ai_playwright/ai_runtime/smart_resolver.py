@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from ai_playwright.ai_runtime.config import llm_data_policy, load_ai_config
-from ai_playwright.ai_runtime.contracts import AiStepDecision, SelectorDecision
+from ai_playwright.ai_runtime.contracts import (
+    AiStepDecision,
+    SelectorDecision,
+    SelectorSemanticValidationDecision,
+)
 from ai_playwright.ai_runtime.native_observe import NativeObserveSettings
 from ai_playwright.ai_runtime.payload_compactor import (
     build_dom_context,
@@ -25,6 +29,7 @@ from ai_playwright.ai_runtime.playwright_selectors import (
     is_high_quality_selector,
     normalize_selector,
     selector_matches_target,
+    selector_probe_score,
     semantic_match_terms,
     semantic_selectors,
     stable_selector_for_locator,
@@ -57,6 +62,7 @@ class ResolvedSelector:
     cache_target: str | None = None
     cache_page_key: str | None = None
     cache_replace_active: bool = False
+    semantic_ai_validated: bool = False
 
 
 @dataclass(frozen=True)
@@ -108,6 +114,7 @@ class SmartResolver:
                 runtime_cfg.get("smart_explicit_selector_timeout_ms", 1000),
             )
         )
+        self.self_heal_probe_limit = int(runtime_cfg.get("self_heal_probe_limit", 12))
         self.allow_ai_in_smart = bool(runtime_cfg.get("allow_ai_in_smart", True))
         self.ai_enabled = bool(runtime_cfg.get("ai_enabled", True))
         self.max_ai_calls = int(runtime_cfg.get("max_ai_calls_per_test", 3))
@@ -132,6 +139,12 @@ class SmartResolver:
                 "llm_selector_candidate_limit",
                 min(self.llm_selector_candidate_scan_limit, 40),
             )
+        )
+        self.semantic_ai_validation_enabled = bool(
+            runtime_cfg.get("semantic_ai_validation_enabled", True)
+        )
+        self.semantic_ai_validation_min_confidence = float(
+            runtime_cfg.get("semantic_ai_validation_min_confidence", 0.75)
         )
         self.ai_call_count = 0
         prompts_cfg = self.config.get("prompts", {})
@@ -290,7 +303,14 @@ class SmartResolver:
             else []
         )
         selector_candidates.extend(heuristic_selectors(target_text, action))
-        for candidate in _dedupe(selector_candidates):
+        deduped_candidates = _dedupe(selector_candidates)
+        probe_candidates = _rank_self_heal_probe_candidates(
+            deduped_candidates,
+            action=action,
+            limit=self.self_heal_probe_limit,
+        )
+        probe_failures: list[tuple[str, str]] = []
+        for candidate in probe_candidates:
             try:
                 verify_selector(
                     self.page,
@@ -300,14 +320,10 @@ class SmartResolver:
                 )
                 stable = stable_selector_for_locator(self.page.locator(candidate))
                 if not is_high_quality_selector(stable):
-                    logger.warning(
-                        f"DOM selector质量不足，跳过: target={target_text} selector={stable}"
-                    )
+                    probe_failures.append((stable, "low quality selector"))
                     continue
                 if not selector_matches_target(self.page, stable, target_text, action):
-                    logger.warning(
-                        f"DOM语义匹配不一致，跳过: target={target_text} selector={stable}"
-                    )
+                    probe_failures.append((stable, "semantic mismatch"))
                     continue
                 self._log_heal_success(
                     source="heuristic",
@@ -329,13 +345,17 @@ class SmartResolver:
                     original_error=original_error,
                 )
             except Exception as exc:
-                self._log_heal_rejected(
-                    source="heuristic",
-                    selector=candidate,
-                    reason=str(exc),
-                    healing_attempted=healing_attempted,
-                )
+                probe_failures.append((candidate, str(exc)))
                 continue
+        self._log_heal_probe_summary(
+            action=action,
+            target=target_text,
+            total=len(deduped_candidates),
+            tried=len(probe_candidates),
+            skipped=max(0, len(deduped_candidates) - len(probe_candidates)),
+            failures=probe_failures,
+            healing_attempted=healing_attempted,
+        )
 
         concrete_text = self._concrete_text_target(target_text, action)
         ai_fallback_available = (
@@ -398,7 +418,7 @@ class SmartResolver:
             raise
 
         if resolved.selector:
-            if not selector_matches_target(
+            if not resolved.semantic_ai_validated and not selector_matches_target(
                 self.page,
                 resolved.selector,
                 target_text,
@@ -793,6 +813,7 @@ class SmartResolver:
             selector_ref=decision.selector,
             source="AI定位",
         )
+        selected_element = _element_for_id(locator_context, selected_element_id)
         selector = self._verified_selector_for_element_id(
             locator_context,
             selected_element_id,
@@ -803,7 +824,17 @@ class SmartResolver:
             raise ValueError(
                 "AI selector quality rejected: " f"target={target}, selector={selector}"
             )
+        semantic_ai_validated = False
         if not selector_matches_target(
+            self.page, selector, target, action, strict_text_match=False
+        ):
+            semantic_ai_validated = self._validate_selector_semantics_with_ai(
+                action=action,
+                target=target,
+                selector=selector,
+                candidate=selected_element,
+            )
+        if not semantic_ai_validated and not selector_matches_target(
             self.page, selector, target, action, strict_text_match=False
         ):
             raise ValueError(
@@ -820,7 +851,99 @@ class SmartResolver:
             model=provider.settings.model,
             candidate_count=len(candidates),
             candidate_hash=self._candidate_hash(candidates),
+            semantic_ai_validated=semantic_ai_validated,
         )
+
+    def _validate_selector_semantics_with_ai(
+        self,
+        *,
+        action: str,
+        target: str,
+        selector: str,
+        candidate: dict[str, Any] | None,
+    ) -> bool:
+        if not self.semantic_ai_validation_enabled or not self.ai_enabled:
+            return False
+        candidate = candidate or {"selector_candidates": [selector]}
+        if _is_unrequested_risky_candidate(candidate, target):
+            logger.warning(
+                "AI语义兜底跳过高风险候选: "
+                f"action={action} | target={target} | selector={selector}"
+            )
+            return False
+        try:
+            self._claim_ai_call("semantic_validation")
+            provider = ChatCompletionProvider()
+            decision = provider.complete_model(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是UI自动化selector语义验证器，只判断候选元素是否与当前step目标语义等价。"
+                            "允许识别中英文同义、页面文案缩写、业务常见等价词。"
+                            "不能根据测试流程猜测，只能根据action、target和candidate字段判断。"
+                            "如果候选是退出登录、删除、移除、取消等高风险操作，而target没有明确要求该操作，必须返回mismatch。"
+                            "信息不足返回uncertain。只返回JSON对象。"
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": self._json_payload(
+                            {
+                                "prompt_version": self.selector_prompt_version,
+                                "schema_version": self.schema_version,
+                                "action": action,
+                                "target": redact_value(
+                                    target,
+                                    policy=self.llm_data_policy,
+                                ),
+                                "selector": selector,
+                                "candidate": candidate,
+                                "page": {
+                                    "url": redact_value(
+                                        self.page.url,
+                                        policy=self.llm_data_policy,
+                                    ),
+                                    "title": _safe_page_title(self.page),
+                                },
+                            }
+                        ),
+                    },
+                ],
+                SelectorSemanticValidationDecision,
+                schema_name="SelectorSemanticValidationDecision",
+                usage_operation="runtime.selector_semantic_validation",
+                usage_metadata={
+                    "schema_name": "SelectorSemanticValidationDecision",
+                    "prompt_version": self.selector_prompt_version,
+                    "page_url": self.page.url,
+                    "action": action,
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "AI语义兜底验证失败，按不匹配处理: "
+                f"action={action} | target={target} | selector={selector} | error={exc}"
+            )
+            return False
+        ok = (
+            decision.status == "match"
+            and decision.confidence >= self.semantic_ai_validation_min_confidence
+        )
+        if ok:
+            logger.info(
+                "AI语义兜底验证通过: "
+                f"action={action} | target={target} | selector={selector} | "
+                f"confidence={decision.confidence}"
+            )
+        else:
+            logger.warning(
+                "AI语义兜底验证未通过: "
+                f"action={action} | target={target} | selector={selector} | "
+                f"status={decision.status} | confidence={decision.confidence} | "
+                f"reason={decision.reason}"
+            )
+        return ok
 
     def _collect_ai_locator_candidates(
         self,
@@ -1140,6 +1263,27 @@ class SmartResolver:
             f"action={action} | selector={selector} | target={target} | errors={detail}"
         )
 
+    @staticmethod
+    def _log_heal_probe_summary(
+        *,
+        action: str,
+        target: str | None,
+        total: int,
+        tried: int,
+        skipped: int,
+        failures: list[tuple[str, str]],
+        healing_attempted: bool,
+    ) -> None:
+        if not healing_attempted or not (failures or skipped):
+            return
+        sample = "; ".join(f"{selector}: {reason}" for selector, reason in failures[:3])
+        logger.debug(
+            "自愈候选探测汇总: "
+            f"action={action} | target={target} | total={total} | "
+            f"tried={tried} | skipped={skipped} | failed={len(failures)} | "
+            f"sample={sample}"
+        )
+
     def _claim_ai_call(self, purpose: str) -> None:
         if self.ai_call_count >= self.max_ai_calls:
             raise RuntimeError(
@@ -1189,6 +1333,25 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
+def _rank_self_heal_probe_candidates(
+    candidates: list[str],
+    *,
+    action: str,
+    limit: int,
+) -> list[str]:
+    if not candidates:
+        return []
+    effective_limit = max(1, int(limit or 1))
+    ranked = sorted(
+        enumerate(candidates),
+        key=lambda item: (
+            -selector_probe_score(item[1], action),
+            item[0],
+        ),
+    )
+    return [selector for _, selector in ranked[:effective_limit]]
+
+
 def _payload_contains_element_id(payload: dict[str, Any], element_id: str) -> bool:
     if not element_id:
         return False
@@ -1202,6 +1365,68 @@ def _payload_contains_element_id(payload: dict[str, Any], element_id: str) -> bo
         elif isinstance(item, list):
             stack.extend(item)
     return False
+
+
+def _element_for_id(payload: dict[str, Any], element_id: str) -> dict[str, Any] | None:
+    if not element_id:
+        return None
+    stack: list[Any] = [payload]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if item.get("id") == element_id:
+                return item
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return None
+
+
+def _is_unrequested_risky_candidate(
+    candidate: dict[str, Any],
+    target: str | None,
+) -> bool:
+    candidate_blob = _candidate_validation_blob(candidate)
+    if not candidate_blob:
+        return False
+    risky_terms = (
+        "logout",
+        "log out",
+        "sign out",
+        "signout",
+        "remove",
+        "delete",
+        "退出",
+        "登出",
+        "注销",
+        "删除",
+        "移除",
+    )
+    if not any(term in candidate_blob for term in risky_terms):
+        return False
+    target_blob = _semantic_guard_blob(target)
+    return not any(term in target_blob for term in risky_terms)
+
+
+def _candidate_validation_blob(candidate: dict[str, Any]) -> str:
+    parts: list[str] = []
+    stack: list[Any] = [candidate]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+        elif isinstance(item, str):
+            parts.append(item)
+    return _semantic_guard_blob(" ".join(parts))
+
+
+def _semantic_guard_blob(value: Any) -> str:
+    raw = str(value or "").lower()
+    spaced = re.sub(r"[_-]+", " ", raw)
+    compact = re.sub(r"[\s_-]+", "", raw)
+    return f"{raw} {spaced} {compact}"
 
 
 def _safe_page_title(page: Any) -> str:

@@ -5,8 +5,8 @@ Thanks for improving AI Playwright. Keep contributions small, verifiable, and fo
 ## Development
 
 ```bash
-poetry install
-poetry run playwright install chromium
+uv sync
+uv run ai-playwright-install-browser
 make check
 ```
 

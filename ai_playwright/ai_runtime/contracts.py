@@ -46,6 +46,18 @@ class SelectorDecision(StrictModel):
         return self
 
 
+class SelectorSemanticValidationDecision(StrictModel):
+    status: Literal["match", "mismatch", "uncertain"]
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    reason: str | None = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_reason_for_non_match(self):
+        if self.status in {"mismatch", "uncertain"} and not self.reason:
+            raise ValueError(f"{self.status} requires reason")
+        return self
+
+
 class AiStepDecision(StrictModel):
     status: Literal["ok", "need_more_context", "blocked", "failed"] = "ok"
     action: Literal["click", "fill", "press", "wait", "skip", "reject"] | None = None

@@ -34,6 +34,7 @@ SEMANTIC_SYNONYM_GROUPS: tuple[tuple[str, ...], ...] = (
     ("查看", "浏览", "展示", "显示", "view", "show", "display"),
     ("日志", "记录", "log", "logs"),
     ("登录", "登陆", "login", "sign in"),
+    ("退出登录", "登出", "注销", "logout", "log out", "sign out", "signout"),
 )
 
 _GENERIC_PREFIXES = (

@@ -20,56 +20,52 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install Poetry
-        run: python -m pip install poetry
+      - name: Install uv
+        run: python -m pip install uv -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/
 
       - name: Install dependencies
-        run: poetry install --no-interaction
+        run: uv sync --locked --dev
 
       - name: Check package entry points
         run: |
-          poetry run gen --help
-          poetry run run_case --help
-          poetry run ai-playwright-init --help
+          uv run gen --help
+          uv run run_case --help
+          uv run ai-playwright-init --help
+          uv run ai-playwright-install-browser --help
 
       - name: Compile Python
-        run: poetry run python -m compileall ai_playwright conftest.py check_duplicates.py validate_yaml_schema.py
-
-      - name: Check Poetry metadata
-        run: poetry check --lock
+        run: uv run python -m compileall ai_playwright conftest.py check_duplicates.py validate_yaml_schema.py
 
       - name: Check formatting
-        run: poetry run black --check .
+        run: uv run black --check .
 
       - name: Run framework contract tests
-        run: poetry run pytest tests -q
+        run: uv run pytest tests -q
 
       - name: Validate YAML action schema
-        run: poetry run python validate_yaml_schema.py
+        run: uv run python validate_yaml_schema.py
 
       - name: Check duplicate YAML definitions
-        run: poetry run python check_duplicates.py
+        run: uv run python check_duplicates.py
 
       - name: Collect generated YAML tests
-        run: poetry run pytest --collect-only -q
+        run: uv run pytest --collect-only -q
 
       - name: Check whitespace
         run: git diff --check
 
       - name: Build package
-        run: poetry build
+        run: uv build
 
       - name: Check installed CLI from tempdir
         run: |
-          venv="$(poetry env info --path)"
-          "$venv/bin/python" -m ensurepip --upgrade
           tmpdir="$(mktemp -d)"
           pkgdir="$tmpdir/pkg"
           workdir="$tmpdir/work"
           mkdir -p "$pkgdir" "$workdir"
-          "$venv/bin/python" -m pip install --target "$pkgdir" --no-deps dist/*.whl
+          uv pip install --target "$pkgdir" --no-deps dist/*.whl
           cd "$workdir"
-          PKGDIR="$pkgdir" PYTHONPATH="$pkgdir" "$venv/bin/python" - <<'PY'
+          PKGDIR="$pkgdir" PYTHONPATH="$pkgdir" uv run python - <<'PY'
           import importlib.metadata as md
           import os
           import pathlib
@@ -84,13 +80,15 @@ jobs:
               for ep in md.entry_points(group="console_scripts")
               if ep.value.startswith("ai_playwright.")
           }
-          assert {"run_case", "gen", "ai-playwright-init"} <= scripts, scripts
+          assert {"run_case", "gen", "ai-playwright-init", "ai-playwright-install-browser"} <= scripts, scripts
           PY
-          PYTHONPATH="$pkgdir" "$venv/bin/python" -m ai_playwright.cli.run_case --help
-          PYTHONPATH="$pkgdir" "$venv/bin/python" -m ai_playwright.cli.generate_case --help
-          PYTHONPATH="$pkgdir" "$venv/bin/python" -m ai_playwright.cli.init_project --help
+          test -f "$pkgdir/ai_playwright/templates/test_data/demo/cases/saucedemo_ai.yaml"
+          PYTHONPATH="$pkgdir" uv run python -m ai_playwright.cli.run_case --help
+          PYTHONPATH="$pkgdir" uv run python -m ai_playwright.cli.generate_case --help
+          PYTHONPATH="$pkgdir" uv run python -m ai_playwright.cli.init_project --help
+          PYTHONPATH="$pkgdir" uv run python -m ai_playwright.cli.install_browser --help
           set +e
-          PYTHONPATH="$pkgdir" "$venv/bin/python" -m ai_playwright.cli.run_case -p demo -f saucedemo_ai --headless -k __never_matches__
+          PYTHONPATH="$pkgdir" uv run python -m ai_playwright.cli.run_case -p demo -f saucedemo_ai --headless -k __never_matches__
           status="$?"
           set -e
           test "$status" -eq 5

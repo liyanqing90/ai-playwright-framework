@@ -4,6 +4,7 @@
 .env
 .env.*
 !.env.example
+.venv/
 
 # Python caches
 __pycache__/
@@ -19,6 +20,8 @@ __pycache__/
 /.ui_auto/
 /downloads/
 /dist/
+/build/
+*.egg-info/
 /config/storage_state.json
 
 # Test case data policy: keep demo cases in Git, ignore project-specific data.

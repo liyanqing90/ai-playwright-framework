@@ -489,6 +489,122 @@ def test_smart_resolver_caps_generated_selector_probe_timeout(monkeypatch):
     assert verify_calls[0] == ("#slow-password", 750)
 
 
+def test_smart_resolver_limits_low_quality_self_heal_probe_candidates(monkeypatch):
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.load_ai_config",
+        lambda: {
+            "selector_registry": {"enabled": False},
+            "runtime": {
+                "ai_enabled": False,
+                "self_heal_probe_limit": 3,
+                "smart_selector_probe_timeout_ms": 10,
+            },
+            "native_observe": {"enabled": False},
+        },
+    )
+    heuristic_candidates = [
+        f'input[data-testid*="password-{index}" i]' for index in range(20)
+    ]
+    verify_calls: list[str] = []
+
+    def fake_verify_selector(page, selector, *, action, timeout):
+        verify_calls.append(selector)
+        raise ValueError("not visible")
+
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.verify_selector",
+        fake_verify_selector,
+    )
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.heuristic_selectors",
+        lambda target, action: heuristic_candidates,
+    )
+
+    class FakePage:
+        url = "https://example.test/login"
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = None
+
+    with pytest.raises(ValueError, match="AI定位未启用"):
+        resolver.resolve(
+            action="fill",
+            target="password field",
+            selector="#old-password",
+            mode="smart",
+            timeout=1000,
+        )
+
+    assert verify_calls == ["#old-password", *heuristic_candidates[:3]]
+
+
+def test_smart_resolver_prioritizes_strong_self_heal_probe_selector(monkeypatch):
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.load_ai_config",
+        lambda: {
+            "selector_registry": {"enabled": False},
+            "runtime": {
+                "ai_enabled": False,
+                "self_heal_probe_limit": 1,
+                "smart_selector_probe_timeout_ms": 10,
+            },
+            "native_observe": {"enabled": False},
+        },
+    )
+    verify_calls: list[str] = []
+    strong_selector = 'button[data-test="save"]'
+
+    def fake_verify_selector(page, selector, *, action, timeout):
+        verify_calls.append(selector)
+        if selector != strong_selector:
+            raise ValueError("not visible")
+        return True
+
+    class FakeLocator:
+        def __init__(self, selector):
+            self.selector = selector
+
+    class FakePage:
+        url = "https://example.test/form"
+
+        def locator(self, selector):
+            return FakeLocator(selector)
+
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.verify_selector",
+        fake_verify_selector,
+    )
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.heuristic_selectors",
+        lambda target, action: [
+            "main > section > div:nth-of-type(2) > button",
+            strong_selector,
+        ],
+    )
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.stable_selector_for_locator",
+        lambda locator: locator.selector,
+    )
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.selector_matches_target",
+        lambda page, selector, target, action: True,
+    )
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = None
+
+    resolved = resolver.resolve(
+        action="click",
+        target="save button",
+        selector="#old-save",
+        mode="smart",
+        timeout=1000,
+    )
+
+    assert resolved.selector == strong_selector
+    assert verify_calls == ["#old-save", strong_selector]
+
+
 def test_smart_resolver_uses_ai_when_concrete_text_is_not_visible(monkeypatch):
     ai_called = False
 
@@ -819,6 +935,45 @@ def test_selector_matches_target_rejects_logout_for_query_even_in_ai_mode():
     )
 
 
+def test_selector_matches_target_accepts_logout_sidebar_link_for_cjk_target():
+    class FakeLocator:
+        @property
+        def first(self):
+            return self
+
+        def evaluate(self, script):
+            return {
+                "tag": "a",
+                "id": "logout_sidebar_link",
+                "data_test": "logout-sidebar-link",
+                "text": "Logout",
+                "role": "link",
+            }
+
+    class FakePage:
+        def locator(self, selector):
+            return FakeLocator()
+
+    assert (
+        selector_matches_target(
+            FakePage(),
+            "#logout_sidebar_link",
+            "侧边栏退出登录按钮",
+            "assert_visible",
+        )
+        is True
+    )
+    assert (
+        selector_matches_target(
+            FakePage(),
+            'a[data-test="logout-sidebar-link"]',
+            "侧边栏退出登录按钮",
+            "click",
+        )
+        is True
+    )
+
+
 def test_selector_matches_target_relaxed_ai_accepts_action_object_text():
     class FakeLocator:
         def __init__(self, selector):
@@ -1031,6 +1186,173 @@ def test_smart_resolver_ai_path_uses_candidate_element_id(monkeypatch):
     assert resolved.selector == 'button[data-test="submit"]'
     assert resolved.source == "ai_selector"
     assert resolved.ai_called is True
+
+
+def test_smart_resolver_ai_semantic_validation_accepts_unknown_synonym(
+    monkeypatch,
+):
+    provider_calls: list[str] = []
+
+    class FakeLocator:
+        @property
+        def first(self):
+            return self
+
+        def count(self):
+            return 1
+
+        def nth(self, index):
+            return self
+
+        def is_visible(self):
+            return True
+
+        def wait_for(self, state, timeout):
+            return None
+
+        def is_enabled(self):
+            return True
+
+        def evaluate(self, script):
+            return {
+                "tag": "button",
+                "data_test": "continue-shopping",
+                "text": "Continue Shopping",
+                "role": "button",
+            }
+
+    class FakePage:
+        url = "https://example.test/cart"
+
+        def locator(self, selector):
+            return FakeLocator()
+
+        def title(self):
+            return "Cart"
+
+    class SemanticValidationProvider:
+        settings = type("Settings", (), {"model": "test-model"})()
+
+        def complete_model(self, messages, response_model, **kwargs):
+            provider_calls.append(response_model.__name__)
+            if response_model is SelectorDecision:
+                return response_model.model_validate(
+                    {"element_id": "e0", "confidence": 0.91}
+                )
+            return response_model.model_validate(
+                {
+                    "status": "match",
+                    "confidence": 0.86,
+                    "reason": "Continue Shopping 等价于继续购物",
+                }
+            )
+
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.ChatCompletionProvider",
+        SemanticValidationProvider,
+    )
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = None
+    resolver._collect_candidates = lambda *, limit, respect_config_max=True: [
+        {
+            "index": 0,
+            "tag": "button",
+            "selector": 'button[data-test="continue-shopping"]',
+            "data_test": "continue-shopping",
+            "text": "Continue Shopping",
+            "role": "button",
+            "visible": True,
+            "enabled": True,
+        }
+    ]
+
+    resolved = resolver._resolve_with_ai(
+        action="click",
+        target="继续购物按钮",
+        timeout=1000,
+    )
+
+    assert resolved.selector == 'button[data-test="continue-shopping"]'
+    assert resolved.semantic_ai_validated is True
+    assert provider_calls == [
+        "SelectorDecision",
+        "SelectorSemanticValidationDecision",
+    ]
+
+
+def test_smart_resolver_ai_semantic_validation_does_not_override_risky_mismatch(
+    monkeypatch,
+):
+    provider_calls: list[str] = []
+
+    class FakeLocator:
+        @property
+        def first(self):
+            return self
+
+        def count(self):
+            return 1
+
+        def nth(self, index):
+            return self
+
+        def is_visible(self):
+            return True
+
+        def wait_for(self, state, timeout):
+            return None
+
+        def is_enabled(self):
+            return True
+
+        def evaluate(self, script):
+            return {"tag": "a", "id": "logout", "text": "Logout", "role": "link"}
+
+    class FakePage:
+        url = "https://example.test/home"
+
+        def locator(self, selector):
+            return FakeLocator()
+
+        def title(self):
+            return "Home"
+
+    class RiskyProvider:
+        settings = type("Settings", (), {"model": "test-model"})()
+
+        def complete_model(self, messages, response_model, **kwargs):
+            provider_calls.append(response_model.__name__)
+            if response_model is SelectorDecision:
+                return response_model.model_validate(
+                    {"element_id": "e0", "confidence": 0.91}
+                )
+            raise AssertionError("risky mismatch must not call semantic validator")
+
+    monkeypatch.setattr(
+        "ai_playwright.ai_runtime.smart_resolver.ChatCompletionProvider",
+        RiskyProvider,
+    )
+
+    resolver = SmartResolver(FakePage(), project="demo", env="test")
+    resolver.registry = None
+    resolver._collect_candidates = lambda *, limit, respect_config_max=True: [
+        {
+            "index": 0,
+            "tag": "a",
+            "selector": "#logout",
+            "id": "logout",
+            "text": "Logout",
+            "role": "link",
+            "visible": True,
+            "enabled": True,
+        }
+    ]
+
+    with pytest.raises(ValueError, match="AI selector semantic mismatch"):
+        resolver._resolve_with_ai(action="click", target="text=Search", timeout=1000)
+
+    assert provider_calls == ["SelectorDecision"]
 
 
 def test_smart_resolver_uses_role_text_candidate_from_structural_menu_source(

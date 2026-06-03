@@ -1,6 +1,7 @@
 # AI Playwright
 
 [![CI](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml)
+
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -83,18 +84,19 @@ Click a preview to open the MP4 demo.
 git clone https://github.com/liyanqing90/ai-playwright-framework.git
 cd ai-playwright-framework
 
-poetry install
-poetry run playwright install chromium
+uv sync
+uv run ai-playwright-install-browser
 cp .env.example .env
 
-poetry run run_case -p demo -f saucedemo_ai --headless
+uv run run_case -p demo -f saucedemo_ai --headless
 ```
 
 ### From A Built Wheel Or Local Package
 
 ```bash
-python -m pip install .
-playwright install chromium
+uv venv
+uv pip install .
+uv run ai-playwright-install-browser
 
 mkdir my-ai-playwright-workspace
 cd my-ai-playwright-workspace
@@ -117,21 +119,50 @@ run it.
 ### Requirements
 
 - Python `>=3.12,<3.15`
-- Poetry for repository development
+- uv for repository development
 - Playwright browser binaries
+
+### Install uv
+
+Windows:
+
+```powershell
+winget install --id=astral-sh.uv -e
+```
+
+If you need a China-friendly PyPI mirror:
+
+```powershell
+py -m pip install -U uv -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/
+```
+
+Linux/macOS:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Optional `chsrc` helpers:
+
+```bash
+chsrc list python
+chsrc measure python
+chsrc set python tuna
+chsrc get python
+```
 
 ### Development Install
 
 ```bash
-poetry install
-poetry run playwright install chromium
+uv sync
+uv run ai-playwright-install-browser
 ```
 
 ### Package Build
 
 ```bash
-poetry build
-python -m pip install dist/ai_playwright-*.whl
+uv build
+uv pip install dist/ai_playwright-*.whl
 ```
 
 The package includes the default config template and the canonical demo
@@ -209,16 +240,16 @@ Mode priority:
 
 ```bash
 # Run all demo cases
-poetry run run_case -p demo --headless
+uv run run_case -p demo --headless
 
 # Run a specific case file
-poetry run run_case -p demo -f saucedemo_ai --headless
+uv run run_case -p demo -f saucedemo_ai --headless
 
 # Run with a keyword filter
-poetry run run_case -p demo -f saucedemo_ai -k backpack --headless
+uv run run_case -p demo -f saucedemo_ai -k backpack --headless
 
 # Use smart as the default mode for standard cases
-poetry run run_case -p demo -f saucedemo_ai --ai-mode smart --headless
+uv run run_case -p demo -f saucedemo_ai --ai-mode smart --headless
 ```
 
 ### Generate Cases
@@ -227,13 +258,13 @@ Generation specs live in `test_data/<project>/generation/*.yaml`.
 
 ```bash
 # Generate, verify on a real browser, then write formal YAML assets
-poetry run gen -p demo saucedemo_ai
+uv run gen -p demo saucedemo_ai
 
 # Run generation verification in headless mode, for CI or remote servers
-poetry run gen -p demo saucedemo_ai --headless
+uv run gen -p demo saucedemo_ai --headless
 
 # Refuse to overwrite existing generated files
-poetry run gen -p demo saucedemo_ai --no-overwrite
+uv run gen -p demo saucedemo_ai --no-overwrite
 ```
 
 Generation is intentionally verification-first. The command writes the generated
@@ -436,7 +467,7 @@ The gate runs:
 - YAML schema validation.
 - Duplicate YAML definition check.
 - pytest collection for generated YAML tests.
-- Poetry metadata validation.
+- uv metadata validation.
 - Build and installed-package smoke test from a temporary directory.
 - Whitespace validation with `git diff --check`.
 
@@ -498,13 +529,13 @@ ai-playwright-init
 Install the browser binary:
 
 ```bash
-poetry run playwright install chromium
+uv run ai-playwright-install-browser
 ```
 
-For non-Poetry installs:
+For non-uv syncs:
 
 ```bash
-playwright install chromium
+python -m ai_playwright.cli.install_browser
 ```
 
 ### AI calls fail or return invalid JSON
@@ -522,8 +553,8 @@ Check:
 Run:
 
 ```bash
-poetry run python validate_yaml_schema.py
-poetry run pytest --collect-only -q
+uv run python validate_yaml_schema.py
+uv run pytest --collect-only -q
 ```
 
 Generation specs under `generation/` are inputs for `gen`; pytest collects only

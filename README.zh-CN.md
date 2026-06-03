@@ -1,6 +1,7 @@
 # AI Playwright
 
 [![CI](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml)
+
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -70,24 +71,25 @@ AI Playwright 将这两件事分离：
 git clone https://github.com/liyanqing90/ai-playwright-framework.git
 cd ai-playwright-framework
 
-poetry install
-poetry run playwright install chromium
+uv sync
+uv run ai-playwright-install-browser
 cp .env.example .env
 
-poetry run run_case -p demo -f saucedemo_ai --headless
+uv run run_case -p demo -f saucedemo_ai --headless
 ```
 
 本地调试时默认是有头模式，也可以显式使用慢速执行：
 
 ```bash
-poetry run run_case -p demo -f saucedemo_ai --slow-mo 250
+uv run run_case -p demo -f saucedemo_ai --slow-mo 250
 ```
 
 ### 从包安装后初始化工作区
 
 ```bash
-python -m pip install .
-playwright install chromium
+uv venv
+uv pip install .
+uv run ai-playwright-install-browser
 
 mkdir my-ai-playwright-workspace
 cd my-ai-playwright-workspace
@@ -108,21 +110,50 @@ run_case -p demo -f saucedemo_ai --headless
 ### 环境要求
 
 - Python `>=3.12,<3.15`
-- Poetry，用于仓库开发
+- uv，用于仓库开发
 - Playwright 浏览器二进制
+
+### 安装 uv
+
+Windows 推荐：
+
+```powershell
+winget install --id=astral-sh.uv -e
+```
+
+如果需要通过国内 PyPI 镜像安装：
+
+```powershell
+py -m pip install -U uv -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/
+```
+
+Linux/macOS：
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+可选：使用 `chsrc` 切换 Python 镜像源。
+
+```bash
+chsrc list python
+chsrc measure python
+chsrc set python tuna
+chsrc get python
+```
 
 ### 开发安装
 
 ```bash
-poetry install
-poetry run playwright install chromium
+uv sync
+uv run ai-playwright-install-browser
 ```
 
 ### 构建包
 
 ```bash
-poetry build
-python -m pip install dist/ai_playwright-*.whl
+uv build
+uv pip install dist/ai_playwright-*.whl
 ```
 
 包内包含默认配置模板和唯一 demo 测试数据，因此 CLI 可以在源码仓库外运行。
@@ -199,22 +230,22 @@ elements:
 
 ```bash
 # 运行 demo 全部用例，默认有头
-poetry run run_case -p demo
+uv run run_case -p demo
 
 # 无头运行
-poetry run run_case -p demo --headless
+uv run run_case -p demo --headless
 
 # 运行指定 case 文件
-poetry run run_case -p demo -f saucedemo_ai
+uv run run_case -p demo -f saucedemo_ai
 
 # 关键词筛选
-poetry run run_case -p demo -f saucedemo_ai -k backpack
+uv run run_case -p demo -f saucedemo_ai -k backpack
 
 # 有头慢速调试
-poetry run run_case -p demo -f saucedemo_ai --slow-mo 250
+uv run run_case -p demo -f saucedemo_ai --slow-mo 250
 
 # 标准用例默认使用 smart 模式
-poetry run run_case -p demo -f saucedemo_ai --ai-mode smart
+uv run run_case -p demo -f saucedemo_ai --ai-mode smart
 ```
 
 ### 生成用例
@@ -223,13 +254,13 @@ poetry run run_case -p demo -f saucedemo_ai --ai-mode smart
 
 ```bash
 # 生成、候选真实浏览器验证、验证通过后写入正式 YAML
-poetry run gen -p demo saucedemo_ai
+uv run gen -p demo saucedemo_ai
 
 # CI 或远程服务器使用无头验证
-poetry run gen -p demo saucedemo_ai --headless
+uv run gen -p demo saucedemo_ai --headless
 
 # 不覆盖已有正式生成文件
-poetry run gen -p demo saucedemo_ai --no-overwrite
+uv run gen -p demo saucedemo_ai --no-overwrite
 ```
 
 生成流程刻意保持简单：生成结果必须可用。`gen` 会先把模型输出写入临时候选工作区，执行候选用例的真实浏览器验证；候选通过后，才写入正式 `cases/`、`data/`、`elements/`、`modules/` 或 `vars/` 文件，并再次执行写入后校验。验证默认有头，便于本地直接看到浏览器；没有可视化浏览器的环境再传 `--headless`。失败时会保留调试产物到 `logs/generation_runs/`。
@@ -389,7 +420,7 @@ ai-playwright-framework/
 ├── config/                        # 源码仓库默认配置
 ├── test_data/demo/                # 唯一维护的开源 demo 项目
 ├── tests/                         # 契约和回归测试
-├── .github/workflows/ci.yml       # CI 门禁
+├── .github/workflows/ci.yml       # GitHub Actions CI 门禁
 ├── Makefile                       # 本地质量门禁
 ├── pyproject.toml                 # 包元数据和脚本入口
 └── README.md
@@ -413,7 +444,7 @@ make check
 - YAML schema 校验。
 - YAML 重复定义检查。
 - pytest 收集生成后的 YAML 用例。
-- Poetry 元数据校验。
+- uv 元数据校验。
 - 构建包并在临时目录做安装后 CLI 冒烟检查。
 - `git diff --check` 空白字符检查。
 
@@ -469,13 +500,13 @@ ai-playwright-init
 安装浏览器二进制：
 
 ```bash
-poetry run playwright install chromium
+uv run ai-playwright-install-browser
 ```
 
-非 Poetry 安装：
+非 uv 安装：
 
 ```bash
-playwright install chromium
+python -m ai_playwright.cli.install_browser
 ```
 
 ### AI 调用失败或返回非法 JSON
@@ -502,8 +533,8 @@ ls logs/generation_runs/
 运行：
 
 ```bash
-poetry run python validate_yaml_schema.py
-poetry run pytest --collect-only -q
+uv run python validate_yaml_schema.py
+uv run pytest --collect-only -q
 ```
 
 `generation/` 下的文件只是 `gen` 输入；pytest 只收集 `cases/*.yaml` 以及对应的 `data/*.yaml`。

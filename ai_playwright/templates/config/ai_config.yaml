@@ -4,10 +4,13 @@ runtime:
   ai_enabled: true
   max_ai_calls_per_test: 3
   smart_selector_probe_timeout_ms: 1000
+  self_heal_probe_limit: 12
   candidate_limit: 120
   ai_step_candidate_limit: 24
   llm_selector_candidate_scan_limit: 120
   llm_selector_candidate_limit: 24
+  semantic_ai_validation_enabled: true
+  semantic_ai_validation_min_confidence: 0.75
   agent_candidate_scan_limit: 120
   agent_candidate_limit: 16
   agent_model_candidate_limit: 10
@@ -73,7 +76,7 @@ generation:
 llm:
   omit_temperature: true
   response_format: auto
-  timeout_seconds: 60
+  timeout_seconds: 120
   schema_version: ui-ai-schema-v1
 
 data_boundary:
