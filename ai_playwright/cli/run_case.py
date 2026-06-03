@@ -6,7 +6,6 @@ import time
 from datetime import datetime
 from typing import Optional
 
-import pytest
 import typer
 from rich.table import Table
 
@@ -154,6 +153,8 @@ def main(
     try:
         pytest_args = build_pytest_args(config)
         logger.info(f"使用参数运行pytest: {' '.join(pytest_args)}")
+        import pytest
+
         exit_code = pytest.main(pytest_args)
         show_test_summary(start_time)
         tracker.finish_run(

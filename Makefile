@@ -36,17 +36,18 @@ package-check: build
 	tmpdir="$$(mktemp -d)"; \
 	pkgdir="$$tmpdir/pkg"; \
 	workdir="$$tmpdir/work"; \
+	repo_python="$$($(PYTHON) -c 'import sys; print(sys.executable)')"; \
 	mkdir -p "$$pkgdir" "$$workdir"; \
 	uv pip install --target "$$pkgdir" --no-deps dist/*.whl; \
 	cd "$$workdir"; \
-	PKGDIR="$$pkgdir" PYTHONPATH="$$pkgdir" uv run python -c 'import importlib.metadata as md, os, pathlib, ai_playwright; pkgdir = pathlib.Path(os.environ["PKGDIR"]).resolve(); package_file = pathlib.Path(ai_playwright.__file__).resolve(); assert package_file.is_relative_to(pkgdir), package_file; scripts = {ep.name for ep in md.entry_points(group="console_scripts") if ep.value.startswith("ai_playwright.")}; assert {"run_case", "gen", "ai-playwright-init", "ai-playwright-install-browser"} <= scripts, scripts'; \
+	PKGDIR="$$pkgdir" PYTHONPATH="$$pkgdir" "$$repo_python" -c 'import importlib.metadata as md, os, pathlib, ai_playwright; pkgdir = pathlib.Path(os.environ["PKGDIR"]).resolve(); package_file = pathlib.Path(ai_playwright.__file__).resolve(); assert package_file.is_relative_to(pkgdir), package_file; scripts = {ep.name for ep in md.entry_points(group="console_scripts") if ep.value.startswith("ai_playwright.")}; assert {"run_case", "gen", "ai-playwright-init", "ai-playwright-install-browser"} <= scripts, scripts'; \
 	test -f "$$pkgdir/ai_playwright/templates/test_data/demo/cases/saucedemo_ai.yaml"; \
-	PYTHONPATH="$$pkgdir" uv run python -m ai_playwright.cli.run_case --help; \
-	PYTHONPATH="$$pkgdir" uv run python -m ai_playwright.cli.generate_case --help; \
-	PYTHONPATH="$$pkgdir" uv run python -m ai_playwright.cli.init_project --help; \
-	PYTHONPATH="$$pkgdir" uv run python -m ai_playwright.cli.install_browser --help; \
+	PYTHONPATH="$$pkgdir" "$$repo_python" -m ai_playwright.cli.run_case --help; \
+	PYTHONPATH="$$pkgdir" "$$repo_python" -m ai_playwright.cli.generate_case --help; \
+	PYTHONPATH="$$pkgdir" "$$repo_python" -m ai_playwright.cli.init_project --help; \
+	PYTHONPATH="$$pkgdir" "$$repo_python" -m ai_playwright.cli.install_browser --help; \
 	set +e; \
-	PYTHONPATH="$$pkgdir" uv run python -m ai_playwright.cli.run_case -p demo -f saucedemo_ai --headless -k __never_matches__; \
+	PYTHONPATH="$$pkgdir" "$$repo_python" -m ai_playwright.cli.run_case -p demo -f saucedemo_ai --headless -k __never_matches__; \
 	status="$$?"; \
 	set -e; \
 	test "$$status" -eq 5
