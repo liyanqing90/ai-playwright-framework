@@ -587,7 +587,7 @@ def _validate_selector_requirement(
         return
     if looks_like_raw_selector(selector):
         return
-    if mode == "smart" and has_target:
+    if mode == "smart":
         return
     target_hint = f"，target={target}" if target else ""
     context.add_issue(

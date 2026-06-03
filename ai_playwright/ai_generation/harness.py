@@ -92,11 +92,6 @@ class GenerationHarness:
                     case_data["steps"],
                     element_selectors={**self.context.elements, **payload["elements"]},
                 )
-                _ensure_step_semantic_targets(
-                    case_data["steps"],
-                    selector_element_aliases=selector_element_aliases,
-                    element_target_aliases=element_target_aliases,
-                )
         return payload
 
     def validate(self, payload: dict[str, Any]) -> list[str]:
@@ -319,11 +314,6 @@ class GenerationHarness:
                 selector_element_aliases=selector_element_aliases or set(),
                 semantic_element_aliases=semantic_element_aliases or {},
                 element_key_aliases=element_key_aliases or {},
-                element_target_aliases=element_target_aliases or {},
-            )
-            _ensure_step_semantic_target(
-                item,
-                selector_element_aliases=selector_element_aliases or set(),
                 element_target_aliases=element_target_aliases or {},
             )
             normalized.append(item)
@@ -569,6 +559,7 @@ class GenerationHarness:
             and not isinstance(selector, dict)
             and selector not in known_elements
             and not _looks_raw_selector(selector)
+            and effective_mode == "strict"
         ):
             raise ValueError(
                 f"{case_name} step {index} selector 未在 elements 中定义，"
@@ -893,102 +884,22 @@ def _normalize_step_element_references(
         normalized_key = element_key_aliases[target]
         if not step.get("selector"):
             step["selector"] = normalized_key
-        step["target"] = element_target_aliases.get(
-            normalized_key
-        ) or _target_from_element_key(normalized_key)
+            step.pop("target", None)
+        else:
+            step["target"] = element_target_aliases.get(
+                normalized_key
+            ) or _target_from_element_key(normalized_key)
     elif target in semantic_element_aliases:
         step["target"] = semantic_element_aliases[target]
     elif target in selector_element_aliases:
         if not step.get("selector"):
             step["selector"] = target
-        step["target"] = element_target_aliases.get(target) or _target_from_element_key(
-            target
-        )
+            step.pop("target", None)
+        else:
+            step["target"] = element_target_aliases.get(
+                target
+            ) or _target_from_element_key(target)
     return step
-
-
-def _ensure_step_semantic_targets(
-    steps: list[dict[str, Any]],
-    *,
-    selector_element_aliases: set[str],
-    element_target_aliases: dict[str, str],
-) -> None:
-    for step in steps:
-        if isinstance(step, dict):
-            _ensure_step_semantic_target(
-                step,
-                selector_element_aliases=selector_element_aliases,
-                element_target_aliases=element_target_aliases,
-            )
-
-
-def _ensure_step_semantic_target(
-    step: dict[str, Any],
-    *,
-    selector_element_aliases: set[str],
-    element_target_aliases: dict[str, str],
-) -> None:
-    action = str(step.get("action") or "").lower()
-    if not action or action in _NO_SELECTOR_ACTIONS:
-        return
-    selector = step.get("selector")
-    if not selector or isinstance(selector, dict):
-        return
-    target = step.get("target")
-    if _is_usable_semantic_target(target, selector_element_aliases):
-        return
-    candidate = _target_from_step_description(step)
-    if not candidate:
-        candidate = element_target_aliases.get(str(selector).strip())
-    if not candidate:
-        candidate = _target_from_selector(selector)
-    if not candidate:
-        candidate = _target_from_element_key(str(selector))
-    if candidate:
-        step["target"] = candidate
-
-
-def _is_usable_semantic_target(
-    target: Any,
-    selector_element_aliases: set[str],
-) -> bool:
-    text = str(target or "").strip()
-    if not text:
-        return False
-    if text in selector_element_aliases:
-        return False
-    if _looks_raw_selector(text):
-        return False
-    return True
-
-
-def _target_from_step_description(step: dict[str, Any]) -> str:
-    description = str(step.get("description") or "").strip()
-    if not description or _looks_raw_selector(description):
-        return ""
-    if len(description) > 120:
-        return ""
-    return description
-
-
-def _target_from_selector(value: Any) -> str:
-    selector = str(value or "").strip()
-    if not selector:
-        return ""
-    text = _selector_text_query(selector, element_selectors={})
-    if text:
-        return text
-    attr_match = re.search(
-        r"\[(?:aria-label|title|placeholder|name|data-test|data-testid|data-qa|"
-        r"data-cy|data-ui|id)[^\]]*=\s*(['\"])(.*?)\1",
-        selector,
-        flags=re.IGNORECASE,
-    )
-    if attr_match:
-        return _target_from_identifier(attr_match.group(2))
-    if selector.startswith("#"):
-        return _target_from_identifier(selector[1:])
-    return ""
 
 
 def _target_from_element_key(value: str) -> str:

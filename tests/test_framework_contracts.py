@@ -738,6 +738,50 @@ def test_step_executor_uses_element_key_semantics_as_smart_target_without_explic
     assert events[1] == ("execute", "click", 'button:has-text("Submit")', None)
 
 
+def test_step_executor_treats_unknown_smart_selector_key_as_target(monkeypatch):
+    events: list[Any] = []
+
+    class FakeResolver:
+        def resolve(self, **kwargs):
+            events.append(("resolve", kwargs["selector"], kwargs["target"]))
+            return ResolvedSelector(
+                selector="#logout_sidebar_link",
+                source="heuristic",
+                confidence=0.9,
+                cache_action="click",
+                cache_target=kwargs["target"],
+                cache_page_key="https://example.test/products",
+            )
+
+        def record_verified_selector(self, **kwargs):
+            events.append(("cache", kwargs))
+
+    class FakePage:
+        url = "https://example.test/products"
+
+    class FakeUiHelper:
+        pass
+
+    def fake_execute_action_with_command(ui_helper, action, selector, value, step):
+        events.append(("execute", action, selector, value))
+
+    monkeypatch.setenv("UI_SELECTOR_CACHE_COMMIT_MODE", "immediate")
+    monkeypatch.setattr(
+        "ai_playwright.step_actions.step_executor.execute_action_with_command",
+        fake_execute_action_with_command,
+    )
+
+    executor = StepExecutor(FakePage(), FakeUiHelper(), elements={})
+    executor.smart_resolver = FakeResolver()
+
+    executor.execute_step(
+        {"action": "click", "selector": "logout_sidebar_link", "mode": "smart"}
+    )
+
+    assert events[0] == ("resolve", None, "logout sidebar link")
+    assert events[1] == ("execute", "click", "#logout_sidebar_link", None)
+
+
 def test_step_executor_does_not_treat_raw_selector_as_smart_target(monkeypatch):
     events: list[Any] = []
 

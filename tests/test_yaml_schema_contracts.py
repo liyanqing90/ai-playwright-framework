@@ -106,6 +106,20 @@ def test_yaml_schema_allows_smart_target_without_selector(tmp_path: Path):
     validate_project(project)
 
 
+def test_yaml_schema_allows_smart_selector_key_without_target(tmp_path: Path):
+    project = _write_schema_project(
+        tmp_path,
+        case_data={
+            "description": "smart selector key fallback",
+            "mode": "smart",
+            "steps": [{"action": "click", "selector": "logout_sidebar_link"}],
+        },
+        elements={"submit_button": "#submit"},
+    )
+
+    validate_project(project)
+
+
 def test_yaml_schema_allows_native_ai_step_instruction(tmp_path: Path):
     project = _write_schema_project(
         tmp_path,
@@ -294,7 +308,7 @@ def test_pytest_target_schema_validation_does_not_read_unselected_generated_asse
             [
                 "test_data:",
                 "  test_generated:",
-                "    mode: smart",
+                "    mode: strict",
                 "    steps:",
                 "      - action: click",
                 "        selector: generated_later_button",

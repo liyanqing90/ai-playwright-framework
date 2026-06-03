@@ -778,7 +778,41 @@ def test_generation_harness_normalizes_model_field_aliases(tmp_path: Path):
     assert payload["elements"]["search_input"] == "#kw"
 
 
-def test_generation_harness_rejects_unknown_selector_key(tmp_path: Path):
+def test_generation_harness_rejects_unknown_selector_key_in_strict_mode(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="",
+            elements={"page_title": ".title"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "strict"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "strict",
+                    "steps": [
+                        {"action": "click", "selector": "shopping_cart_badge"},
+                        {"action": "assert_visible", "selector": "page_title"},
+                    ],
+                }
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="selector 未在 elements"):
+        harness.validate(payload)
+
+
+def test_generation_harness_allows_smart_selector_key_without_target(tmp_path: Path):
     harness = GenerationHarness(
         context=ProjectContext(
             project="demo",
@@ -808,8 +842,11 @@ def test_generation_harness_rejects_unknown_selector_key(tmp_path: Path):
         }
     )
 
-    with pytest.raises(ValueError, match="selector 未在 elements"):
-        harness.validate(payload)
+    assert payload["data"]["test_generated"]["steps"][0] == {
+        "action": "click",
+        "selector": "shopping_cart_badge",
+    }
+    assert harness.validate(payload) == []
 
 
 def test_generation_harness_scopes_generated_element_key_collisions_by_page_context(
@@ -853,7 +890,6 @@ def test_generation_harness_scopes_generated_element_key_collisions_by_page_cont
     assert steps[2] == {
         "action": "click",
         "selector": "search_input_Catalog_Review",
-        "target": "search input Catalog Review",
     }
 
 
@@ -1161,13 +1197,11 @@ def test_generation_harness_maps_title_assertion_to_visible_title_element(
         {
             "action": "assert_text",
             "selector": "page_title",
-            "target": "page title",
             "value": "Products",
         },
         {
             "action": "assert_text_contains",
             "selector": "page_title",
-            "target": "page title",
             "value": "Cart",
         },
     ]
@@ -1218,7 +1252,6 @@ def test_generation_harness_rewrites_element_key_targets(tmp_path: Path):
         "action": "fill",
         "value": "x",
         "selector": "known_search_input",
-        "target": "known search input",
     }
     assert steps[1] == {"action": "click", "target": "椤甸潰椤堕儴鎼滅储鎸夐挳"}
     assert payload["elements"] == {}
@@ -1863,7 +1896,6 @@ def test_generation_harness_normalizes_input_value_attribute_assertion(tmp_path:
     assert step == {
         "action": "assert_value",
         "selector": "product_id",
-        "target": "product ID",
         "value": "DEMO-SKU-001",
     }
     assert harness.validate(payload) == []
@@ -2018,7 +2050,6 @@ def test_generation_harness_normalizes_fill_value_text_assertion_to_supported_va
     assert steps[1] == {
         "action": "assert_value",
         "selector": "product_id",
-        "target": "product ID",
         "value": "DEMO-SKU-001",
     }
     assert harness.validate(payload) == []
@@ -2104,7 +2135,6 @@ def test_generation_harness_drops_unbacked_generated_url_assertions(tmp_path: Pa
         {
             "action": "assert_text_contains",
             "selector": "title",
-            "target": "title",
             "value": "Catalog Review",
         }
     ]
@@ -2252,7 +2282,6 @@ def test_generation_harness_normalizes_model_dict_scalar_fields(tmp_path: Path):
     assert payload["data"]["test_generated"]["steps"][1] == {
         "action": "assert_visible",
         "selector": "title",
-        "target": "title",
     }
     assert harness.validate(payload) == []
 

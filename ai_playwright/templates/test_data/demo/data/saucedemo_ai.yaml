@@ -5,6 +5,7 @@ test_data:
       - use_module: saucedemo_login
         params:
           username: ${standard_username}
+          common_password: ${common_password}
       - action: assert_text
         selector: sauce_page_title
         value: Products

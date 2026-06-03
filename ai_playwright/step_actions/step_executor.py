@@ -198,17 +198,21 @@ class StepExecutor:
             )
             if mode != "strict" and not target and pre_selector:
                 fallback_target = None
+                selector_is_semantic_key = False
                 if element_key:
                     fallback_target = _target_from_element_key(element_key)
                 elif not (
                     isinstance(pre_selector, str)
                     and looks_like_raw_selector(pre_selector)
                 ):
-                    fallback_target = pre_selector
+                    fallback_target = _target_from_element_key(pre_selector)
+                    selector_is_semantic_key = True
                 if fallback_target:
                     target = self.variable_manager.replace_variables_refactored(
                         fallback_target
                     )
+                if selector_is_semantic_key:
+                    selector = None
             selector = self._resolve_selector(
                 action,
                 selector,
