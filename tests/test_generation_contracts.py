@@ -1295,6 +1295,146 @@ def test_generation_harness_binds_semantic_target_to_element_key(tmp_path: Path)
     assert harness.validate(payload) == []
 
 
+def test_generation_mirrors_candidate_selector_updates_to_formal_context(
+    tmp_path: Path,
+):
+    formal_dir = tmp_path / "formal"
+    elements_dir = formal_dir / "elements"
+    elements_dir.mkdir(parents=True)
+    elements_file = elements_dir / "crm_store.yaml"
+    elements_file.write_text(
+        "elements:\n  login_button: button:has-text('\u767b\u5f55')\n",
+        encoding="utf-8",
+    )
+    context = ProjectContext(
+        project="demo",
+        test_dir=formal_dir,
+        base_url="",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+
+    mirrored = case_generator_module._mirror_persisted_selector_updates_to_context(
+        context=context,
+        updates=[
+            {
+                "source_key": "login_button",
+                "persisted_key": "login_button",
+                "selector": 'button:has-text("\u767b \u5f55")',
+                "target": "\u767b\u5f55\u6309\u94ae",
+                "action": "click",
+            }
+        ],
+    )
+
+    assert mirrored[0]["persisted_key"] == "login_button"
+    assert mirrored[0]["selector"] == "//button[normalize-space()='\u767b \u5f55']"
+    assert (
+        "login_button: //button[normalize-space()='\u767b \u5f55']"
+        in elements_file.read_text(encoding="utf-8")
+    )
+
+
+def test_generation_reuses_verified_selector_updates_in_payload_elements(
+    tmp_path: Path,
+):
+    payload = {
+        "elements": {
+            "login_button": "button:has-text('登录')",
+        },
+        "data": {
+            "case": {
+                "steps": [
+                    {
+                        "action": "click",
+                        "selector": "login_button",
+                        "target": "OA登录按钮",
+                    }
+                ]
+            }
+        },
+    }
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+
+    case_generator_module._apply_persisted_selector_key_aliases(
+        context=context,
+        result={"payload": payload},
+        updates=[
+            {
+                "source_key": "login_button",
+                "persisted_key": "OA登录按钮_login_button",
+                "selector": "#oa-login",
+                "target": "OA登录按钮",
+                "action": "click",
+            }
+        ],
+    )
+
+    assert payload["elements"]["login_button"] == "button:has-text('登录')"
+    assert payload["elements"]["OA登录按钮_login_button"] == "#oa-login"
+    assert payload["data"]["case"]["steps"][0]["selector"] == "OA登录按钮_login_button"
+
+
+def test_generation_rewrites_candidate_selector_key_to_formal_key(tmp_path: Path):
+    payload = {
+        "elements": {
+            "candidate_login_button": "#candidate-login",
+        },
+        "data": {
+            "case": {
+                "steps": [
+                    {
+                        "action": "click",
+                        "selector": "candidate_login_button",
+                        "target": "OA login button",
+                    }
+                ]
+            }
+        },
+    }
+    context = ProjectContext(
+        project="demo",
+        test_dir=tmp_path,
+        base_url="",
+        elements={},
+        modules={},
+        variables={},
+        test_cases=[],
+        test_data={},
+    )
+
+    case_generator_module._apply_persisted_selector_key_aliases(
+        context=context,
+        result={"payload": payload},
+        updates=[
+            {
+                "source_key": "login_button",
+                "candidate_key": "candidate_login_button",
+                "persisted_key": "formal_login_button",
+                "selector": "#formal-login",
+                "target": "OA login button",
+                "action": "click",
+            }
+        ],
+    )
+
+    assert payload["elements"]["candidate_login_button"] == "#candidate-login"
+    assert payload["elements"]["formal_login_button"] == "#formal-login"
+    assert payload["data"]["case"]["steps"][0]["selector"] == "formal_login_button"
+
+
 def test_generation_harness_prefixes_pytest_case_names():
     assert _safe_case_name("saucedemo_backpack_cart") == "test_saucedemo_backpack_cart"
     assert _safe_case_name("test_existing_name") == "test_existing_name"

@@ -246,7 +246,10 @@ def pytest_runtest_makereport(item, call):
 
     # 设置测试节点的rep_call属性
     setattr(item, f"rep_{rep.when}", rep)
-    if rep.failed:
+    keep_generation_verified_selectors = os.environ.get(
+        "UI_GENERATION_KEEP_VERIFIED_SELECTORS_ON_FAILURE", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if rep.failed and not keep_generation_verified_selectors:
         discard_pending_selector_cache(
             reason=f"{getattr(rep, 'outcome', 'failed')} during {rep.when}"
         )

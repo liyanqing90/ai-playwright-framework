@@ -27,6 +27,10 @@ from ai_playwright.ai_generation.pipeline import compile_case_payload
 from ai_playwright.ai_runtime.cache_scope import resolve_entry_scope
 from ai_playwright.ai_runtime.config import load_ai_config
 from ai_playwright.ai_runtime.contracts import GeneratedCasePayload
+from ai_playwright.ai_runtime.element_store import (
+    ElementDefinitionStore,
+    wait_for_pending_element_updates,
+)
 from ai_playwright.ai_runtime.provider import (
     ChatCompletionProvider,
     load_llm_settings,
@@ -35,6 +39,7 @@ from ai_playwright.step_actions.action_types import StepAction
 from ai_playwright.step_actions.step_executor import (
     commit_pending_selector_cache,
     discard_pending_selector_cache,
+    pop_persisted_selector_updates,
 )
 from ai_playwright.project_paths import is_packaged_template_path
 from ai_playwright.yaml_schema import (
@@ -198,6 +203,338 @@ def generate_case_files(
 def _emit(progress: Callable[[str], None] | None, message: str) -> None:
     if progress:
         progress(message)
+
+
+def _commit_pending_selector_assets() -> list[dict[str, Any]]:
+    commit_pending_selector_cache()
+    wait_for_pending_element_updates(timeout_seconds=2.0)
+    return pop_persisted_selector_updates()
+
+
+def _reuse_candidate_verified_selector_assets(
+    *,
+    context: ProjectContext,
+    candidate_context: ProjectContext,
+    candidate_result: dict[str, Any],
+    artifacts: _GenerationArtifacts | None = None,
+    progress: Callable[[str], None] | None = None,
+    reason: str,
+) -> list[dict[str, Any]]:
+    candidate_updates = _commit_pending_selector_assets()
+    if not candidate_updates:
+        return []
+
+    _apply_persisted_selector_key_aliases(
+        context=candidate_context,
+        result=candidate_result,
+        updates=candidate_updates,
+        artifacts=artifacts,
+        progress=progress,
+    )
+    mirrored_updates = _mirror_persisted_selector_updates_to_context(
+        context=context,
+        updates=candidate_updates,
+    )
+    if mirrored_updates:
+        alias_entries = _persisted_selector_alias_entries(
+            context=context,
+            updates=mirrored_updates,
+        )
+        payload_element_changes = _apply_persisted_selector_values_to_payload(
+            candidate_result.get("payload"),
+            mirrored_updates,
+        )
+        payload_changed = _rewrite_selector_references_in_node(
+            candidate_result.get("payload"),
+            alias_entries,
+        )
+        if artifacts:
+            artifacts.write_json(
+                f"{_safe_artifact_name(reason)}_formal_selector_updates.json",
+                mirrored_updates,
+            )
+            artifacts.write_json(
+                f"{_safe_artifact_name(reason)}_formal_selector_aliases.json",
+                alias_entries,
+            )
+        _emit(
+            progress,
+            "reused verified candidate selector assets: "
+            f"updates={len(mirrored_updates)}, payload_refs={payload_changed}, "
+            f"payload_elements={payload_element_changes}",
+        )
+    return candidate_updates + mirrored_updates
+
+
+def _apply_persisted_selector_key_aliases(
+    *,
+    context: ProjectContext,
+    result: dict[str, Any],
+    updates: list[dict[str, Any]],
+    artifacts: _GenerationArtifacts | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> int:
+    alias_entries = _persisted_selector_alias_entries(
+        context=context,
+        updates=updates,
+    )
+    if artifacts:
+        artifacts.write_json("persisted_selector_updates.json", updates)
+        artifacts.write_json("persisted_selector_aliases.json", alias_entries)
+    payload_element_changes = _apply_persisted_selector_values_to_payload(
+        result.get("payload"),
+        updates,
+    )
+    if not alias_entries:
+        return payload_element_changes
+
+    payload_changed = _rewrite_selector_references_in_node(
+        result.get("payload"),
+        alias_entries,
+    )
+    file_changed = 0
+    for file_key in ("data_file", "modules_file"):
+        path = result.get(file_key)
+        if path:
+            file_changed += _rewrite_selector_references_in_yaml_file(
+                Path(path),
+                alias_entries,
+            )
+    if file_changed:
+        _validate_written_case_file(result)
+    if file_changed or payload_element_changes:
+        _emit(
+            progress,
+            "synced healed selector references: "
+            f"selectors={file_changed}, payload_refs={payload_changed}, "
+            f"payload_elements={payload_element_changes}",
+        )
+    return file_changed + payload_element_changes
+
+
+def _apply_persisted_selector_values_to_payload(
+    payload: Any,
+    updates: list[dict[str, Any]],
+) -> int:
+    if not isinstance(payload, dict):
+        return 0
+    elements = payload.get("elements")
+    if not isinstance(elements, dict):
+        return 0
+
+    changed = 0
+    for update in updates:
+        selector = str(update.get("selector") or "").strip()
+        if not selector:
+            continue
+        source_key = str(update.get("source_key") or "").strip()
+        persisted_key = str(update.get("persisted_key") or source_key).strip()
+        if not persisted_key:
+            continue
+
+        if persisted_key in elements:
+            changed += _replace_payload_element_selector(
+                elements,
+                persisted_key,
+                selector,
+            )
+            continue
+
+        if source_key in elements:
+            source_value = elements[source_key]
+            if persisted_key == source_key:
+                changed += _replace_payload_element_selector(
+                    elements,
+                    source_key,
+                    selector,
+                )
+            else:
+                elements[persisted_key] = _payload_element_with_selector(
+                    source_value,
+                    selector,
+                )
+                changed += 1
+            continue
+
+        elements[persisted_key] = selector
+        changed += 1
+    return changed
+
+
+def _replace_payload_element_selector(
+    elements: dict[str, Any],
+    key: str,
+    selector: str,
+) -> int:
+    current = elements.get(key)
+    if isinstance(current, dict):
+        if current.get("selector") == selector:
+            return 0
+        current["selector"] = selector
+        return 1
+    if current == selector:
+        return 0
+    elements[key] = selector
+    return 1
+
+
+def _payload_element_with_selector(value: Any, selector: str) -> Any:
+    if isinstance(value, dict):
+        cloned = deepcopy(value)
+        cloned["selector"] = selector
+        return cloned
+    return selector
+
+
+def _mirror_persisted_selector_updates_to_context(
+    *,
+    context: ProjectContext,
+    updates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    store = ElementDefinitionStore(test_dir=context.test_dir)
+    mirrored: list[dict[str, Any]] = []
+    for update in updates:
+        source_key = str(update.get("source_key") or "").strip()
+        selector = str(update.get("selector") or "").strip()
+        if not source_key or not selector:
+            continue
+        result = store.update_selector(
+            source_key,
+            selector,
+            identifier=str(update.get("target") or "").strip() or None,
+            allow_semantic_generic_update=str(update.get("action") or "").lower()
+            in {"click", "press", "press_key", "check", "uncheck", "set_checked"},
+        )
+        if not result.updated and result.reason != "unchanged":
+            logger.warning(
+                "failed to mirror candidate selector into formal elements: "
+                f"key={source_key} | selector={selector} | reason={result.reason}"
+            )
+            continue
+        mirrored.append(
+            {
+                "source_key": source_key,
+                "candidate_key": update.get("persisted_key"),
+                "persisted_key": result.key,
+                "selector": result.new_selector,
+                "old_selector": result.old_selector,
+                "updated": result.updated,
+                "reason": result.reason,
+                "path": str(result.path) if result.path else "",
+                "target": update.get("target"),
+                "action": update.get("action"),
+            }
+        )
+    return mirrored
+
+
+def _persisted_selector_alias_entries(
+    *,
+    context: ProjectContext,
+    updates: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for update in updates:
+        source_key = str(update.get("source_key") or "").strip()
+        candidate_key = str(update.get("candidate_key") or "").strip()
+        persisted_key = str(update.get("persisted_key") or "").strip()
+        if not persisted_key:
+            continue
+        path = str(update.get("path") or "").strip()
+        if path and not _path_is_relative_to(Path(path), context.test_dir):
+            continue
+        target = str(update.get("target") or "").strip()
+        action = str(update.get("action") or "").strip().lower()
+        for alias_source in (source_key, candidate_key):
+            if not alias_source or alias_source == persisted_key:
+                continue
+            dedupe_key = (alias_source, persisted_key, target, action)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            entries.append(
+                {
+                    "source_key": alias_source,
+                    "persisted_key": persisted_key,
+                    "target": target,
+                    "action": action,
+                    "path": path,
+                }
+            )
+    return entries
+
+
+def _path_is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _rewrite_selector_references_in_yaml_file(
+    path: Path,
+    alias_entries: list[dict[str, str]],
+) -> int:
+    if not path.exists():
+        return 0
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    with path.open("r", encoding="utf-8") as fh:
+        data = yaml.load(fh) or {}
+    changed = _rewrite_selector_references_in_node(data, alias_entries)
+    if not changed:
+        return 0
+    tmp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    with tmp_path.open("w", encoding="utf-8") as fh:
+        yaml.dump(data, fh)
+    tmp_path.replace(path)
+    return changed
+
+
+def _rewrite_selector_references_in_node(
+    node: Any,
+    alias_entries: list[dict[str, str]],
+) -> int:
+    changed = 0
+    if isinstance(node, dict):
+        selector = node.get("selector")
+        if isinstance(selector, str):
+            alias = _selector_alias_for_step(node, alias_entries)
+            if alias and selector != alias:
+                node["selector"] = alias
+                changed += 1
+        for value in node.values():
+            changed += _rewrite_selector_references_in_node(value, alias_entries)
+    elif isinstance(node, list):
+        for item in node:
+            changed += _rewrite_selector_references_in_node(item, alias_entries)
+    return changed
+
+
+def _selector_alias_for_step(
+    step: dict[str, Any],
+    alias_entries: list[dict[str, str]],
+) -> str | None:
+    selector = str(step.get("selector") or "").strip()
+    target = str(step.get("target") or "").strip()
+    action = str(step.get("action") or "").strip().lower()
+    fallback: str | None = None
+    for entry in alias_entries:
+        if selector != entry["source_key"]:
+            continue
+        entry_target = entry.get("target") or ""
+        entry_action = entry.get("action") or ""
+        if entry_target and target and entry_target != target:
+            continue
+        if entry_action and action and entry_action != action:
+            continue
+        if entry_target or entry_action:
+            return entry["persisted_key"]
+        fallback = entry["persisted_key"]
+    return fallback
 
 
 class _GenerationArtifacts:
@@ -430,13 +767,32 @@ def _write_and_verify_candidate(
         verify=lambda: _validate_written_case_file(candidate_result),
     )
     _emit(progress, "候选YAML schema校验通过")
-    _verify_generated_case(
-        context=candidate_context,
-        env=env,
-        result=candidate_result,
-        progress=progress,
-        stage="候选",
+    try:
+        _verify_generated_case(
+            context=candidate_context,
+            env=env,
+            result=candidate_result,
+            progress=progress,
+            stage="候选",
+            artifacts=artifacts,
+        )
+    except Exception:
+        _reuse_candidate_verified_selector_assets(
+            context=context,
+            candidate_context=candidate_context,
+            candidate_result=candidate_result,
+            artifacts=artifacts,
+            progress=progress,
+            reason="candidate_failed",
+        )
+        raise
+    _reuse_candidate_verified_selector_assets(
+        context=context,
+        candidate_context=candidate_context,
+        candidate_result=candidate_result,
         artifacts=artifacts,
+        progress=progress,
+        reason="candidate_passed",
     )
     return candidate_context, candidate_result
 
@@ -601,6 +957,8 @@ def _verify_generated_case(
     os.environ.setdefault("PWSLOWMO", "0")
     os.environ.setdefault("UI_AI_MODE", "strict")
     os.environ["UI_SELECTOR_CACHE_COMMIT_MODE"] = "deferred"
+    os.environ["UI_GENERATION_PERSIST_VERIFIED_HEALS"] = "1"
+    os.environ["UI_GENERATION_KEEP_VERIFIED_SELECTORS_ON_FAILURE"] = "1"
     _configure_runtime_for_verification(context=context, env=env)
     _clear_runtime_data_caches()
     browser_name = os.environ.get("BROWSER", "chromium")
@@ -737,6 +1095,8 @@ _VERIFY_ENV_KEYS = (
     "PWSLOWMO",
     "UI_AI_MODE",
     "UI_SELECTOR_CACHE_COMMIT_MODE",
+    "UI_GENERATION_PERSIST_VERIFIED_HEALS",
+    "UI_GENERATION_KEEP_VERIFIED_SELECTORS_ON_FAILURE",
 )
 
 

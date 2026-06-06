@@ -49,6 +49,8 @@ from ai_playwright.utils.variable_manager import VariableManager
 _PENDING_SELECTOR_CACHE_LOCK = threading.RLock()
 _PENDING_SELECTOR_CACHE: list[tuple[str, Callable[[], None]]] = []
 _DEFERRED_SELECTOR_CACHE_MODES = {"deferred", "after_test", "after-case", "after_case"}
+_PERSISTED_SELECTOR_UPDATES_LOCK = threading.RLock()
+_PERSISTED_SELECTOR_UPDATES: list[dict[str, Any]] = []
 
 
 def _selector_cache_commit_mode() -> str:
@@ -83,6 +85,13 @@ def commit_pending_selector_cache() -> None:
             )
 
 
+def pop_persisted_selector_updates() -> list[dict[str, Any]]:
+    with _PERSISTED_SELECTOR_UPDATES_LOCK:
+        updates = list(_PERSISTED_SELECTOR_UPDATES)
+        _PERSISTED_SELECTOR_UPDATES.clear()
+    return updates
+
+
 def discard_pending_selector_cache(reason: str | None = None) -> None:
     with _PENDING_SELECTOR_CACHE_LOCK:
         count = len(_PENDING_SELECTOR_CACHE)
@@ -92,6 +101,10 @@ def discard_pending_selector_cache(reason: str | None = None) -> None:
             "selector cache discarded before test verification completed: "
             f"count={count} | reason={reason or 'not verified'}"
         )
+
+
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class StepExecutor:
@@ -585,9 +598,18 @@ class StepExecutor:
                 )
                 return
 
-            self.elements[element_key] = resolved_selector
+            self.elements[result.key] = resolved_selector
             if result.path:
                 step["_resolved_persisted_element_file"] = str(result.path)
+            if result.key != element_key:
+                step["_resolved_persisted_element_key"] = result.key
+
+            self._record_persisted_selector_update(
+                source_key=element_key,
+                result=result,
+                old_selector=old_selector,
+                step=step,
+            )
 
             if result.updated:
                 logger.info(
@@ -603,6 +625,71 @@ class StepExecutor:
             logger.exception(
                 "selector自愈回写elements异常，不阻塞执行: "
                 f"key={element_key} | old={old_selector} | new={resolved_selector} | error={exc}"
+            )
+
+    def _persist_healed_selector_after_verified(
+        self,
+        *,
+        element_key: str | None,
+        original_selector: str | None,
+        resolved_selector: str | None,
+        healing_attempted: bool,
+        step: Dict[str, Any],
+    ) -> bool:
+        if not healing_attempted or not element_key:
+            return False
+        if not resolved_selector:
+            logger.warning(
+                "selector healed but elements not updated: "
+                f"key={element_key} | reason=empty resolved_selector"
+            )
+            return False
+        if original_selector == resolved_selector:
+            return True
+        generation_persist_allowed = self._generation_verified_heal_persist_allowed(
+            step
+        )
+        if not generation_persist_allowed:
+            return False
+
+        self._bind_element_store_for_verified_heal()
+        step["_resolved_persist_scheduled"] = True
+        self._persist_healed_selector_worker(
+            element_key=element_key,
+            resolved_selector=resolved_selector,
+            old_selector=original_selector,
+            step=step,
+        )
+        return True
+
+    @staticmethod
+    def _record_persisted_selector_update(
+        *,
+        source_key: str,
+        result: Any,
+        old_selector: str | None,
+        step: Dict[str, Any],
+    ) -> None:
+        if not step.get("_generation_persist_verified_heals"):
+            return
+        update = {
+            "source_key": source_key,
+            "persisted_key": result.key,
+            "selector": result.new_selector,
+            "old_selector": old_selector,
+            "updated": result.updated,
+            "reason": result.reason,
+            "path": str(result.path) if result.path else "",
+            "target": step.get("_resolved_cache_target") or step.get("target"),
+            "action": step.get("action"),
+        }
+        with _PERSISTED_SELECTOR_UPDATES_LOCK:
+            _PERSISTED_SELECTOR_UPDATES.append(update)
+
+    def _bind_element_store_for_verified_heal(self) -> None:
+        if self.element_store is None:
+            self.element_store = ElementDefinitionStore(
+                test_dir=os.environ.get("TEST_DIR")
             )
 
     def _persist_healed_elements_enabled(self) -> bool:
@@ -624,6 +711,13 @@ class StepExecutor:
             )
             return False
         confidence = step.get("_resolved_confidence")
+        if self._generation_verified_heal_persist_allowed(step):
+            logger.info(
+                "selector healed persistence allowed: "
+                f"key={step.get('_resolved_element_key')} | "
+                f"reason=generation verified action | confidence={confidence}"
+            )
+            return True
         min_confidence = float(cfg.get("min_persist_confidence", 0.85))
         if confidence is None or float(confidence) < min_confidence:
             logger.info(
@@ -633,6 +727,18 @@ class StepExecutor:
             )
             return False
         return True
+
+    @staticmethod
+    def _generation_verified_heal_persist_allowed(step: Dict[str, Any]) -> bool:
+        if not (
+            step.get("_generation_persist_verified_heals")
+            or _truthy_env("UI_GENERATION_PERSIST_VERIFIED_HEALS")
+        ):
+            return False
+        action_result = step.get("_action_result")
+        if isinstance(action_result, dict) and action_result.get("success") is False:
+            return False
+        return bool(step.get("_resolved_healing_attempted"))
 
     def _persist_resolved_selector_after_success(
         self,
@@ -738,7 +844,12 @@ class StepExecutor:
         resolved_selector: str | None,
         step: Dict[str, Any],
     ) -> None:
+        if element_key and step.get("_resolved_healing_attempted"):
+            self._bind_element_store_for_verified_heal()
         snapshot = dict(step)
+        snapshot["_generation_persist_verified_heals"] = _truthy_env(
+            "UI_GENERATION_PERSIST_VERIFIED_HEALS"
+        )
         description = self._selector_cache_description(
             step=snapshot,
             resolved_selector=resolved_selector,
@@ -750,14 +861,20 @@ class StepExecutor:
                 resolved_selector=resolved_selector,
                 step=snapshot,
             )
-            # YAML is the authoritative asset. Runtime self-healing records verified
-            # selector evidence only; updating elements YAML must be an explicit user action.
-            self._log_healed_selector_yaml_suggestion(
+            persisted = self._persist_healed_selector_after_verified(
                 element_key=element_key,
                 original_selector=original_selector,
                 resolved_selector=resolved_selector,
                 healing_attempted=bool(snapshot.get("_resolved_healing_attempted")),
+                step=snapshot,
             )
+            if not persisted:
+                self._log_healed_selector_yaml_suggestion(
+                    element_key=element_key,
+                    original_selector=original_selector,
+                    resolved_selector=resolved_selector,
+                    healing_attempted=bool(snapshot.get("_resolved_healing_attempted")),
+                )
 
         if _selector_cache_commit_mode() in _DEFERRED_SELECTOR_CACHE_MODES:
             _defer_selector_cache_commit(description, commit)

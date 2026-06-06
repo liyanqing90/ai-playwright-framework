@@ -1292,6 +1292,78 @@ def test_element_definition_store_updates_last_effective_elements_file(
     assert "#new-login" in override_file.read_text(encoding="utf-8")
 
 
+def test_element_definition_store_scopes_generic_key_for_distinct_identifier(
+    tmp_path: Path,
+):
+    project_dir = tmp_path / "demo"
+    elements_dir = project_dir / "elements"
+    elements_dir.mkdir(parents=True)
+    elements_file = elements_dir / "shared.yaml"
+    elements_file.write_text(
+        "elements:\n  input: '#old-input'\n",
+        encoding="utf-8",
+    )
+
+    result = ElementDefinitionStore(project_dir).update_selector(
+        "input",
+        "#phone-input",
+        identifier="手机号输入框",
+        allow_semantic_generic_update=True,
+    )
+
+    content = elements_file.read_text(encoding="utf-8")
+    assert result.updated is True
+    assert result.key == "手机号输入框_input"
+    assert result.reason == "added_scoped_key"
+    assert "input: '#old-input'" in content
+    assert "手机号输入框_input: '#phone-input'" in content
+
+
+def test_element_definition_store_reuses_existing_scoped_key(
+    tmp_path: Path,
+):
+    project_dir = tmp_path / "demo"
+    elements_dir = project_dir / "elements"
+    elements_dir.mkdir(parents=True)
+    elements_file = elements_dir / "shared.yaml"
+    elements_file.write_text(
+        "elements:\n  input: '#old-input'\n  手机号输入框_input: '#old-phone'\n",
+        encoding="utf-8",
+    )
+
+    result = ElementDefinitionStore(project_dir).update_selector(
+        "input",
+        "#new-phone",
+        identifier="手机号输入框",
+        allow_semantic_generic_update=True,
+    )
+
+    content = elements_file.read_text(encoding="utf-8")
+    assert result.updated is True
+    assert result.key == "手机号输入框_input"
+    assert "手机号输入框_input: '#new-phone'" in content
+    assert "手机号输入框_input_2" not in content
+
+
+def test_element_definition_store_creates_missing_scoped_key(
+    tmp_path: Path,
+):
+    project_dir = tmp_path / "demo"
+
+    result = ElementDefinitionStore(project_dir).update_selector(
+        "login_button",
+        "#oa-login",
+        identifier="OA登录按钮",
+    )
+
+    generated_file = project_dir / "elements" / "generated.yaml"
+    content = generated_file.read_text(encoding="utf-8")
+    assert result.updated is True
+    assert result.key == "OA登录按钮_login_button"
+    assert result.reason == "created"
+    assert "OA登录按钮_login_button: '#oa-login'" in content
+
+
 def test_element_definition_store_preserves_cjk_display_spacing(tmp_path: Path):
     project_dir = tmp_path / "demo"
     elements_dir = project_dir / "elements"

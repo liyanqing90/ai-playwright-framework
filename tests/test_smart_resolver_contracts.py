@@ -1750,6 +1750,84 @@ def test_step_executor_does_not_call_element_store_when_healed_selector_verified
     assert executor.elements["login_button"] == "#old-login"
 
 
+def test_step_executor_generation_records_verified_element_update(
+    monkeypatch,
+    tmp_path: Path,
+):
+    project_dir = tmp_path / "demo"
+    elements_dir = project_dir / "elements"
+    elements_dir.mkdir(parents=True)
+    elements_file = elements_dir / "login.yaml"
+    elements_file.write_text(
+        "elements:\n  login_button: button:has-text('\u767b\u5f55')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TEST_DIR", str(project_dir))
+    monkeypatch.setenv("UI_GENERATION_PERSIST_VERIFIED_HEALS", "1")
+    calls: list[tuple[str, str, str | None]] = []
+
+    class FakeResolver:
+        def resolve(self, **kwargs):
+            return ResolvedSelector(
+                selector='button:has-text("\u767b \u5f55")',
+                source="heuristic",
+                healed=True,
+                healing_attempted=True,
+                original_selector="button:has-text('\u767b\u5f55')",
+                original_error="not found",
+                confidence=0.0,
+                cache_action="click",
+                cache_target=kwargs["target"],
+                cache_page_key="https://example.test/login",
+            )
+
+        def record_verified_selector(self, **kwargs):
+            pass
+
+    class FakePage:
+        url = "https://example.test/login"
+
+    class FakeUiHelper:
+        pass
+
+    def fake_execute_action_with_command(ui_helper, action, selector, value, step):
+        calls.append((action, selector, value))
+
+    monkeypatch.setattr(
+        "ai_playwright.step_actions.step_executor.execute_action_with_command",
+        fake_execute_action_with_command,
+    )
+
+    step_executor_module.discard_pending_selector_cache("test setup")
+    step_executor_module.pop_persisted_selector_updates()
+    executor = StepExecutor(
+        FakePage(),
+        FakeUiHelper(),
+        elements={"login_button": "button:has-text('\u767b\u5f55')"},
+    )
+    executor.smart_resolver = FakeResolver()
+
+    executor.execute_step(
+        {
+            "action": "click",
+            "selector": "login_button",
+            "target": "\u767b\u5f55\u6309\u94ae",
+            "mode": "smart",
+        }
+    )
+    step_executor_module.commit_pending_selector_cache()
+    updates = step_executor_module.pop_persisted_selector_updates()
+
+    assert calls == [("click", 'button:has-text("\u767b \u5f55")', None)]
+    assert updates[0]["source_key"] == "login_button"
+    assert updates[0]["persisted_key"] == "login_button"
+    assert updates[0]["selector"] == "//button[normalize-space()='\u767b \u5f55']"
+    assert (
+        "login_button: //button[normalize-space()='\u767b \u5f55']"
+        in elements_file.read_text(encoding="utf-8")
+    )
+
+
 def test_heuristic_selectors_prioritize_password_target():
     selectors = heuristic_selectors("password input", "fill")
 
