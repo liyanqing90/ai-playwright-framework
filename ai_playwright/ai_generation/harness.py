@@ -6,6 +6,10 @@ from urllib.parse import unquote, urlsplit
 from typing import Any
 
 from ai_playwright.ai_generation.project_context import ProjectContext
+from ai_playwright.ai_runtime.semantic_terms import (
+    semantic_text_variants,
+    strip_generic_target_words,
+)
 from ai_playwright.step_actions.action_registry import (
     NO_SELECTOR_ACTIONS,
     VALID_ACTIONS,
@@ -899,7 +903,152 @@ def _normalize_step_element_references(
             step["target"] = element_target_aliases.get(
                 target
             ) or _target_from_element_key(target)
+    elif not step.get("selector"):
+        semantic_key = _element_key_for_semantic_target(
+            target,
+            action=str(step.get("action") or "").lower(),
+            selector_element_aliases=selector_element_aliases,
+            element_target_aliases=element_target_aliases,
+        )
+        if semantic_key:
+            step["selector"] = semantic_key
     return step
+
+
+def _element_key_for_semantic_target(
+    target: str,
+    *,
+    action: str,
+    selector_element_aliases: set[str],
+    element_target_aliases: dict[str, str],
+) -> str | None:
+    target_keys = _semantic_match_keys(target)
+    if not target_keys:
+        return None
+
+    matches: list[tuple[int, int, str]] = []
+    for index, (element_key, element_target) in enumerate(
+        element_target_aliases.items()
+    ):
+        key = str(element_key or "").strip()
+        if key not in selector_element_aliases:
+            continue
+        if not _element_key_action_compatible(
+            key,
+            action=action,
+            element_target=element_target,
+            step_target=target,
+        ):
+            continue
+
+        alias_keys = _semantic_match_keys(element_target)
+        key_target_keys = _semantic_match_keys(_target_from_element_key(key))
+        key_keys = _semantic_match_keys(key)
+        if not (alias_keys | key_target_keys | key_keys).intersection(target_keys):
+            continue
+
+        score = 10
+        if target_keys.intersection(alias_keys):
+            score += 30
+        if target_keys.intersection(key_target_keys):
+            score += 20
+        if target_keys.intersection(key_keys):
+            score += 10
+        matches.append((-score, index, key))
+
+    if not matches:
+        return None
+    matches.sort()
+    return matches[0][2]
+
+
+def _semantic_match_keys(value: Any) -> set[str]:
+    text = str(value or "").strip()
+    if not text:
+        return set()
+    candidates = {
+        text,
+        _target_from_identifier(text),
+        strip_generic_target_words(text),
+    }
+    result: set[str] = set()
+    for candidate in candidates:
+        if not candidate:
+            continue
+        result.add(_semantic_compare_key(candidate))
+        for variant in semantic_text_variants(candidate):
+            result.add(_semantic_compare_key(variant))
+    return {item for item in result if item}
+
+
+def _semantic_compare_key(value: Any) -> str:
+    return re.sub(r"[\s_\-]+", "", str(value or "").strip().lower())
+
+
+def _element_key_action_compatible(
+    element_key: str,
+    *,
+    action: str,
+    element_target: str,
+    step_target: str,
+) -> bool:
+    text = f"{element_key} {element_target} {step_target}".lower()
+    if action in {"fill", "input", "type"}:
+        return not _contains_any_semantic_term(
+            text,
+            ("button", "btn", "link", "menu", "tab", "\u6309\u94ae", "\u94fe\u63a5"),
+        )
+    if action in {"check", "uncheck", "set_checked"}:
+        return _contains_any_semantic_term(
+            text,
+            (
+                "checkbox",
+                "radio",
+                "agree",
+                "terms",
+                "\u590d\u9009\u6846",
+                "\u5355\u9009\u6846",
+                "\u540c\u610f",
+                "\u670d\u52a1\u6761\u6b3e",
+            ),
+        )
+    if action in {"click", "press", "press_key"}:
+        if _contains_any_semantic_term(
+            text,
+            (
+                "input",
+                "field",
+                "textbox",
+                "password",
+                "username",
+                "\u8f93\u5165",
+                "\u5bc6\u7801",
+                "\u8d26\u53f7",
+            ),
+        ):
+            return _contains_any_semantic_term(
+                text,
+                (
+                    "button",
+                    "btn",
+                    "link",
+                    "menu",
+                    "tab",
+                    "checkbox",
+                    "radio",
+                    "\u6309\u94ae",
+                    "\u94fe\u63a5",
+                    "\u83dc\u5355",
+                    "\u6807\u7b7e",
+                    "\u590d\u9009\u6846",
+                    "\u5355\u9009\u6846",
+                ),
+            )
+    return True
+
+
+def _contains_any_semantic_term(value: str, terms: tuple[str, ...]) -> bool:
+    return any(term in value for term in terms)
 
 
 def _target_from_element_key(value: str) -> str:

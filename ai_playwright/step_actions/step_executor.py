@@ -564,6 +564,19 @@ class StepExecutor:
             result = self._get_element_store().update_selector(
                 element_key,
                 resolved_selector,
+                identifier=step.get("_resolved_cache_target") or step.get("target"),
+                allow_semantic_generic_update=bool(
+                    step.get("_generation_persist_verified_heals")
+                    and str(step.get("action") or "").lower()
+                    in {
+                        "click",
+                        "press",
+                        "press_key",
+                        "check",
+                        "uncheck",
+                        "set_checked",
+                    }
+                ),
             )
             if not result.updated and result.reason != "unchanged":
                 logger.error(

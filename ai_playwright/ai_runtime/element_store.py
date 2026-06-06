@@ -10,6 +10,10 @@ from typing import Any
 
 from ruamel.yaml import YAML
 
+from ai_playwright.ai_runtime.playwright_selectors import (
+    canonicalize_persisted_selector,
+)
+
 
 _WRITE_LOCK = threading.Lock()
 _PENDING_LOCK = threading.Lock()
@@ -35,9 +39,16 @@ class ElementDefinitionStore:
         self.yaml.preserve_quotes = True
         self.yaml.indent(mapping=2, sequence=4, offset=2)
 
-    def update_selector(self, key: str, new_selector: str) -> ElementUpdateResult:
+    def update_selector(
+        self,
+        key: str,
+        new_selector: str,
+        *,
+        identifier: str | None = None,
+        allow_semantic_generic_update: bool = False,
+    ) -> ElementUpdateResult:
         key = str(key or "").strip()
-        new_selector = str(new_selector or "").strip()
+        new_selector = canonicalize_persisted_selector(new_selector)
         if not key:
             return ElementUpdateResult(
                 key=key,

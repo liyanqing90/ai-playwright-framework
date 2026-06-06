@@ -1258,6 +1258,43 @@ def test_generation_harness_rewrites_element_key_targets(tmp_path: Path):
     assert harness.validate(payload) == []
 
 
+def test_generation_harness_binds_semantic_target_to_element_key(tmp_path: Path):
+    harness = GenerationHarness(
+        context=ProjectContext(
+            project="demo",
+            test_dir=tmp_path,
+            base_url="https://example.test/",
+            elements={"login_button": "button:has-text('\u767b\u5f55')"},
+            modules={},
+            variables={},
+            test_cases=[],
+            test_data={},
+        ),
+        spec={"mode": "smart"},
+        output_name="generated",
+    )
+    payload = harness.normalize(
+        {
+            "cases": [{"name": "test_generated"}],
+            "data": {
+                "test_generated": {
+                    "mode": "smart",
+                    "steps": [
+                        {"action": "click", "target": "\u767b\u5f55\u6309\u94ae"},
+                        {"action": "assert_title_contains", "value": "ok"},
+                    ],
+                }
+            },
+            "elements": {},
+        }
+    )
+
+    steps = payload["data"]["test_generated"]["steps"]
+    assert steps[0]["selector"] == "login_button"
+    assert steps[0]["target"] == "\u767b\u5f55\u6309\u94ae"
+    assert harness.validate(payload) == []
+
+
 def test_generation_harness_prefixes_pytest_case_names():
     assert _safe_case_name("saucedemo_backpack_cart") == "test_saucedemo_backpack_cart"
     assert _safe_case_name("test_existing_name") == "test_existing_name"

@@ -33,6 +33,23 @@ def normalize_selector(selector: str, selector_type: str | None = None) -> str:
     return selector
 
 
+def canonicalize_persisted_selector(selector: str) -> str:
+    selector = normalize_selector(selector)
+    match = re.fullmatch(
+        r"([a-zA-Z][\w-]*):has-text\(\s*([\"'])(.*?)\2\s*\)",
+        selector,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return selector
+
+    tag = match.group(1).lower()
+    text = match.group(3).strip()
+    if not _has_cjk_display_space(text):
+        return selector
+    return f"//{tag}[normalize-space()={_xpath_literal(text)}]"
+
+
 def validate_selector(
     page,
     selector: str,
@@ -1316,6 +1333,10 @@ def _xpath_literal(value: str) -> str:
         return f'"{text}"'
     parts = text.split("'")
     return "concat(" + ', "\'", '.join(f"'{part}'" for part in parts) + ")"
+
+
+def _has_cjk_display_space(value: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]\s+[\u4e00-\u9fff]", str(value or "")))
 
 
 def _selector_quality_score(selector: str) -> float:

@@ -1290,3 +1290,28 @@ def test_element_definition_store_updates_last_effective_elements_file(
     assert result.path == override_file
     assert "login_button: '#old-base'" in base_file.read_text(encoding="utf-8")
     assert "#new-login" in override_file.read_text(encoding="utf-8")
+
+
+def test_element_definition_store_preserves_cjk_display_spacing(tmp_path: Path):
+    project_dir = tmp_path / "demo"
+    elements_dir = project_dir / "elements"
+    elements_dir.mkdir(parents=True)
+    elements_file = elements_dir / "crm_store.yaml"
+    elements_file.write_text(
+        "elements:\n  login_button: button:has-text('\u767b\u5f55')\n",
+        encoding="utf-8",
+    )
+
+    result = ElementDefinitionStore(project_dir).update_selector(
+        "login_button",
+        'button:has-text("\u767b \u5f55")',
+        identifier="\u767b\u5f55\u6309\u94ae",
+        allow_semantic_generic_update=True,
+    )
+
+    assert result.updated is True
+    assert result.new_selector == "//button[normalize-space()='\u767b \u5f55']"
+    assert (
+        "login_button: //button[normalize-space()='\u767b \u5f55']"
+        in elements_file.read_text(encoding="utf-8")
+    )
