@@ -1,0 +1,16 @@
+AI Playwright
+Copyright 2026 AI Playwright contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+Repository: https://github.com/liyanqing90/ai-playwright-framework
+
+Attribution requirement:
+Redistributions and derivative works must keep this NOTICE file, the
+LICENSE file, and the AI Playwright copyright and attribution notices as
+required by the Apache License, Version 2.0.
+
+Suggested citation:
+AI Playwright: a YAML-driven Playwright UI automation framework with optional
+AI-assisted generation and smart selector recovery.
+https://github.com/liyanqing90/ai-playwright-framework

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "YAML-driven Playwright UI automation framework with optional AI-assisted generation and smart selectors."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
-license = "MIT"
+license = "Apache-2.0"
 authors = [
   { name = "AI Playwright contributors" },
 ]
@@ -43,9 +43,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/liyanqing90/ai-playwright"
-Repository = "https://github.com/liyanqing90/ai-playwright"
-Issues = "https://github.com/liyanqing90/ai-playwright/issues"
+Homepage = "https://github.com/liyanqing90/ai-playwright-framework"
+Repository = "https://github.com/liyanqing90/ai-playwright-framework"
+Issues = "https://github.com/liyanqing90/ai-playwright-framework/issues"
 
 [project.scripts]
 gen = "ai_playwright.cli.generate_case:cli"

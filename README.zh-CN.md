@@ -1,9 +1,13 @@
 # AI Playwright
 
+<p align="center">
+  <img src="./assets/brand/ai-playwright-brand-hero.png" alt="AI Playwright - AI 驱动的 Playwright UI 自动化框架" width="100%" />
+</p>
+
 [![CI](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml)
 
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 [English](README.md) | 简体中文
 
@@ -23,9 +27,11 @@ AI Playwright 是一个基于 Playwright 和 pytest 的 YAML 驱动 UI 自动化
 - [配置](#配置)
 - [AI 数据边界](#ai-数据边界)
 - [项目结构](#项目结构)
+- [品牌资产](#品牌资产)
 - [开发](#开发)
 - [贡献](#贡献)
 - [安全](#安全)
+- [开源协议](#开源协议)
 - [排查问题](#排查问题)
 
 ## 为什么需要 AI Playwright
@@ -428,6 +434,15 @@ ai-playwright-framework/
 
 被忽略的运行时目录包括 `logs/`、`reports/`、`evidence/`、`downloads/`、`.ui_auto/`、`dist/` 和 Python cache。
 
+## 品牌资产
+
+AI Playwright 的基础品牌资产位于 `assets/brand/`：
+
+- `ai-playwright-brand-hero.png`：高质量 README 和项目介绍品牌横幅图。
+- `ai-playwright-logo.png`：方形 logo，适合头像、仓库资料和小尺寸场景。
+
+品牌图形刻意保持简洁：AI 方块、被选中的 UI 控件和自动化指针。它不使用深色 icon 背景、装饰性堆叠、流程图、陈旧电脑元素或虚假 UI 文本。
+
 ## 开发
 
 提交 PR 前运行完整本地门禁：
@@ -478,6 +493,17 @@ CI 在 Python 3.12、3.13、3.14 上运行同类核心检查。
 不要提交密钥、私有端点、客户数据、未脱敏模型轨迹或项目内部资产。请使用 `.env` 保存本地值，并保持 `.env.example` 通用。
 
 安全问题请按 [SECURITY.md](SECURITY.md) 描述的流程报告。
+
+## 开源协议
+
+AI Playwright 使用 [Apache License 2.0](./LICENSE) 开源。你可以商用、修改和再分发，但必须按协议要求保留版权、许可证和项目署名信息。
+
+再分发或基于本项目修改发布时，请保留：
+
+- [LICENSE](./LICENSE)
+- [NOTICE](./NOTICE)
+- 项目名称 `AI Playwright`
+- 原始仓库链接 `https://github.com/liyanqing90/ai-playwright-framework`
 
 ## 排查问题
 

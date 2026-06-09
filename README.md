@@ -1,9 +1,13 @@
 # AI Playwright
 
+<p align="center">
+  <img src="./assets/brand/ai-playwright-brand-hero.png" alt="AI Playwright - AI-powered Playwright UI automation" width="100%" />
+</p>
+
 [![CI](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/liyanqing90/ai-playwright-framework/actions/workflows/ci.yml)
 
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 English | [简体中文](README.zh-CN.md)
 
@@ -28,9 +32,11 @@ gates for the current design.
 - [Configuration](#configuration)
 - [AI And Data Boundary](#ai-and-data-boundary)
 - [Project Layout](#project-layout)
+- [Brand Assets](#brand-assets)
 - [Development](#development)
 - [Contributing](#contributing)
 - [Security](#security)
+- [License](#license)
 - [Troubleshooting](#troubleshooting)
 
 ## Why AI Playwright
@@ -451,6 +457,15 @@ ai-playwright-framework/
 Ignored runtime directories include `logs/`, `reports/`, `evidence/`,
 `downloads/`, `.ui_auto/`, `dist/`, and Python cache directories.
 
+## Brand Assets
+
+AI Playwright brand assets live in `assets/brand/`:
+
+- `ai-playwright-brand-hero.png`: high-quality README and project-introduction brand hero.
+- `ai-playwright-logo.png`: square logo for avatars, repository profiles, and small-size usage.
+
+The brand imagery keeps the product idea deliberately simple: an AI tile, a selected UI control, and an automation cursor. It avoids dark icon backgrounds, decorative clutter, flow diagrams, old-fashioned computer motifs, and fake UI text.
+
 ## Development
 
 Run the full local gate before opening a pull request:
@@ -507,6 +522,17 @@ traces, or project-specific internal assets. Use `.env` for local values and kee
 `.env.example` generic.
 
 Report security issues through the process described in [SECURITY.md](SECURITY.md).
+
+## License
+
+AI Playwright is open source under the [Apache License 2.0](./LICENSE). You may use it commercially, modify it, and redistribute it, but you must keep copyright, license, and attribution notices as required by the license.
+
+When redistributing or publishing derivative works based on this project, keep:
+
+- [LICENSE](./LICENSE)
+- [NOTICE](./NOTICE)
+- Project name `AI Playwright`
+- Original repository link `https://github.com/liyanqing90/ai-playwright-framework`
 
 ## Troubleshooting
 
