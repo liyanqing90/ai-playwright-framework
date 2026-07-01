@@ -55,8 +55,7 @@ from ai_playwright.ai_runtime.payload_compactor import (
     selectors_for_element_id,
 )
 from ai_playwright.ai_runtime.playwright_selectors import (
-    collect_candidates,
-    collect_candidates_diagnostic as _collect_candidates_diagnostic,
+    collect_candidates_diagnostic,
     heuristic_selectors,
     semantic_selectors,
     validate_selector,
@@ -89,8 +88,6 @@ from ai_playwright.ai_runtime.provider import (
 from ai_playwright.step_actions.step_executor import StepExecutor
 from ai_playwright.utils.logger import logger
 from ai_playwright.utils.token_usage import get_token_usage_tracker
-
-_DEFAULT_COLLECT_CANDIDATES = collect_candidates
 
 _PAYMENT_KEYWORDS = ("支付", "付款", "真实支付", "payment", "pay now", "credit card")
 _ACTION_CATEGORIES: dict[str, tuple[str, ...]] = {
@@ -2136,27 +2133,13 @@ class AgentCaseExecutor:
                 self.agent_candidate_scan_limit,
                 self.native_observe.max_candidates,
             )
-            if collect_candidates is _DEFAULT_COLLECT_CANDIDATES:
-                diagnostic = _collect_candidates_diagnostic(
-                    self.page,
-                    limit=limit,
-                    ignore_selectors=self.native_observe.ignore_selectors,
-                    include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
-                    time_budget_ms=self.agent_probe_timeout_ms,
-                )
-            else:
-                diagnostic = {
-                    "candidates": collect_candidates(
-                        self.page,
-                        limit=limit,
-                        ignore_selectors=self.native_observe.ignore_selectors,
-                        include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
-                    ),
-                    "timed_out": False,
-                    "timeout_stage": "",
-                    "title": _safe_page_title(self.page),
-                    "elapsed_ms": 0,
-                }
+            diagnostic = collect_candidates_diagnostic(
+                self.page,
+                limit=limit,
+                ignore_selectors=self.native_observe.ignore_selectors,
+                include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
+                time_budget_ms=self.agent_probe_timeout_ms,
+            )
         except Exception as exc:
             elapsed_ms = int((time.monotonic() - started) * 1000)
             reason = f"{type(exc).__name__}: {exc}"

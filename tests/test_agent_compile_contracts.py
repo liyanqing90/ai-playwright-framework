@@ -1477,17 +1477,19 @@ def test_agent_case_skips_model_when_realtime_completion_is_already_satisfied(
         FakeProvider,
     )
     monkeypatch.setattr(
-        "ai_playwright.ai_runtime.agent_case_executor.collect_candidates",
-        lambda page, **kwargs: [
-            {
-                "index": 0,
-                "tag": "h1",
-                "selector": "h1",
-                "text": "Order Complete",
-                "visible": True,
-                "enabled": True,
-            }
-        ],
+        "ai_playwright.ai_runtime.agent_case_executor.collect_candidates_diagnostic",
+        lambda page, **kwargs: {
+            "candidates": [
+                {
+                    "index": 0,
+                    "tag": "h1",
+                    "selector": "h1",
+                    "text": "Order Complete",
+                    "visible": True,
+                    "enabled": True,
+                }
+            ],
+        },
     )
     monkeypatch.setattr(
         "ai_playwright.ai_runtime.agent_case_executor.load_ai_config",
