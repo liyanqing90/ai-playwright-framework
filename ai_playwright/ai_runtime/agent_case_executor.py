@@ -8,7 +8,7 @@ import re
 import time
 from dataclasses import dataclass, field, replace
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from ai_playwright.ai_generation.case_generator import (
     _build_payload,
@@ -55,9 +55,10 @@ from ai_playwright.ai_runtime.payload_compactor import (
     selectors_for_element_id,
 )
 from ai_playwright.ai_runtime.playwright_selectors import (
-    collect_candidates,
+    collect_candidates_diagnostic,
     heuristic_selectors,
     semantic_selectors,
+    validate_selector,
 )
 from ai_playwright.ai_runtime.semantic_terms import semantic_text_variants
 from ai_playwright.ai_runtime.agent_text_utils import (
@@ -107,7 +108,7 @@ _DEFAULT_GUARDRAILS = {
     "no_runtime_registry_write": True,
     "stop_on_external_domain": True,
     "stop_on_unexpected_payment": True,
-    "require_checkpoints_or_final": True,
+    "require_checkpoints_or_final": False,
 }
 _AGENT_CASE_SYSTEM_PROMPT = (
     "你是UI自动化运行时Agent。每次只返回一个JSON动作。"
@@ -117,6 +118,8 @@ _AGENT_CASE_SYSTEM_PROMPT = (
     "如果current_step目标在当前DOM不可见，只能返回让current_step可达的必要前置动作，reason要说明服务于current_step。"
     "runtime_harness只提供事实反馈，不替你选择动作；target_candidates只是候选事实，不能无视current_step直接点击。"
     "优先返回dom_context中的element_id；selector只能是真实选择器，不能写e1/e2。"
+    "禁止凭空猜测CSS/XPath；selector必须来自dom_context/target_candidates，或在当前页面可快速验证。"
+    "如果没有可验证元素事实，返回need_more_context或fail，不要编造.search、#search等选择器。"
     "fill必须带value；inputs只是可选结构化补充；有inputs时${name}可作为运行时变量value。"
     "没有inputs时，直接使用intent/steps/criteria里的字面值，不要改写成未定义${name}。"
     "press必须带key和element_id/selector/target。"
@@ -235,6 +238,37 @@ class AgentCaseExecutor:
         self.agent_step_timeout_ms = int(
             runtime_cfg.get("agent_step_timeout_ms") or 5000
         )
+        try:
+            self.agent_probe_timeout_ms = max(
+                0,
+                int(
+                    runtime_cfg.get(
+                        "agent_probe_timeout_ms",
+                        runtime_cfg.get("agent_dom_probe_timeout_ms", 1500),
+                    )
+                    or 0
+                ),
+            )
+        except (TypeError, ValueError):
+            self.agent_probe_timeout_ms = 1500
+        default_probe_wall_timeout_ms = (
+            max(self.agent_probe_timeout_ms * 3, 5000)
+            if self.agent_probe_timeout_ms > 0
+            else 0
+        )
+        try:
+            self.agent_probe_wall_timeout_ms = max(
+                0,
+                int(
+                    runtime_cfg.get(
+                        "agent_probe_wall_timeout_ms",
+                        default_probe_wall_timeout_ms,
+                    )
+                    or 0
+                ),
+            )
+        except (TypeError, ValueError):
+            self.agent_probe_wall_timeout_ms = default_probe_wall_timeout_ms
         try:
             self.agent_completion_wait_seconds = float(
                 runtime_cfg.get("agent_completion_wait_seconds", 12)
@@ -362,6 +396,16 @@ class AgentCaseExecutor:
                     "Agent用例超过最大模型调用次数: "
                     f"case={case_name} | max_model_calls={spec['max_model_calls']}"
                 )
+
+            local_result = self._local_completion_decision(
+                case_name=case_name,
+                spec=spec,
+                history=history,
+                cache_key=cache_key,
+                model_calls=model_calls,
+            )
+            if local_result is not None:
+                return local_result
 
             runtime_harness = self._runtime_harness(
                 spec=spec,
@@ -542,8 +586,8 @@ class AgentCaseExecutor:
         if not intent:
             intent = "按顺序完成自然语言步骤：" + "；".join(steps)
         criteria = agent_case.get("criteria")
-        if not _has_criteria(criteria):
-            raise ValueError(f"Agent用例必须声明 checkpoints 或 final: {case_name}")
+        if not isinstance(criteria, dict):
+            criteria = {}
         return {
             "description": str(case_data.get("description") or "").strip(),
             "intent": intent,
@@ -578,10 +622,26 @@ class AgentCaseExecutor:
         ):
             return None
         try:
-            compiled = self._compile_agent_case_steps(
+            compiled = self._load_compiled_plan_cache(
                 case_name=case_name,
                 spec=spec,
             )
+            if compiled is None:
+                skip_reason = self._runtime_compile_cache_miss_skip_reason(
+                    spec=spec,
+                    history=history,
+                )
+                if skip_reason:
+                    logger.info(
+                        "Agent内存编译跳过，切换逐步实时规划: "
+                        f"case={case_name} | reason={skip_reason}"
+                    )
+                    return None
+                compiled = self._compile_agent_case_steps(
+                    case_name=case_name,
+                    spec=spec,
+                    use_cache=False,
+                )
         except AgentCaseCompileContractError:
             raise
         except Exception as exc:
@@ -595,6 +655,17 @@ class AgentCaseExecutor:
         if not steps:
             logger.info(
                 "Agent内存编译未生成steps，切换逐步实时规划: " f"case={case_name}"
+            )
+            return None
+        fact_gap = self._compiled_plan_current_fact_gap(
+            payload=payload,
+            steps=steps,
+            spec=spec,
+        )
+        if fact_gap:
+            logger.warning(
+                "Agent编译计划当前页面不可执行，切换逐步实时规划: "
+                f"case={case_name} | {fact_gap}"
             )
             return None
         previous_assets = {
@@ -649,6 +720,13 @@ class AgentCaseExecutor:
                 elements=self.elements,
             )
             failure_kind = "断言" if _is_assertion_step(exc.failed_step) else "步骤"
+            if not _is_assertion_step(exc.failed_step):
+                logger.warning(
+                    "Agent编译步骤执行失败，切换逐步实时规划: "
+                    f"case={case_name} | step={exc.step_index} "
+                    f"| {_format_step(exc.failed_step)} | error={exc.original_error}"
+                )
+                return None
             raise AssertionError(
                 f"Agent编译{failure_kind}执行失败: "
                 f"case={case_name} | step={exc.step_index} "
@@ -699,13 +777,15 @@ class AgentCaseExecutor:
         *,
         case_name: str,
         spec: dict[str, Any],
+        use_cache: bool = True,
     ) -> CompiledAgentCase:
-        cached = self._load_compiled_plan_cache(
-            case_name=case_name,
-            spec=spec,
-        )
-        if cached is not None:
-            return cached
+        if use_cache:
+            cached = self._load_compiled_plan_cache(
+                case_name=case_name,
+                spec=spec,
+            )
+            if cached is not None:
+                return cached
 
         allowed_modules = set(self.context.modules or {})
         generation_spec = _agent_spec_to_generation_spec(
@@ -742,6 +822,210 @@ class AgentCaseExecutor:
             steps=compiled.steps,
             model_calls=compiled.model_calls,
             cache_hit=False,
+        )
+
+    def _runtime_compile_cache_miss_skip_reason(
+        self,
+        *,
+        spec: dict[str, Any],
+        history: list[dict[str, Any]],
+    ) -> str:
+        if not hasattr(self.page, "locator"):
+            return ""
+        if not _agent_natural_plan(spec):
+            return ""
+        pending_intent = _unmet_intent_action_requirements(
+            spec=spec,
+            history=history,
+            current_url=getattr(self.page, "url", ""),
+            dom_context=self.current_dom_context,
+        )
+        if pending_intent:
+            return (
+                "cache_miss_pending_intent_requires_realtime "
+                f"| unmet={normalize_model_text('; '.join(pending_intent), limit=120)}"
+            )
+        try:
+            self._refresh_dom_context(spec=spec)
+            pending_fill_gap = self._first_unexecutable_fill_plan_step(
+                spec=spec,
+                history=history,
+            )
+            if pending_fill_gap:
+                return pending_fill_gap
+
+            runtime_harness = self._runtime_harness(
+                spec=spec,
+                history=history,
+                dom_context=self.current_dom_context,
+            )
+        except Exception:
+            return ""
+        observation = runtime_harness.get("phase_observation")
+        if not isinstance(observation, dict):
+            return ""
+        action = str(observation.get("expected_action") or "").lower()
+        if action not in {
+            "click",
+            "fill",
+            "press",
+            "press_key",
+            "assert_visible",
+            "assert_text",
+        }:
+            return ""
+        if observation.get("satisfied_by_history") is True:
+            return ""
+        if action == "fill" and not observation.get("target_candidates"):
+            phase = normalize_model_text(runtime_harness.get("phase") or "", limit=80)
+            target = normalize_model_text(observation.get("target") or "", limit=80)
+            return (
+                f"cache_miss_current_fill_target_not_executable "
+                f"| phase={phase} | action={action} | target={target}"
+            )
+        if observation.get("target_observable") is not False:
+            return ""
+        phase = normalize_model_text(runtime_harness.get("phase") or "", limit=80)
+        target = normalize_model_text(observation.get("target") or "", limit=80)
+        return (
+            f"cache_miss_current_target_not_observable "
+            f"| phase={phase} | action={action} | target={target}"
+        )
+
+    def _first_unexecutable_fill_plan_step(
+        self,
+        *,
+        spec: dict[str, Any],
+        history: list[dict[str, Any]],
+    ) -> str:
+        for step_text in _agent_natural_plan(spec):
+            text = str(step_text or "").strip()
+            if not text:
+                continue
+            if _natural_step_satisfied(
+                text,
+                spec=spec,
+                history=history,
+                dom_context={
+                    **(self.current_dom_context or {}),
+                    "meta": {
+                        **(
+                            ((self.current_dom_context or {}).get("meta") or {})
+                            if isinstance(
+                                (self.current_dom_context or {}).get("meta"), dict
+                            )
+                            else {}
+                        ),
+                        "url": getattr(self.page, "url", ""),
+                    },
+                },
+            ):
+                continue
+            payload = _natural_step_decision_payload(
+                text,
+                spec=spec,
+                dom_context=self.current_dom_context,
+                history=history,
+            )
+            if str(payload.get("action") or "").lower() != "fill":
+                continue
+            target = _phase_payload_target(payload, text)
+            if _dom_context_target_candidates(
+                dom_context=self.current_dom_context,
+                target=target,
+                limit=1,
+            ):
+                continue
+            return (
+                "cache_miss_plan_fill_target_not_executable "
+                f"| phase={normalize_model_text(text, limit=80)} "
+                f"| action=fill | target={normalize_model_text(target, limit=80)}"
+            )
+        return ""
+
+    def _compiled_plan_current_fact_gap(
+        self,
+        *,
+        payload: dict[str, Any],
+        steps: list[dict[str, Any]],
+        spec: dict[str, Any],
+    ) -> str:
+        if not hasattr(self.page, "locator"):
+            return ""
+        self._refresh_dom_context(spec=spec)
+        payload_elements = payload.get("elements") if isinstance(payload, dict) else {}
+        merged_elements: dict[str, Any] = dict(self.elements or {})
+        if isinstance(payload_elements, dict):
+            merged_elements.update(payload_elements)
+        for index, raw_step in enumerate(steps, start=1):
+            if not isinstance(raw_step, dict):
+                continue
+            action = _step_action(raw_step).lower()
+            if action in {"", "goto", "wait", "use_module"}:
+                continue
+            if action not in {
+                "click",
+                "fill",
+                "press",
+                "press_key",
+                "assert_visible",
+                "assert_text",
+                "assert_text_contains",
+            }:
+                return ""
+            if self._compiled_step_has_current_fact(
+                raw_step,
+                action=action,
+                elements=merged_elements,
+            ):
+                return ""
+            target = normalize_model_text(
+                raw_step.get("target")
+                or raw_step.get("selector")
+                or raw_step.get("value")
+                or "",
+                limit=80,
+            )
+            return (
+                f"step={index} | action={action} "
+                f"| target={target or '<empty>'} | reason=no_current_dom_fact"
+            )
+        return ""
+
+    def _compiled_step_has_current_fact(
+        self,
+        step: dict[str, Any],
+        *,
+        action: str,
+        elements: dict[str, Any],
+    ) -> bool:
+        selectorish = str(
+            step.get("selector") or step.get("target") or step.get("element") or ""
+        ).strip()
+        selector = _resolve_project_selector(elements, selectorish)
+        if selector:
+            try:
+                validation = validate_selector(
+                    self.page,
+                    selector,
+                    action="press_key" if action in {"press", "press_key"} else action,
+                    timeout=min(max(int(self.agent_step_timeout_ms), 1), 1000),
+                )
+            except Exception:
+                validation = None
+            if validation is not None and validation.ok:
+                return True
+        target = str(step.get("target") or "").strip()
+        if not target or target == selectorish:
+            target = selectorish
+        if not target:
+            return False
+        return bool(
+            _dom_context_target_candidates(
+                dom_context=self.current_dom_context,
+                target=target,
+                limit=1,
+            )
         )
 
     def _load_compiled_plan_cache(
@@ -813,12 +1097,16 @@ class AgentCaseExecutor:
         )
 
     def _refresh_dom_context(self, *, spec: dict[str, Any]) -> None:
-        candidates = self._safe_collect_candidates()
+        diagnostic = self._safe_collect_candidate_diagnostic(
+            probe="dom_context_refresh",
+            target=spec.get("intent"),
+        )
+        candidates = list(diagnostic.get("candidates") or [])
         context_limit = self._dom_context_limit(candidates)
         self.current_dom_context = build_dom_context(
             candidates,
             url=getattr(self.page, "url", ""),
-            title=_safe_page_title(self.page),
+            title=str(diagnostic.get("title") or ""),
             context_level=2,
             limit=context_limit,
             hints=[spec["intent"], spec["steps"], spec["criteria"], spec["inputs"]],
@@ -956,6 +1244,18 @@ class AgentCaseExecutor:
             return None
         if not history and self._is_blank_page():
             return None
+        intent_unmet = _unmet_intent_action_requirements(
+            spec=spec,
+            history=history,
+            current_url=getattr(self.page, "url", ""),
+            dom_context=self.current_dom_context,
+        )
+        if intent_unmet:
+            logger.info(
+                "Agent本地验收未满足，继续实时规划: "
+                f"case={case_name} | unmet={_dedupe_texts(intent_unmet)}"
+            )
+            return None
         self._refresh_dom_context(spec=spec)
         runtime_harness = runtime_harness or self._runtime_harness(
             spec=spec,
@@ -1011,6 +1311,7 @@ class AgentCaseExecutor:
         if not force and not self._is_blank_page():
             return
         module_decision, explicit_module_reference = self._first_entry_module_decision(
+            case_name=case_name,
             spec=spec,
             case_data=case_data,
             intent=intent,
@@ -1056,6 +1357,7 @@ class AgentCaseExecutor:
     def _first_entry_module_decision(
         self,
         *,
+        case_name: str,
         spec: dict[str, Any],
         case_data: dict[str, Any],
         intent: str,
@@ -1068,9 +1370,17 @@ class AgentCaseExecutor:
             modules=self.context.modules,
         )
         if not explicit_reference or not module_name:
+            if explicit_reference:
+                raise AssertionError(
+                    "Agent用例显式项目模块未精确匹配: "
+                    f"case={case_name} | first_step={_first_raw_step(case_data.get('steps')) or _first_raw_step(steps)}"
+                )
             return None, explicit_reference
         if module_name not in (self.context.modules or {}):
-            return None, True
+            raise AssertionError(
+                "Agent用例显式项目模块未精确匹配: "
+                f"case={case_name} | module={module_name}"
+            )
         params, missing = self._infer_module_params(
             module_name,
             spec=spec,
@@ -1304,7 +1614,24 @@ class AgentCaseExecutor:
         runtime_harness: dict[str, Any] | None = None,
     ) -> AgentCaseDecision:
         self.last_decision_used_model = True
-        candidates = self._safe_collect_candidates()
+        current_goal = _current_agent_goal(
+            spec=spec,
+            history=history,
+            runtime_harness=runtime_harness,
+        )
+        diagnostic = self._safe_collect_candidate_diagnostic(
+            case_name=case_name,
+            step_index=step_index,
+            probe="agent_decision",
+            target=current_goal,
+        )
+        candidates = list(diagnostic.get("candidates") or [])
+        self._fail_if_agent_probe_unusable(
+            diagnostic,
+            case_name=case_name,
+            step_index=step_index,
+            target=current_goal,
+        )
         context_limit = self._dom_context_limit(candidates)
         criteria_prompt = _criteria_prompt_summary(
             spec["criteria"],
@@ -1314,12 +1641,7 @@ class AgentCaseExecutor:
             history,
             limit=self.history_limit,
         )
-        page_title = _safe_page_title(self.page)
-        current_goal = _current_agent_goal(
-            spec=spec,
-            history=history,
-            runtime_harness=runtime_harness,
-        )
+        page_title = str(diagnostic.get("title") or "")
         unmet_requirements: list[str] = []
         context_hints = [
             current_goal,
@@ -1551,6 +1873,45 @@ class AgentCaseExecutor:
             raise AgentDecisionRejected(
                 f"Agent动作跳转外部域名，已拦截: {decision.value}"
             )
+        self._guard_selector_fact(decision)
+
+    def _guard_selector_fact(self, decision: AgentCaseDecision) -> None:
+        action = str(decision.action or "").lower()
+        selector = str(decision.selector or "").strip()
+        if action not in {
+            "click",
+            "fill",
+            "press",
+            "assert_visible",
+            "assert_text",
+        }:
+            return
+        if not selector or looks_like_internal_element_id(selector):
+            return
+        if selector in self.elements:
+            return
+        if _dom_context_has_selector(self.current_dom_context, selector):
+            return
+        if not hasattr(self.page, "locator"):
+            return
+        validation_action = "press_key" if action == "press" else action
+        try:
+            validation = validate_selector(
+                self.page,
+                selector,
+                action=validation_action,
+                timeout=min(max(int(self.agent_step_timeout_ms), 1), 1000),
+            )
+        except Exception as exc:
+            raise AgentDecisionRejected(
+                f"selector缺少事实依据: {selector} | error={exc}"
+            ) from exc
+        if validation.ok:
+            return
+        raise AgentDecisionRejected(
+            "selector缺少事实依据: "
+            f"{selector} | error={validation.error or 'validation failed'}"
+        )
 
     def _decision_to_step(
         self, decision: AgentCaseDecision, *, spec: dict[str, Any] | None = None
@@ -1614,6 +1975,11 @@ class AgentCaseExecutor:
             and explicit_selector
             and not looks_like_internal_element_id(explicit_selector)
             and not _selector_matches_element(
+                explicit_selector,
+                selectors_for_element_id(self.current_dom_context, selected_element_id),
+            )
+            and not _selector_matches_current_element(
+                self.page,
                 explicit_selector,
                 selectors_for_element_id(self.current_dom_context, selected_element_id),
             )
@@ -1732,13 +2098,45 @@ class AgentCaseExecutor:
             )
             step["selector"] = repaired_selector
 
-    def _safe_collect_candidates(self) -> list[dict[str, Any]]:
+    def _safe_collect_candidate_diagnostic(
+        self,
+        *,
+        case_name: str = "",
+        step_index: int | None = None,
+        probe: str = "dom_collect",
+        target: Any = "",
+    ) -> dict[str, Any]:
+        target_text = normalize_model_text(target, limit=120)
+        base: dict[str, Any] = {
+            "candidates": [],
+            "timed_out": False,
+            "timeout_stage": "",
+            "title": "",
+            "elapsed_ms": 0,
+            "probe": probe,
+            "target": target_text,
+            "timeout_ms": self.agent_probe_timeout_ms,
+            "wall_timeout_ms": self.agent_probe_wall_timeout_ms,
+            "wall_elapsed_ms": 0,
+            "wall_timed_out": False,
+            "failed": False,
+            "reason": "",
+            "skipped": False,
+        }
         if self._is_blank_page():
-            return []
+            return {**base, "skipped": True, "reason": "blank_page"}
         if not self.native_observe.enabled:
-            return []
+            return {**base, "skipped": True, "reason": "native_observe_disabled"}
+        started = time.monotonic()
+        logger.info(
+            "Agent DOM探测开始: "
+            f"case={case_name or '-'} | step={step_index or '-'} "
+            f"| probe={probe} | node={target_text or '-'} "
+            f"| timeout_ms={self.agent_probe_timeout_ms} "
+            f"| wall_timeout_ms={self.agent_probe_wall_timeout_ms}"
+        )
         try:
-            return collect_candidates(
+            diagnostic = collect_candidates_diagnostic(
                 self.page,
                 limit=min(
                     self.agent_candidate_scan_limit,
@@ -1746,10 +2144,128 @@ class AgentCaseExecutor:
                 ),
                 ignore_selectors=self.native_observe.ignore_selectors,
                 include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
+                time_budget_ms=self.agent_probe_timeout_ms,
             )
         except Exception as exc:
-            logger.warning(f"Agent DOM观察失败，继续基于上下文决策: {exc}")
-            return []
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            reason = f"{type(exc).__name__}: {exc}"
+            logger.warning(
+                "Agent DOM探测失败: "
+                f"case={case_name or '-'} | step={step_index or '-'} "
+                f"| probe={probe} | node={target_text or '-'} "
+                f"| reason={normalize_model_text(reason, limit=160)} "
+                f"| wall_elapsed_ms={elapsed_ms}"
+            )
+            return {
+                **base,
+                "failed": True,
+                "reason": reason,
+                "wall_elapsed_ms": elapsed_ms,
+            }
+        if not isinstance(diagnostic, dict):
+            diagnostic = {}
+        candidates = diagnostic.get("candidates")
+        wall_elapsed_ms = int((time.monotonic() - started) * 1000)
+        elapsed_ms = int(diagnostic.get("elapsed_ms") or wall_elapsed_ms)
+        wall_timed_out = (
+            self.agent_probe_wall_timeout_ms > 0
+            and wall_elapsed_ms > self.agent_probe_wall_timeout_ms
+        )
+        result = {
+            **base,
+            **diagnostic,
+            "candidates": candidates if isinstance(candidates, list) else [],
+            "elapsed_ms": elapsed_ms,
+            "wall_elapsed_ms": wall_elapsed_ms,
+            "timeout_ms": self.agent_probe_timeout_ms,
+            "wall_timeout_ms": self.agent_probe_wall_timeout_ms,
+            "probe": probe,
+            "target": target_text,
+            "wall_timed_out": wall_timed_out,
+        }
+        if wall_timed_out:
+            result["failed"] = True
+            result["reason"] = "transport_time_budget_exceeded"
+            result["timeout_stage"] = (
+                result.get("timeout_stage") or "playwright_evaluate"
+            )
+            logger.warning(
+                "Agent DOM探测超出墙钟预算: "
+                f"case={case_name or '-'} | step={step_index or '-'} "
+                f"| probe={probe} | node={target_text or '-'} "
+                f"| reason=transport_time_budget_exceeded "
+                f"| stage={result.get('timeout_stage') or '-'} "
+                f"| elapsed_ms={elapsed_ms} | wall_elapsed_ms={wall_elapsed_ms} "
+                f"| wall_timeout_ms={self.agent_probe_wall_timeout_ms} "
+                f"| candidates={len(result['candidates'])}"
+            )
+        if result.get("timed_out"):
+            logger.warning(
+                "Agent DOM探测超出预算: "
+                f"case={case_name or '-'} | step={step_index or '-'} "
+                f"| probe={probe} | node={target_text or '-'} "
+                f"| reason=time_budget_exceeded "
+                f"| stage={result.get('timeout_stage') or '-'} "
+                f"| elapsed_ms={elapsed_ms} | wall_elapsed_ms={wall_elapsed_ms} "
+                f"| timeout_ms={self.agent_probe_timeout_ms} "
+                f"| candidates={len(result['candidates'])}"
+            )
+        else:
+            logger.info(
+                "Agent DOM探测完成: "
+                f"case={case_name or '-'} | step={step_index or '-'} "
+                f"| probe={probe} | node={target_text or '-'} "
+                f"| elapsed_ms={elapsed_ms} | wall_elapsed_ms={wall_elapsed_ms} "
+                f"| candidates={len(result['candidates'])}"
+            )
+        return result
+
+    def _fail_if_agent_probe_unusable(
+        self,
+        diagnostic: dict[str, Any],
+        *,
+        case_name: str,
+        step_index: int,
+        target: Any,
+    ) -> None:
+        candidates = diagnostic.get("candidates")
+        if diagnostic.get("wall_timed_out"):
+            target_text = normalize_model_text(target, limit=120) or "-"
+            raise AssertionError(
+                "Agent DOM探测失败: "
+                f"case={case_name} | step={step_index} "
+                f"| node={target_text} | reason=transport_time_budget_exceeded "
+                f"| stage={diagnostic.get('timeout_stage') or 'playwright_evaluate'} "
+                f"| elapsed_ms={diagnostic.get('elapsed_ms') or 0} "
+                f"| wall_elapsed_ms={diagnostic.get('wall_elapsed_ms') or 0} "
+                f"| wall_timeout_ms={diagnostic.get('wall_timeout_ms') or self.agent_probe_wall_timeout_ms}"
+            )
+        if isinstance(candidates, list) and candidates:
+            return
+        if diagnostic.get("skipped"):
+            return
+        target_text = normalize_model_text(target, limit=120) or "-"
+        if diagnostic.get("timed_out"):
+            raise AssertionError(
+                "Agent DOM探测失败: "
+                f"case={case_name} | step={step_index} "
+                f"| node={target_text} | reason=time_budget_exceeded "
+                f"| stage={diagnostic.get('timeout_stage') or '-'} "
+                f"| elapsed_ms={diagnostic.get('elapsed_ms') or 0} "
+                f"| timeout_ms={diagnostic.get('timeout_ms') or self.agent_probe_timeout_ms}"
+            )
+        if diagnostic.get("failed"):
+            raise AssertionError(
+                "Agent DOM探测失败: "
+                f"case={case_name} | step={step_index} "
+                f"| node={target_text} "
+                f"| reason={normalize_model_text(diagnostic.get('reason'), limit=160)} "
+                f"| elapsed_ms={diagnostic.get('elapsed_ms') or 0}"
+            )
+
+    def _safe_collect_candidates(self) -> list[dict[str, Any]]:
+        diagnostic = self._safe_collect_candidate_diagnostic()
+        return list(diagnostic.get("candidates") or [])
 
     def _dom_context_limit(self, candidates: list[dict[str, Any]]) -> int:
         return min(
@@ -1853,7 +2369,6 @@ class AgentCaseExecutor:
         )
         _attach_current_target_candidates(
             state,
-            page=self.page,
             dom_context=dom_context,
             limit=max(1, min(int(candidate_limit or 3), 5)),
         )
@@ -2021,10 +2536,10 @@ def _has_completion_criteria(criteria: Any) -> bool:
 def _completion_criteria_items(criteria: Any) -> list[str]:
     if not isinstance(criteria, dict):
         return []
-    return _dedupe_texts(
-        _normalize_text_list(criteria.get("checkpoints"))
-        + _normalize_text_list(criteria.get("final"))
-    )
+    final_items = _normalize_text_list(criteria.get("final"))
+    if final_items:
+        return _dedupe_texts(final_items)
+    return _dedupe_texts(_normalize_text_list(criteria.get("checkpoints")))
 
 
 def _observable_completion_terms(criteria: Any) -> tuple[list[str], list[str]]:
@@ -2499,7 +3014,6 @@ def _runtime_harness_prompt_view(runtime_harness: dict[str, Any]) -> dict[str, A
 def _attach_current_target_candidates(
     runtime_harness: dict[str, Any],
     *,
-    page: Any,
     dom_context: dict[str, Any],
     limit: int = 3,
 ) -> None:
@@ -2511,15 +3025,9 @@ def _attach_current_target_candidates(
     target = str(observation.get("target") or "").strip()
     if not target:
         return
-    categories = runtime_harness.get("phase_categories")
-    action = (
-        "fill" if isinstance(categories, list) and "input" in categories else "click"
-    )
-    candidates = _verified_target_candidates(
-        page=page,
+    candidates = _dom_context_target_candidates(
         dom_context=dom_context,
         target=target,
-        action=action,
         limit=max(1, limit),
     )
     if candidates:
@@ -2528,12 +3036,10 @@ def _attach_current_target_candidates(
             observation["target_observable"] = True
 
 
-def _verified_target_candidates(
+def _dom_context_target_candidates(
     *,
-    page: Any,
     dom_context: dict[str, Any],
     target: str,
-    action: str,
     limit: int,
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
@@ -2549,11 +3055,6 @@ def _verified_target_candidates(
     ) -> None:
         clean_selector = str(selector or "").strip()
         if not clean_selector or clean_selector in seen:
-            return
-        if hasattr(page, "locator") and not _selector_is_visible_enabled(
-            page,
-            clean_selector,
-        ):
             return
         seen.add(clean_selector)
         item: dict[str, Any] = {"selector": clean_selector, "source": source}
@@ -2590,36 +3091,6 @@ def _verified_target_candidates(
             element_id=item_id,
             text=text,
             score=score,
-        )
-    if len(result) >= limit:
-        return result[:limit]
-
-    selector_candidates: list[str] = []
-    if hasattr(page, "locator"):
-        try:
-            selector_candidates.extend(
-                semantic_selectors(
-                    page,
-                    target,
-                    action,
-                    limit=max(limit * 4, 12),
-                )
-            )
-        except Exception:
-            pass
-    selector_candidates.extend(heuristic_selectors(target, action))
-    for selector in _dedupe_strings(selector_candidates):
-        if len(result) >= limit:
-            break
-        selector_text = _text_query_from_selector(selector)
-        add(
-            selector,
-            source="verified_selector",
-            text=selector_text,
-            score=_target_candidate_match_score(
-                terms,
-                _normalized_criterion_match_text(selector_text or selector),
-            ),
         )
     return result[:limit]
 
@@ -3120,9 +3591,18 @@ def _natural_step_satisfied(
     dom_context: dict[str, Any] | None = None,
 ) -> bool:
     text = str(step_text or "")
+    spec = spec or {}
+    full_history = history
+    ordered_history = _history_after_prior_plan_steps(
+        step_text,
+        spec=spec,
+        history=history,
+        dom_context=dom_context,
+    )
+    if ordered_history is not None:
+        history = ordered_history
     if _module_instruction_satisfied(text, history=history):
         return True
-    spec = spec or {}
     if _compound_fill_instruction_satisfied(text, spec=spec, history=history):
         return True
     payload = _natural_step_decision_payload(
@@ -3152,7 +3632,7 @@ def _natural_step_satisfied(
         )
     if action in {"click", "press"}:
         target = payload.get("target") or step_text
-        if _auth_submit_history_satisfies_target(history, target=target):
+        if _auth_submit_history_satisfies_target(full_history, target=target):
             return True
         return _history_action_satisfies(
             history,
@@ -3181,6 +3661,42 @@ def _natural_step_satisfied(
             value_contains=str(payload.get("value") or ""),
         )
     return False
+
+
+def _history_after_prior_plan_steps(
+    step_text: str,
+    *,
+    spec: dict[str, Any],
+    history: list[dict[str, Any]],
+    dom_context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]] | None:
+    plan = _agent_natural_plan(spec)
+    if not plan:
+        return None
+    try:
+        index = plan.index(str(step_text or "").strip())
+    except ValueError:
+        return None
+    if index <= 0:
+        return None
+    expanded = _expanded_history_items(history)
+    cursor = 0
+    for previous_step in plan[:index]:
+        found: int | None = None
+        scoped_spec = {**spec, "steps": [previous_step]}
+        for end in range(cursor + 1, len(expanded) + 1):
+            if _natural_step_satisfied(
+                previous_step,
+                spec=scoped_spec,
+                history=expanded[cursor:end],
+                dom_context=dom_context,
+            ):
+                found = end
+                break
+        if found is None:
+            return []
+        cursor = found
+    return expanded[cursor:]
 
 
 def _module_instruction_satisfied(
@@ -3415,6 +3931,8 @@ def _natural_step_decision_payload(
     if compound_fill:
         return compound_fill
     fill_target, fill_value = _fill_instruction_parts(text, spec=spec)
+    if not fill_target:
+        fill_target, fill_value, _ = _implicit_value_action_parts(text, spec=spec)
     if fill_target and fill_value is not None:
         element_id, selector = _best_dom_target_reference(
             dom_context,
@@ -3661,6 +4179,72 @@ def _fill_instruction_parts(
         resolved_value = _resolve_natural_input_value(value, spec=spec, target=target)
         return target, resolved_value
     return "", None
+
+
+def _implicit_value_action_parts(
+    text: str,
+    *,
+    spec: dict[str, Any],
+) -> tuple[str, str | None, str]:
+    normalized = " ".join(str(text or "").split()).strip()
+    if not normalized:
+        return "", None, ""
+    if re.search(r"^(?:点击|单击|点选|按下|打开|选择)\s*", normalized, flags=re.I):
+        return "", None, ""
+    action_target, value = _split_implicit_value_action(normalized)
+    if not action_target or not value or _looks_like_control_reference(value):
+        return "", None, ""
+    resolved_value = _resolve_natural_input_value(
+        value,
+        spec=spec,
+        target=action_target,
+    )
+    return action_target, resolved_value, action_target
+
+
+def _split_implicit_value_action(text: str) -> tuple[str, str]:
+    normalized = " ".join(str(text or "").split()).strip()
+    if not normalized:
+        return "", ""
+    for action in _implicit_value_action_terms():
+        escaped = re.escape(action)
+        if re.search(r"[\u4e00-\u9fff]", action):
+            pattern = rf"^(?P<action>{escaped})\s*(?P<value>[^，。,.;；]+)$"
+        else:
+            pattern = rf"^(?P<action>{escaped})(?:\s+|[:：])(?P<value>[^，。,.;；]+)$"
+        match = re.search(pattern, normalized, flags=re.I)
+        if not match:
+            continue
+        return (
+            _clean_natural_target(match.group("action")),
+            _clean_natural_value(match.group("value")),
+        )
+    return "", ""
+
+
+def _implicit_value_action_terms() -> list[str]:
+    terms = semantic_text_variants("查询")
+    return sorted(_dedupe_texts(terms), key=len, reverse=True)
+
+
+def _looks_like_control_reference(value: Any) -> bool:
+    normalized = _clean_natural_target(value)
+    if not normalized:
+        return False
+    control_terms = (
+        "按钮",
+        "按键",
+        "输入框",
+        "文本框",
+        "字段",
+        "入口",
+        "button",
+        "input",
+        "textbox",
+        "field",
+        "link",
+    )
+    return any(term and term.lower() in normalized.lower() for term in control_terms)
 
 
 def _click_instruction_target(text: str) -> str:
@@ -4018,21 +4602,32 @@ def _module_name_from_entry_text(
     explicit_name = _explicit_module_token(text)
     if not declares_module and not explicit_name:
         return None, False
+    if explicit_name:
+        return (
+            (explicit_name, True) if explicit_name in (modules or {}) else (None, True)
+        )
 
-    normalized_text = _normalized_goal_text(text)
     matches = [
         name
         for name in sorted((modules or {}).keys())
-        if name in text or _normalized_goal_text(name) in normalized_text
+        if _module_name_exactly_mentioned(text, name)
     ]
     if len(matches) == 1:
         return matches[0], True
     if len(matches) > 1:
         return None, True
 
-    if explicit_name:
-        return explicit_name, True
     return None, True
+
+
+def _module_name_exactly_mentioned(text: str, module_name: Any) -> bool:
+    name = str(module_name or "").strip()
+    if not name:
+        return False
+    if re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+        pattern = rf"(?<![A-Za-z0-9_.-]){re.escape(name)}(?![A-Za-z0-9_.-])"
+        return bool(re.search(pattern, text))
+    return name in text
 
 
 def _text_declares_module_entry(text: str) -> bool:
@@ -4057,6 +4652,7 @@ def _first_instruction_clause(text: str) -> str:
 def _explicit_module_token(text: str) -> str:
     patterns = (
         r"\buse[_\s-]*module\s+([A-Za-z0-9_.-]+)",
+        r"\bproject\s+module\s+([A-Za-z0-9_.-]+)",
         r"项目模块\s*([A-Za-z0-9_.-]+)",
         r"模块\s*([A-Za-z0-9_.-]+)",
     )
@@ -4107,19 +4703,23 @@ def _click_may_open_new_page(page: Any, selector: Any) -> bool:
     if not selector or not hasattr(page, "locator"):
         return False
     try:
-        locator = page.locator(str(selector)).first
+        locator = page.locator(str(selector))
+        count = getattr(locator, "count", None)
+        if callable(count) and int(count()) < 1:
+            return False
+        locator = locator.first
         if callable(locator):
             locator = locator()
-        return bool(
-            locator.evaluate(
-                """(el) => {
-                    const link = el.closest && el.closest('a[target="_blank"]');
-                    if (link) return true;
-                    const form = el.closest && el.closest('form[target="_blank"]');
-                    return Boolean(form);
-                }"""
-            )
-        )
+        script = """(el) => {
+            const link = el.closest && el.closest('a[target="_blank"]');
+            if (link) return true;
+            const form = el.closest && el.closest('form[target="_blank"]');
+            return Boolean(form);
+        }"""
+        try:
+            return bool(locator.evaluate(script, timeout=500))
+        except TypeError:
+            return bool(locator.evaluate(script))
     except Exception:
         return False
 
@@ -4128,26 +4728,32 @@ def _new_page_navigation_hint(page: Any, selector: Any) -> str | None:
     if not selector or not hasattr(page, "locator"):
         return None
     try:
-        locator = page.locator(str(selector)).first
+        locator = page.locator(str(selector))
+        count = getattr(locator, "count", None)
+        if callable(count) and int(count()) < 1:
+            return None
+        locator = locator.first
         if callable(locator):
             locator = locator()
-        url = locator.evaluate(
-            """(el) => {
-                const link = el.closest && el.closest('a[target="_blank"]');
-                if (link && link.href) return link.href;
-                const form = el.closest && el.closest('form[target="_blank"]');
-                if (!form) return null;
-                const action = form.action || window.location.href;
-                const method = String(form.method || 'get').toLowerCase();
-                if (method !== 'get') return null;
-                const target = new URL(action, window.location.href);
-                const data = new FormData(form);
-                for (const [key, value] of data.entries()) {
-                    if (typeof value === 'string') target.searchParams.set(key, value);
-                }
-                return String(target);
-            }"""
-        )
+        script = """(el) => {
+            const link = el.closest && el.closest('a[target="_blank"]');
+            if (link && link.href) return link.href;
+            const form = el.closest && el.closest('form[target="_blank"]');
+            if (!form) return null;
+            const action = form.action || window.location.href;
+            const method = String(form.method || 'get').toLowerCase();
+            if (method !== 'get') return null;
+            const target = new URL(action, window.location.href);
+            const data = new FormData(form);
+            for (const [key, value] of data.entries()) {
+                if (typeof value === 'string') target.searchParams.set(key, value);
+            }
+            return String(target);
+        }"""
+        try:
+            url = locator.evaluate(script, timeout=500)
+        except TypeError:
+            url = locator.evaluate(script)
         text = str(url or "").strip()
         return text or None
     except Exception:
@@ -4737,6 +5343,69 @@ def _selector_matches_element(selector: str | None, selectors: list[str]) -> boo
     )
 
 
+def _selector_matches_current_element(
+    page: Any,
+    selector: str | None,
+    selectors: list[str],
+) -> bool:
+    if not selector or not selectors or not hasattr(page, "locator"):
+        return False
+    expected_identity = _selector_probe_identity(page, selector)
+    if not expected_identity:
+        return False
+    return any(
+        _selector_probe_identity(page, item) == expected_identity for item in selectors
+    )
+
+
+def _selector_probe_identity(page: Any, selector: str | None) -> str:
+    if not selector or not hasattr(page, "locator"):
+        return ""
+    try:
+        locator = page.locator(str(selector))
+        count = getattr(locator, "count", None)
+        if callable(count) and int(count()) < 1:
+            return ""
+        first = locator.first
+        if callable(first):
+            first = first()
+        script = """(el) => {
+            const key = '__uiAutoSelectorProbeId';
+            if (!el[key]) {
+                try {
+                    Object.defineProperty(el, key, {
+                        value: `${Date.now()}-${Math.random()}`,
+                        configurable: false,
+                    });
+                } catch {
+                    el[key] = `${Date.now()}-${Math.random()}`;
+                }
+            }
+            return el[key];
+        }"""
+        try:
+            value = first.evaluate(script, timeout=500)
+        except TypeError:
+            value = first.evaluate(script)
+        return str(value or "").strip()
+    except Exception:
+        return ""
+
+
+def _dom_context_has_selector(
+    dom_context: dict[str, Any], selector: str | None
+) -> bool:
+    if not selector or not isinstance(dom_context, dict):
+        return False
+    for item in _iter_dom_elements(dom_context):
+        if _selector_matches_element(
+            selector,
+            selectors_for_element_id(dom_context, str(item.get("id") or "")),
+        ):
+            return True
+    return False
+
+
 def _normalize_selector_for_compare(selector: Any) -> str:
     text = str(selector or "").strip()
     if not text:
@@ -5041,6 +5710,13 @@ def _unmet_intent_action_requirements(
     requirements = _intent_action_requirements(spec)
     unmet: list[str] = []
     for action, terms, label, source_text in requirements:
+        scoped_history = _history_after_prior_plan_steps(
+            source_text,
+            spec=spec,
+            history=history,
+            dom_context=dom_context,
+        )
+        effective_history = scoped_history if scoped_history is not None else history
         actions = {"fill"} if action == "fill" else {"click", "press", "press_key"}
         if action == "click" and _auth_submit_history_satisfies_target(
             history,
@@ -5048,7 +5724,7 @@ def _unmet_intent_action_requirements(
         ):
             continue
         if not _history_action_satisfies(
-            history,
+            effective_history,
             actions=actions,
             terms=terms,
             require_observed_progress=False,
@@ -5067,7 +5743,7 @@ def _final_criterion_satisfied(
     text = str(criterion or "").lower()
     if not text:
         return True
-    terms = _criterion_evidence_terms(criterion)
+    terms = _quoted_evidence_terms(criterion) or _criterion_evidence_terms(criterion)
     if _criterion_requires_fill_history(text):
         if _history_action_satisfies(
             history,
@@ -5087,18 +5763,24 @@ def _final_criterion_satisfied(
             terms=terms,
         )
     if _criterion_requires_title(text):
+        if _criterion_requires_non_empty(text):
+            meta = dom_context.get("meta") if isinstance(dom_context, dict) else {}
+            title = str((meta or {}).get("title") or "").strip()
+            return bool(title)
         return any(
             _page_title_contains(dom_context, term)
-            or _dom_contains_text(dom_context, term)
-            or _history_assertion_has(history, value_contains=term)
+            or _history_assertion_has(
+                history,
+                value_contains=term,
+                actions={"assert_title", "assert_title_contains"},
+            )
             for term in terms
         )
     if _criterion_requires_url(text):
-        return any(term.lower() in str(current_url or "").lower() for term in terms)
+        return any(_url_contains_term(current_url, term) for term in terms)
     for term in terms:
-        if (
-            _dom_contains_text(dom_context, term)
-            or term.lower() in str(current_url or "").lower()
+        if _dom_contains_text(dom_context, term) or _url_contains_term(
+            current_url, term
         ):
             return True
         if _history_assertion_has(history, value_contains=term):
@@ -5112,6 +5794,28 @@ def _criterion_requires_title(text: str) -> bool:
 
 def _criterion_requires_url(text: str) -> bool:
     return "url" in text or "地址" in text
+
+
+def _url_contains_term(current_url: Any, term: Any) -> bool:
+    expected = str(term or "").strip().lower()
+    if not expected:
+        return False
+    actual = str(current_url or "").strip()
+    variants = {actual, unquote(actual)}
+    return any(expected in variant.lower() for variant in variants)
+
+
+def _criterion_requires_non_empty(text: str) -> bool:
+    return any(
+        term in text
+        for term in (
+            "不为空",
+            "非空",
+            "not empty",
+            "non-empty",
+            "nonempty",
+        )
+    )
 
 
 def _criterion_requires_fill_history(text: str) -> bool:
@@ -5210,10 +5914,12 @@ def _history_assertion_has(
     history: list[dict[str, Any]],
     *,
     value_contains: str,
+    actions: set[str] | None = None,
 ) -> bool:
     token = str(value_contains or "").lower()
     if not token:
         return False
+    allowed_actions = {str(action or "").lower() for action in (actions or set())}
     for item in _iter_history_items(history):
         if not isinstance(item, dict) or item.get("result") not in {None, "passed"}:
             continue
@@ -5222,6 +5928,8 @@ def _history_assertion_has(
             continue
         action = str(step.get("action") or "").lower()
         if not action.startswith("assert_"):
+            continue
+        if allowed_actions and action not in allowed_actions:
             continue
         blob = " ".join(
             str(step.get(key) or "") for key in ("value", "target", "selector")
@@ -5519,7 +6227,7 @@ def _intent_action_requirements(
     source_texts = _agent_natural_plan(spec)
     if not source_texts:
         return []
-    requirements: list[tuple[str, list[str], str]] = []
+    requirements: list[tuple[str, list[str], str, str]] = []
     for text in source_texts:
         text = str(text or "").strip()
         if not text:
@@ -5530,6 +6238,13 @@ def _intent_action_requirements(
         if _first_url(text) and _looks_like_navigation_instruction(text):
             continue
         fill_target, fill_value = _fill_instruction_parts(text, spec=spec)
+        implicit_trigger_target = ""
+        if not fill_target:
+            (
+                fill_target,
+                fill_value,
+                implicit_trigger_target,
+            ) = _implicit_value_action_parts(text, spec=spec)
         if fill_target and fill_value is not None:
             terms = _dedupe_texts(
                 _intent_action_terms(fill_target) + _intent_action_terms(fill_value)
@@ -5537,6 +6252,13 @@ def _intent_action_requirements(
             if terms:
                 label = f"intent fill: {'/'.join(terms[:3])}"
                 row = ("fill", terms, label, text)
+                if row not in requirements:
+                    requirements.append(row)
+        if implicit_trigger_target and fill_value is not None:
+            terms = _intent_action_terms(implicit_trigger_target)
+            if terms:
+                label = f"intent click: {'/'.join(terms[:3])}"
+                row = ("click", terms, label, text)
                 if row not in requirements:
                     requirements.append(row)
         click_target = _click_instruction_target(text)

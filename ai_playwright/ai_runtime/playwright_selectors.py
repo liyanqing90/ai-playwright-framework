@@ -20,6 +20,109 @@ _LOGOUT_TARGET_TERMS = (
     "signout",
 )
 _LOGOUT_CANDIDATE_TERMS = _LOGOUT_TARGET_TERMS + ("logout-sidebar",)
+_QUERY_TARGET_TERMS = (
+    "查询",
+    "搜索",
+    "检索",
+    "查找",
+    "筛选",
+    "过滤",
+    "query",
+    "search",
+    "find",
+    "lookup",
+    "filter",
+)
+_PRODUCT_ID_TARGET_TERMS = (
+    "商品id",
+    "商品编号",
+    "商品编码",
+    "spu",
+    "spucode",
+    "spu code",
+)
+_LOG_TARGET_TERMS = (
+    "查看日志",
+    "日志",
+    "记录",
+    "view log",
+    "logs",
+    "log",
+)
+_FILLABLE_ELEMENT_SCRIPT = """el => {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'input') {
+        const type = (el.getAttribute('type') || 'text').toLowerCase();
+        return ![
+            'button',
+            'checkbox',
+            'file',
+            'hidden',
+            'image',
+            'radio',
+            'reset',
+            'submit'
+        ].includes(type);
+    }
+    return tag === 'textarea'
+        || el.isContentEditable === true
+        || el.getAttribute('role') === 'textbox';
+}"""
+
+
+_CLEARABLE_CONTROL_TARGET_SCRIPT = """el => {
+    const controlSelector = [
+        '.ant-select',
+        '.ant-picker',
+        '.ant-input-affix-wrapper'
+    ].join(',');
+    const clearSelector = [
+        '.ant-select-clear',
+        '.ant-picker-clear',
+        '.ant-input-clear-icon',
+        '.anticon-close-circle',
+        '[aria-label="close-circle"]',
+        '[aria-label="CloseCircle"]',
+        '[class*="clear" i]'
+    ].join(',');
+    const valueSelector = [
+        '.ant-select-selection-item',
+        '.ant-select-selection-item-content',
+        '.ant-picker-input input',
+        'input',
+        'textarea'
+    ].join(',');
+    const isElement = node => node && node.nodeType === Node.ELEMENT_NODE;
+    const isVisible = node => {
+        if (!isElement(node)) return false;
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== 'none'
+            && style.visibility !== 'hidden'
+            && rect.width > 0
+            && rect.height > 0;
+    };
+    if (isVisible(el)) {
+        const tag = el.tagName.toLowerCase();
+        if (['input', 'textarea', 'select'].includes(tag) || el.isContentEditable) {
+            return true;
+        }
+    }
+    const control = isElement(el) ? el.closest(controlSelector) : null;
+    if (!control || !isVisible(control)) return false;
+    let hasClearIcon = false;
+    try { hasClearIcon = Boolean(control.querySelector(clearSelector)); } catch {}
+    let hasValue = false;
+    try {
+        hasValue = Array.from(control.querySelectorAll(valueSelector)).some(node => {
+            const text = String(
+                node.getAttribute('title') || node.textContent || node.value || ''
+            ).trim();
+            return Boolean(text);
+        });
+    } catch {}
+    return hasClearIcon || hasValue || control.classList.contains('ant-select-allow-clear');
+}"""
 
 
 def normalize_selector(selector: str, selector_type: str | None = None) -> str:
@@ -50,6 +153,30 @@ def canonicalize_persisted_selector(selector: str) -> str:
     return f"//{tag}[normalize-space()={_xpath_literal(text)}]"
 
 
+def is_fillable_element(locator: Any) -> bool:
+    return bool(locator.evaluate(_FILLABLE_ELEMENT_SCRIPT))
+
+
+def is_clearable_control_target(locator: Any) -> bool:
+    return bool(locator.evaluate(_CLEARABLE_CONTROL_TARGET_SCRIPT))
+
+
+def is_checkable_control(locator: Any) -> bool:
+    return bool(
+        locator.evaluate(
+            """el => {
+                const tag = el.tagName.toLowerCase();
+                const role = (el.getAttribute('role') || '').toLowerCase();
+                if (tag === 'input') {
+                    const type = (el.getAttribute('type') || '').toLowerCase();
+                    return type === 'checkbox' || type === 'radio';
+                }
+                return role === 'checkbox' || role === 'radio';
+            }"""
+        )
+    )
+
+
 def validate_selector(
     page,
     selector: str,
@@ -59,6 +186,22 @@ def validate_selector(
     require_unique: bool = False,
 ) -> SelectorValidation:
     locator = page.locator(selector)
+    first = locator.first
+    normalized_action = str(action or "").lower()
+    wait_state = "attached" if normalized_action == "clear" else "visible"
+    try:
+        first.wait_for(state=wait_state, timeout=timeout)
+    except Exception as exc:
+        match_count = _safe_locator_count(locator)
+        return SelectorValidation(
+            selector=selector,
+            action=action,
+            ok=False,
+            match_count=match_count,
+            visible_count=_safe_visible_count(locator, match_count),
+            error=str(exc),
+        )
+
     match_count = _safe_locator_count(locator)
     if match_count == 0:
         return SelectorValidation(
@@ -79,23 +222,9 @@ def validate_selector(
             error=f"selector matched {match_count} elements",
         )
 
-    first = locator.first
-    try:
-        first.wait_for(state="visible", timeout=timeout)
-    except Exception as exc:
-        return SelectorValidation(
-            selector=selector,
-            action=action,
-            ok=False,
-            match_count=match_count,
-            visible_count=_safe_visible_count(locator, match_count),
-            error=str(exc),
-        )
-
     visible_count = _safe_visible_count(locator, match_count)
     enabled: bool | None = None
     action_compatible: bool | None = None
-    normalized_action = str(action or "").lower()
     if normalized_action in {"click", "press", "press_key"}:
         try:
             enabled = bool(first.is_enabled())
@@ -124,17 +253,7 @@ def validate_selector(
         action_compatible = True
     elif normalized_action == "fill":
         try:
-            action_compatible = bool(
-                first.evaluate(
-                    """el => {
-                        const tag = el.tagName.toLowerCase();
-                        return tag === 'input'
-                            || tag === 'textarea'
-                            || el.isContentEditable === true
-                            || el.getAttribute('role') === 'textbox';
-                    }"""
-                )
-            )
+            action_compatible = is_fillable_element(first)
         except Exception as exc:
             return SelectorValidation(
                 selector=selector,
@@ -157,6 +276,60 @@ def validate_selector(
                 enabled=enabled,
                 action_compatible=False,
                 error="selector target is not fillable",
+                locator=first,
+            )
+    elif normalized_action == "clear":
+        try:
+            action_compatible = is_clearable_control_target(first)
+        except Exception as exc:
+            return SelectorValidation(
+                selector=selector,
+                action=action,
+                ok=False,
+                match_count=match_count,
+                visible_count=visible_count,
+                enabled=enabled,
+                action_compatible=False,
+                error=str(exc),
+                locator=first,
+            )
+        if not action_compatible:
+            return SelectorValidation(
+                selector=selector,
+                action=action,
+                ok=False,
+                match_count=match_count,
+                visible_count=visible_count,
+                enabled=enabled,
+                action_compatible=False,
+                error="selector target is not clearable",
+                locator=first,
+            )
+    elif normalized_action in {"check", "uncheck", "set_checked"}:
+        try:
+            action_compatible = is_checkable_control(first)
+        except Exception as exc:
+            return SelectorValidation(
+                selector=selector,
+                action=action,
+                ok=False,
+                match_count=match_count,
+                visible_count=visible_count,
+                enabled=enabled,
+                action_compatible=False,
+                error=str(exc),
+                locator=first,
+            )
+        if not action_compatible:
+            return SelectorValidation(
+                selector=selector,
+                action=action,
+                ok=False,
+                match_count=match_count,
+                visible_count=visible_count,
+                enabled=enabled,
+                action_compatible=False,
+                error="selector target is not checkable",
                 locator=first,
             )
     return SelectorValidation(
@@ -219,25 +392,33 @@ def is_high_quality_selector(selector: str) -> bool:
     return not _looks_like_structural_selector(selector_l)
 
 
-def selector_probe_score(selector: str, action: str | None = None) -> float:
+def selector_probe_score(
+    selector: str, action: str | None = None, target: str | None = None
+) -> float:
     selector_l = str(selector or "").lower().strip()
     if not selector_l:
         return -100.0
     score = _selector_quality_score(selector_l)
     normalized_action = str(action or "").lower()
     has_tag_prefix = bool(re.match(r"^[a-z][\w-]*\[", selector_l))
+    target_l = _remove_cjk_display_spaces(_semantic_target_text(target).lower())
+    is_query_click = normalized_action in {
+        "click",
+        "press",
+        "press_key",
+    } and _contains_any(
+        target_l,
+        list(_QUERY_TARGET_TERMS),
+    )
+    target_mentions_menu = _contains_any(target_l, ["菜单", "menu", "导航", "侧边栏"])
 
     if _looks_like_structural_selector(selector_l):
         score -= 80
     if re.search(
-        r'^[a-z][\w-]*\[type\s*=\s*["\']?(?:password|search)["\']?',
-        selector_l,
+        r'^[a-z][\w-]*\[type\s*=\s*["\']?(?:password|search)["\']?', selector_l
     ):
         score += 50
-    if re.search(
-        r'^[a-z][\w-]*\[type\s*=\s*["\']?(?:submit|button)["\']?',
-        selector_l,
-    ):
+    if re.search(r'^[a-z][\w-]*\[type\s*=\s*["\']?(?:submit|button)["\']?', selector_l):
         score += 42
     if has_tag_prefix and "*=" in selector_l:
         score += 18
@@ -249,6 +430,30 @@ def selector_probe_score(selector: str, action: str | None = None) -> float:
         ("button", "a", "input")
     ):
         score += 10
+    if is_query_click:
+        menu_like = any(
+            marker in selector_l
+            for marker in (
+                "menuitem",
+                "ant-pro-menu-item-title",
+                "ant-menu",
+                'role="menuitem"',
+                "role='menuitem'",
+            )
+        )
+        button_like = selector_l.startswith(("button", "//button", "(//button")) or (
+            "//button[" in selector_l
+        )
+        if menu_like and not target_mentions_menu:
+            score -= 80
+        if button_like:
+            score += 35
+            if "translate(normalize-space()" in selector_l:
+                score += 12
+        if selector_l.startswith('input[type="search"') or selector_l.startswith(
+            "input[type='search'"
+        ):
+            score -= 45
     if selector_l.startswith(("text=", "*:has-text(")):
         score -= 12
     return score
@@ -306,6 +511,25 @@ def stable_selector_for_locator(locator) -> str:
                 if (!value) return null;
                 return `${node.tagName.toLowerCase()}[${attr}="${quote(value)}"]`;
             };
+            const stableClassSelector = node => {
+                const className = typeof node.className === 'string' ? node.className : '';
+                if (!className) return null;
+                const tokens = className.split(/\\s+/).filter(Boolean);
+                const stableToken = token => {
+                    if (!token || token.length > 80) return false;
+                    if (/^[0-9]+$/.test(token)) return false;
+                    if (/^[a-f0-9]{8,}$/i.test(token)) return false;
+                    if (/[0-9]{8,}/.test(token)) return false;
+                    if (/^css-[a-z0-9]+$/i.test(token)) return false;
+                    return /[a-z\u4e00-\u9fff]/i.test(token);
+                };
+                for (const token of tokens) {
+                    if (!stableToken(token)) continue;
+                    const selector = `${node.tagName.toLowerCase()}.${cssEscape(token)}`;
+                    if (isUniqueCss(selector)) return selector;
+                }
+                return null;
+            };
             const inputValueSelector = node => {
                 const tag = node.tagName.toLowerCase();
                 if (tag !== 'input') return null;
@@ -343,6 +567,8 @@ def stable_selector_for_locator(locator) -> str:
                     const selector = attrSelector(node, attr);
                     if (selector) selectors.push(selector);
                 }
+                const classSelector = stableClassSelector(node);
+                if (classSelector) selectors.push(classSelector);
                 const valueSelector = inputValueSelector(node);
                 if (valueSelector) selectors.push(valueSelector);
                 const role = node.getAttribute('role');
@@ -389,22 +615,44 @@ def stable_selector_for_locator(locator) -> str:
     )
 
 
-def collect_candidates(
+def collect_candidates_diagnostic(
     page,
     *,
     limit: int = 120,
     ignore_selectors: list[str] | tuple[str, ...] | None = None,
     include_open_shadow_dom: bool = True,
-) -> list[dict[str, Any]]:
-    candidates = page.evaluate(
+    time_budget_ms: int | None = None,
+) -> dict[str, Any]:
+    result = page.evaluate(
         """opts => {
             const limit = opts.limit || 120;
+            const timeBudgetMs = Math.max(0, Number(opts.time_budget_ms || 0));
+            const startedAt = performance.now();
+            const deadlineAt = timeBudgetMs > 0 ? startedAt + timeBudgetMs : 0;
+            let timedOut = false;
+            let timeoutStage = '';
+            const markStage = stage => {
+                if (!deadlineAt || performance.now() <= deadlineAt) return false;
+                timedOut = true;
+                if (!timeoutStage) timeoutStage = stage;
+                return true;
+            };
+            const candidateBudget = Math.max(limit * 4, 240);
+            const textNodeScanLimit = Math.max(limit * 8, 500);
             const ignoreSelectors = Array.isArray(opts.ignore_selectors) ? opts.ignore_selectors : [];
             const includeOpenShadowDom = opts.include_open_shadow_dom !== false;
+            let pageTitle = '';
+            try {
+                pageTitle = document.title || '';
+            } catch {
+                pageTitle = '';
+            }
             const viewport = {
                 width: window.innerWidth || document.documentElement.clientWidth || 1,
                 height: window.innerHeight || document.documentElement.clientHeight || 1
             };
+            const compactText = value => String(value || '').trim().replace(/\\s+/g, ' ');
+            const nodeText = node => compactText(node.textContent || '');
             const cssEscape = value => {
                 if (window.CSS && CSS.escape) return CSS.escape(value);
                 return String(value).replace(/["\\\\]/g, '\\\\$&');
@@ -432,20 +680,73 @@ def collect_candidates(
                 if (!selector) return false;
                 return safeMatches(el, selector) || !!safeClosest(el, selector);
             });
+            const boundedVisibleBox = el => {
+                const rect = el.getBoundingClientRect();
+                if (!rect.width || !rect.height) return null;
+                const area = rect.width * rect.height;
+                const viewportArea = Math.max(1, viewport.width * viewport.height);
+                if (area > viewportArea * 0.35 || rect.width < 4 || rect.height < 4) return null;
+                return rect;
+            };
+            const visibleTextPool = (() => {
+                const result = [];
+                let nodes = [];
+                try {
+                    nodes = Array.from(document.querySelectorAll('label, span, div'));
+                } catch {
+                    nodes = [];
+                }
+                for (const node of nodes) {
+                    if (markStage('text_pool')) break;
+                    if (result.length >= textNodeScanLimit) break;
+                    const text = nodeText(node);
+                    if (!text || text.length > 40) continue;
+                    const box = boundedVisibleBox(node);
+                    if (!box) continue;
+                    result.push({ text, box });
+                }
+                return result;
+            })();
             const labelText = el => {
                 const labels = [];
                 if (el.id) {
                     const explicit = document.querySelector(`label[for="${cssEscape(el.id)}"]`);
-                    if (explicit) labels.push(explicit.innerText || explicit.textContent || '');
+                    if (explicit) labels.push(nodeText(explicit));
                 }
                 let parent = el.parentElement;
                 while (parent && parent !== document.body) {
                     if (parent.tagName && parent.tagName.toLowerCase() === 'label') {
-                        labels.push(parent.innerText || parent.textContent || '');
+                        labels.push(nodeText(parent));
                         break;
                     }
                     parent = parent.parentElement;
                 }
+                const formItem = el.closest([
+                    '.ant-form-item',
+                    '[class*="form-item" i]',
+                    '[class*="formItem"]',
+                    'fieldset'
+                ].join(','));
+                if (formItem) {
+                    const labelNode = formItem.querySelector([
+                        'label',
+                        '.ant-form-item-label',
+                        '[class*="label" i]'
+                    ].join(','));
+                    if (labelNode) labels.push(nodeText(labelNode));
+                }
+                const rect = el.getBoundingClientRect();
+                const nearby = visibleTextPool
+                    .map(item => {
+                        const box = item.box;
+                        const verticalOverlap = Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top);
+                        const distance = rect.left - box.right;
+                        if (verticalOverlap <= 0 || distance < -8 || distance > 260) return null;
+                        return { text: item.text, distance };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => a.distance - b.distance)[0];
+                if (nearby) labels.push(nearby.text);
                 return labels.join(' ').trim().slice(0, 180);
             };
             const ancestorText = el => {
@@ -456,7 +757,7 @@ def collect_candidates(
                     '[class*="card" i]', '[class*="item" i]', '[class*="row" i]'
                 ].join(','));
                 if (!ancestor || ancestor === el) return '';
-                return (ancestor.innerText || ancestor.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 300);
+                return nodeText(ancestor).slice(0, 300);
             };
             const stableSelector = el => {
                 const quote = value => String(value).replace(/["\\\\]/g, '\\\\$&');
@@ -505,6 +806,25 @@ def collect_candidates(
                     if (same.length !== 1) return null;
                     return `${tag}:has-text("${quote(text)}")`;
                 };
+                const stableClassSelector = node => {
+                    const className = typeof node.className === 'string' ? node.className : '';
+                    if (!className) return null;
+                    const tokens = className.split(/\\s+/).filter(Boolean);
+                    const stableToken = token => {
+                        if (!token || token.length > 80) return false;
+                        if (/^[0-9]+$/.test(token)) return false;
+                        if (/^[a-f0-9]{8,}$/i.test(token)) return false;
+                        if (/[0-9]{8,}/.test(token)) return false;
+                        if (/^css-[a-z0-9]+$/i.test(token)) return false;
+                        return /[a-z\u4e00-\u9fff]/i.test(token);
+                    };
+                    for (const token of tokens) {
+                        if (!stableToken(token)) continue;
+                        const selector = `${node.tagName.toLowerCase()}.${cssEscape(token)}`;
+                        if (isUniqueCss(selector)) return selector;
+                    }
+                    return null;
+                };
                 const localSelectors = (node, includeText=true) => {
                     const selectors = [];
                     for (const attr of ['data-testid', 'data-test', 'data-qa', 'data-cy', 'data-ui']) {
@@ -516,6 +836,8 @@ def collect_candidates(
                         const selector = attrSelector(node, attr);
                         if (selector) selectors.push(selector);
                     }
+                    const classSelector = stableClassSelector(node);
+                    if (classSelector) selectors.push(classSelector);
                     const valueSelector = inputValueSelector(node);
                     if (valueSelector) selectors.push(valueSelector);
                     const role = node.getAttribute('role');
@@ -572,10 +894,49 @@ def collect_candidates(
             const seen = new Set();
             const addNode = el => {
                 if (!el || seen.has(el)) return;
+                if (nodes.length >= candidateBudget) return;
                 seen.add(el);
                 nodes.push(el);
             };
+            const ownText = el => Array.from(el.childNodes || [])
+                .filter(node => node.nodeType === Node.TEXT_NODE)
+                .map(node => node.nodeValue || '')
+                .join(' ')
+                .trim()
+                .replace(/\\s+/g, ' ');
+            const hasStableSelector = el => {
+                const selector = stableSelector(el);
+                return !!selector && !/^(?:div|span|li|i)(?::nth-of-type\\(\\d+\\))?$/.test(selector);
+            };
+            const hasStableClassToken = el => {
+                const className = typeof el.className === 'string' ? el.className : '';
+                if (!className) return false;
+                return className.split(/\\s+/).some(token => {
+                    if (!token || token.length > 80) return false;
+                    if (/^[0-9]+$/.test(token)) return false;
+                    if (/^[a-f0-9]{8,}$/i.test(token)) return false;
+                    if (/[0-9]{8,}/.test(token)) return false;
+                    if (/^css-[a-z0-9]+$/i.test(token)) return false;
+                    return /[a-z\u4e00-\u9fff]/i.test(token);
+                });
+            };
+            const hasStableSelectorSignal = el => {
+                if (el.id) return true;
+                if (['data-testid', 'data-test', 'data-qa', 'data-cy', 'data-ui', 'aria-label', 'title'].some(attr => el.getAttribute(attr))) {
+                    return true;
+                }
+                return hasStableClassToken(el);
+            };
+            const genericVisibleCandidate = el => {
+                const tag = (el.tagName || '').toLowerCase();
+                if (!['div', 'span', 'li', 'i'].includes(tag)) return false;
+                if (!boundedVisibleBox(el)) return false;
+                const text = ownText(el);
+                if (text && text.length <= 80) return true;
+                return hasStableSelectorSignal(el) && (el.children || []).length <= 8;
+            };
             const scanRoot = (root, inShadow=false) => {
+                if (markStage(inShadow ? 'shadow_root_scan' : 'root_scan')) return;
                 let found = [];
                 try {
                     found = Array.from(root.querySelectorAll(candidateSelector));
@@ -583,6 +944,8 @@ def collect_candidates(
                     found = [];
                 }
                 for (const el of found) {
+                    if (markStage(inShadow ? 'shadow_candidate_scan' : 'candidate_selector_scan')) break;
+                    if (nodes.length >= candidateBudget) break;
                     if (inShadow) el.__uiAutoInShadow = true;
                     addNode(el);
                     if (includeOpenShadowDom && el.shadowRoot) {
@@ -597,16 +960,36 @@ def collect_candidates(
                         shadowHosts = [];
                     }
                     for (const host of shadowHosts) {
+                        if (markStage('shadow_host_scan')) break;
+                        if (nodes.length >= candidateBudget) break;
                         scanRoot(host.shadowRoot, true);
                     }
                 }
+                if (markStage(inShadow ? 'shadow_generic_prefilter' : 'generic_prefilter')) return;
+                let generic = [];
+                try {
+                    generic = Array.from(root.querySelectorAll('div,span,li,i'));
+                } catch {
+                    generic = [];
+                }
+                for (const el of generic) {
+                    if (markStage(inShadow ? 'shadow_generic_scan' : 'generic_scan')) break;
+                    if (nodes.length >= candidateBudget) break;
+                    if (!genericVisibleCandidate(el)) continue;
+                    if (inShadow) el.__uiAutoInShadow = true;
+                    addNode(el);
+                }
             };
             scanRoot(document, false);
-            return nodes
+            const visibleNodes = nodes
                 .filter(el => !ignored(el))
                 .filter(el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length))
-                .slice(0, limit)
-                .map((el, index) => {
+                .slice(0, limit);
+            const candidates = [];
+            for (const el of visibleNodes) {
+                if (markStage('candidate_serialization')) break;
+                const index = candidates.length;
+                try {
                     const rect = el.getBoundingClientRect();
                     const x1 = Math.max(0, rect.left);
                     const y1 = Math.max(0, rect.top);
@@ -614,7 +997,7 @@ def collect_candidates(
                     const y2 = Math.min(viewport.height, rect.bottom);
                     const centerX = x1 + (x2 - x1) / 2;
                     const centerY = y1 + (y2 - y1) / 2;
-                    return {
+                    const candidate = {
                         index,
                         tag: el.tagName.toLowerCase(),
                         selector: stableSelector(el),
@@ -640,15 +1023,61 @@ def collect_candidates(
                         bbox_norm: [x1 / viewport.width, y1 / viewport.height, x2 / viewport.width, y2 / viewport.height],
                         center_norm: [centerX / viewport.width, centerY / viewport.height],
                     };
-                });
+                    candidates.push(candidate);
+                } catch {
+                    continue;
+                }
+            }
+            return {
+                candidates,
+                timed_out: timedOut,
+                timeout_stage: timeoutStage,
+                title: pageTitle,
+                elapsed_ms: Math.round(performance.now() - startedAt),
+                candidate_budget: candidateBudget,
+            };
         }""",
         {
             "limit": limit,
             "ignore_selectors": list(ignore_selectors or ()),
             "include_open_shadow_dom": include_open_shadow_dom,
+            "time_budget_ms": int(time_budget_ms or 0),
         },
     )
-    return candidates
+    if not isinstance(result, dict):
+        return {
+            "candidates": result if isinstance(result, list) else [],
+            "timed_out": False,
+            "timeout_stage": "",
+            "title": "",
+            "elapsed_ms": 0,
+            "candidate_budget": 0,
+        }
+    candidates = result.get("candidates")
+    return {
+        "candidates": candidates if isinstance(candidates, list) else [],
+        "timed_out": bool(result.get("timed_out")),
+        "timeout_stage": str(result.get("timeout_stage") or ""),
+        "title": str(result.get("title") or ""),
+        "elapsed_ms": int(result.get("elapsed_ms") or 0),
+        "candidate_budget": int(result.get("candidate_budget") or 0),
+    }
+
+
+def collect_candidates(
+    page,
+    *,
+    limit: int = 120,
+    ignore_selectors: list[str] | tuple[str, ...] | None = None,
+    include_open_shadow_dom: bool = True,
+) -> list[dict[str, Any]]:
+    diagnostic = collect_candidates_diagnostic(
+        page,
+        limit=limit,
+        ignore_selectors=ignore_selectors,
+        include_open_shadow_dom=include_open_shadow_dom,
+    )
+    return list(diagnostic.get("candidates") or [])
 
 
 def semantic_selectors(
@@ -752,24 +1181,65 @@ def selector_matches_target(
 
     try:
         snapshot = page.locator(selector).first.evaluate(
-            """el => ({
-                selector: '',
-                tag: el.tagName.toLowerCase(),
-                id: el.id || null,
-                class_name: el.className || null,
-                data_test: el.getAttribute('data-test'),
-                data_testid: el.getAttribute('data-testid'),
-                text: (el.innerText || el.textContent || '').trim().slice(0, 180),
-                value: el.getAttribute('value'),
-                role: el.getAttribute('role'),
-                aria_label: el.getAttribute('aria-label'),
-                placeholder: el.getAttribute('placeholder'),
-                title: el.getAttribute('title'),
-                name: el.getAttribute('name'),
-                type: el.getAttribute('type'),
-                label: '',
-                ancestor_text: ''
-            })"""
+            """el => {
+                const attrEscape = value => String(value).replace(/["\\\\]/g, '\\\\$&');
+                const textOf = node => (node && (node.innerText || node.textContent) || '').trim().replace(/\\s+/g, ' ');
+                const labelText = node => {
+                    const labels = [];
+                    if (node.id) {
+                        const explicit = document.querySelector(`label[for="${attrEscape(node.id)}"]`);
+                        if (explicit) labels.push(textOf(explicit));
+                    }
+                    let parent = node.parentElement;
+                    while (parent && parent !== document.body) {
+                        if (parent.tagName && parent.tagName.toLowerCase() === 'label') {
+                            labels.push(textOf(parent));
+                            break;
+                        }
+                        parent = parent.parentElement;
+                    }
+                    const formItem = node.closest('.ant-form-item,[class*="form-item" i],[class*="formItem"],fieldset');
+                    if (formItem) {
+                        const labelNode = formItem.querySelector('label,.ant-form-item-label,[class*="label" i]');
+                        if (labelNode) labels.push(textOf(labelNode));
+                    }
+                    const rect = node.getBoundingClientRect();
+                    const nearby = Array.from(document.querySelectorAll('label, span, div'))
+                        .map(item => {
+                            const text = textOf(item);
+                            if (!text || text.length > 40) return null;
+                            const box = item.getBoundingClientRect();
+                            if (!(box.width || box.height || item.getClientRects().length)) return null;
+                            const overlap = Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top);
+                            const distance = rect.left - box.right;
+                            if (overlap <= 0 || distance < -8 || distance > 260) return null;
+                            return { text, distance };
+                        })
+                        .filter(Boolean)
+                        .sort((a, b) => a.distance - b.distance)[0];
+                    if (nearby) labels.push(nearby.text);
+                    return labels.join(' ').trim().slice(0, 180);
+                };
+                const ancestor = el.closest('[data-test],[data-testid],[data-qa],li,tr,form,section,article,fieldset,[role="row"],[role="listitem"],[class*="card" i],[class*="item" i],[class*="row" i]');
+                return {
+                    selector: '',
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || null,
+                    class_name: el.className || null,
+                    data_test: el.getAttribute('data-test'),
+                    data_testid: el.getAttribute('data-testid'),
+                    text: textOf(el).slice(0, 180),
+                    value: el.getAttribute('value'),
+                    role: el.getAttribute('role'),
+                    aria_label: el.getAttribute('aria-label'),
+                    placeholder: el.getAttribute('placeholder'),
+                    title: el.getAttribute('title'),
+                    name: el.getAttribute('name'),
+                    type: el.getAttribute('type'),
+                    label: labelText(el),
+                    ancestor_text: ancestor && ancestor !== el ? textOf(ancestor).slice(0, 300) : ''
+                };
+            }"""
         )
     except Exception:
         return True
@@ -894,22 +1364,7 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
         attribute_selectors.extend(_target_attribute_selectors(target_variant, action))
     if action == "fill":
         selectors.extend(attribute_selectors)
-    if any(
-        term in target_l
-        for term in (
-            "搜索",
-            "查询",
-            "检索",
-            "查找",
-            "筛选",
-            "过滤",
-            "search",
-            "query",
-            "find",
-            "lookup",
-            "filter",
-        )
-    ):
+    if any(term in target_l for term in _QUERY_TARGET_TERMS):
         selectors.extend(
             [
                 'textarea[aria-label*="Search"]',
@@ -919,6 +1374,28 @@ def heuristic_selectors(target: str, action: str) -> list[str]:
                 'input[placeholder*="搜索"]',
                 'input[placeholder*="查询"]',
                 'input[type="search"]',
+            ]
+        )
+        if action in {"click", "press", "press_key"}:
+            selectors.extend(
+                [
+                    'button:has-text("查询")',
+                    'button:has-text("搜索")',
+                    'a:has-text("查询")',
+                    'a:has-text("搜索")',
+                ]
+            )
+    if _is_log_target_text(target_l):
+        selectors.extend(
+            [
+                'a:has-text("日志")',
+                'button:has-text("日志")',
+                'a:has-text("查看日志")',
+                'button:has-text("查看日志")',
+                'a:has-text("Logs")',
+                'button:has-text("Logs")',
+                'a:has-text("Log")',
+                'button:has-text("Log")',
             ]
         )
     if action == "fill":
@@ -1078,6 +1555,9 @@ def _candidate_matches_semantic_text(
         normalized_variant = _remove_cjk_display_spaces(variant.lower())
         if normalized_variant and normalized_variant in normalized_blob:
             return True
+    terms = semantic_match_terms(semantic_target)
+    if terms and any(term in normalized_blob for term in terms):
+        return True
     tokens = _target_tokens(semantic_target)
     if not tokens:
         return False
@@ -1106,7 +1586,9 @@ def candidate_matches_semantic_terms(
 def semantic_match_terms(target: str | None) -> list[str]:
     """Extract stable semantic terms for AI result validation and scan expansion."""
     terms: list[str] = []
-    for variant in semantic_text_variants(_semantic_target_text(target)):
+    semantic_target = _semantic_target_text(target)
+    semantic_target_l = semantic_target.lower()
+    for variant in semantic_text_variants(semantic_target):
         text = _remove_cjk_display_spaces(variant.lower())
         if not text:
             continue
@@ -1132,7 +1614,35 @@ def semantic_match_terms(target: str | None) -> list[str]:
                 continue
             if normalized not in terms:
                 terms.append(normalized)
+            for word in re.findall(r"[a-z0-9]{3,}", normalized):
+                if word in {"code", "field", "input", "name", "text", "type"}:
+                    continue
+                if word not in terms:
+                    terms.append(word)
+    if _contains_any(semantic_target_l, list(_QUERY_TARGET_TERMS)):
+        _extend_unique_terms(terms, _QUERY_TARGET_TERMS)
+    if _contains_any(semantic_target_l, list(_PRODUCT_ID_TARGET_TERMS)):
+        _extend_unique_terms(terms, _PRODUCT_ID_TARGET_TERMS)
+    if _is_log_target_text(semantic_target_l):
+        _extend_unique_terms(terms, _LOG_TARGET_TERMS)
     return terms
+
+
+def _extend_unique_terms(terms: list[str], values: tuple[str, ...]) -> None:
+    for value in values:
+        normalized = _remove_cjk_display_spaces(str(value or "").lower()).strip()
+        if normalized and normalized not in terms:
+            terms.append(normalized)
+
+
+def _is_log_target_text(value: str) -> bool:
+    text = str(value or "").lower()
+    return bool(
+        "日志" in text
+        or "记录" in text
+        or "view log" in text
+        or re.search(r"(?<![a-z0-9])logs?(?![a-z0-9])", text)
+    )
 
 
 def _text_context_selectors(target: str, action: str) -> list[str]:
@@ -1429,8 +1939,12 @@ def _candidate_semantic_score(
     input_type = str(candidate.get("type") or "").lower()
     score = 0.0
 
-    if action == "fill":
-        if tag in {"input", "textarea"} or role == "textbox":
+    if action in {"fill", "clear"}:
+        if tag in {"input", "textarea", "select"} or role in {
+            "textbox",
+            "combobox",
+            "spinbutton",
+        }:
             score += 2
         else:
             score -= 4
@@ -1440,6 +1954,33 @@ def _candidate_semantic_score(
 
     if target_l and target_l in blob:
         score += 5
+
+    blob_tokens = set(re.findall(r"[a-z0-9]+", blob))
+    generic_terms = {
+        "button",
+        "link",
+        "input",
+        "field",
+        "text",
+        "select",
+        "combobox",
+        "textbox",
+        "click",
+        "clear",
+        "view",
+    }
+    for term in semantic_match_terms(target_l):
+        term_l = str(term or "").lower()
+        if not term_l:
+            continue
+        if re.fullmatch(r"[a-z0-9]+", term_l):
+            if len(term_l) < 3 or term_l in generic_terms:
+                continue
+            if term_l in blob_tokens:
+                score += 4
+            continue
+        if term_l in blob:
+            score += 4
 
     for word in re.findall(r"[a-z0-9]{3,}", target_l):
         if word in blob:
@@ -1564,7 +2105,7 @@ def _minimum_semantic_score(target: str, action: str) -> float:
         target_l, ["密码", "password", "用户名", "账号", "帐号", "username"]
     ):
         return 4
-    if action == "fill":
+    if action in {"fill", "clear"}:
         return 3
     return 4
 
@@ -1604,4 +2145,13 @@ def looks_like_raw_selector(value: str) -> bool:
     }
     if value.lower() in html_tags:
         return True
-    return bool(re.match(r"^[a-zA-Z][a-zA-Z0-9_-]*(\[|\.|#|:|\s|>)", value))
+    match = re.match(r"^([a-zA-Z][a-zA-Z0-9_-]*)(\[|\.|#|:|\s+|>)", value)
+    if not match:
+        return False
+    first_token = match.group(1).lower()
+    marker = match.group(2)
+    if first_token in html_tags:
+        return True
+    if "-" in first_token:
+        return True
+    return bool(marker and not marker.isspace())

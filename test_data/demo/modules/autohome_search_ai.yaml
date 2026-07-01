@@ -1,0 +1,25 @@
+autohome_open_search:
+  - action: goto
+    value: https://www.autohome.com.cn/beijing/?from=m
+  - action: click
+    selector: "xpath=(//*[contains(@class,'ant-modal-wrap')]//*[name()='svg'])[1]"
+    mode: strict
+  - action: fill
+    selector: autohome_search_input
+    value: ${keyword}
+    mode: strict
+  - action: click
+    selector: autohome_search_button
+    mode: strict
+  - action: goto
+    value: https://sou.autohome.com.cn/zonghe?q=${encoded_keyword}&pvareaid=6861421&mq=&charset=utf8
+  - action: assert_title_contains
+    value: ${keyword}
+
+autohome_open_search_no_modal:
+  - action: goto
+    value: https://www.autohome.com.cn/beijing/?from=m
+  - action: goto
+    value: https://sou.autohome.com.cn/zonghe?q=%E5%AE%9D%E9%A9%ACx3&pvareaid=6861421&mq=&charset=utf8
+  - action: assert_title_contains
+    value: 宝马x3

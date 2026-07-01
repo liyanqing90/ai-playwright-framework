@@ -1,4 +1,10 @@
 elements:
+  sauce_username_input: "[data-test='username']"
+  sauce_password_input: "[data-test='password']"
+  sauce_login_btn: "[data-test='login-button']"
+  add_to_cart_backpack_btn: "[data-test='add-to-cart-sauce-labs-backpack']"
+  shopping_cart_badge: .shopping_cart_badge
+  shopping_cart_link: .shopping_cart_link
   sauce_page_title: .title
   cart_item_backpack_name: "[data-test='inventory-item-name']"
   menu_button: "#react-burger-menu-btn"
@@ -10,3 +16,6 @@ elements:
   checkout_continue_button: "[data-test='continue']"
   checkout_finish_button: "[data-test='finish']"
   checkout_complete_header: "[data-test='complete-header']"
+  autohome_inquiry_modal_close: "xpath=(//*[contains(@class,'ant-modal-wrap')]//*[name()='svg'])[1]"
+  autohome_search_input: "#searchIpt"
+  autohome_search_button: "#submitBtn"

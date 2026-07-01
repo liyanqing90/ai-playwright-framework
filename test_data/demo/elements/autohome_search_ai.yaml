@@ -1,0 +1,4 @@
+elements:
+  autohome_inquiry_modal_close: "xpath=(//*[contains(@class,'ant-modal-wrap')]//*[name()='svg'])[1]"
+  autohome_search_input: "#searchIpt"
+  autohome_search_button: "#submitBtn"
