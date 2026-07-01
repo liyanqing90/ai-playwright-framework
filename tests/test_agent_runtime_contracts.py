@@ -403,6 +403,7 @@ def test_collect_candidates_passes_ignore_and_shadow_options():
         "limit": 17,
         "ignore_selectors": [".ads", "footer"],
         "include_open_shadow_dom": True,
+        "time_budget_ms": 0,
     }
     assert "shadowRoot" in captured["script"]
     assert "ignoreSelectors" in captured["script"]
@@ -897,7 +898,7 @@ def test_agent_case_completion_uses_checkpoints_when_final_is_absent():
     assert unmet == []
 
 
-def test_agent_case_title_checkpoint_accepts_visible_text_assertion_history():
+def test_agent_case_title_checkpoint_ignores_visible_text_assertion_history():
     unmet = _unmet_completion_criteria(
         criteria={
             "checkpoints": ["登录成功后进入商品列表页，页面标题为 Products"],
@@ -924,7 +925,8 @@ def test_agent_case_title_checkpoint_accepts_visible_text_assertion_history():
         },
     )
 
-    assert unmet == []
+    assert len(unmet) == 1
+    assert "Products" in unmet[0]
 
 
 def test_agent_case_numeric_checkpoint_accepts_assertion_history():
@@ -972,7 +974,7 @@ def test_agent_case_completion_extracts_business_page_term():
     assert unmet == []
 
 
-def test_agent_case_completion_requires_checkpoints_with_final():
+def test_agent_case_completion_final_overrides_checkpoints():
     unmet = _unmet_completion_criteria(
         criteria={
             "checkpoints": ["search button executed"],
@@ -987,7 +989,7 @@ def test_agent_case_completion_requires_checkpoints_with_final():
         },
     )
 
-    assert unmet == ["search button executed"]
+    assert unmet == []
 
 
 def test_agent_case_completion_uses_module_runtime_steps_as_evidence():

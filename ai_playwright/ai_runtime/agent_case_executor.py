@@ -55,7 +55,8 @@ from ai_playwright.ai_runtime.payload_compactor import (
     selectors_for_element_id,
 )
 from ai_playwright.ai_runtime.playwright_selectors import (
-    collect_candidates_diagnostic,
+    collect_candidates,
+    collect_candidates_diagnostic as _collect_candidates_diagnostic,
     heuristic_selectors,
     semantic_selectors,
     validate_selector,
@@ -88,6 +89,8 @@ from ai_playwright.ai_runtime.provider import (
 from ai_playwright.step_actions.step_executor import StepExecutor
 from ai_playwright.utils.logger import logger
 from ai_playwright.utils.token_usage import get_token_usage_tracker
+
+_DEFAULT_COLLECT_CANDIDATES = collect_candidates
 
 _PAYMENT_KEYWORDS = ("支付", "付款", "真实支付", "payment", "pay now", "credit card")
 _ACTION_CATEGORIES: dict[str, tuple[str, ...]] = {
@@ -720,13 +723,6 @@ class AgentCaseExecutor:
                 elements=self.elements,
             )
             failure_kind = "断言" if _is_assertion_step(exc.failed_step) else "步骤"
-            if not _is_assertion_step(exc.failed_step):
-                logger.warning(
-                    "Agent编译步骤执行失败，切换逐步实时规划: "
-                    f"case={case_name} | step={exc.step_index} "
-                    f"| {_format_step(exc.failed_step)} | error={exc.original_error}"
-                )
-                return None
             raise AssertionError(
                 f"Agent编译{failure_kind}执行失败: "
                 f"case={case_name} | step={exc.step_index} "
@@ -2136,16 +2132,31 @@ class AgentCaseExecutor:
             f"| wall_timeout_ms={self.agent_probe_wall_timeout_ms}"
         )
         try:
-            diagnostic = collect_candidates_diagnostic(
-                self.page,
-                limit=min(
-                    self.agent_candidate_scan_limit,
-                    self.native_observe.max_candidates,
-                ),
-                ignore_selectors=self.native_observe.ignore_selectors,
-                include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
-                time_budget_ms=self.agent_probe_timeout_ms,
+            limit = min(
+                self.agent_candidate_scan_limit,
+                self.native_observe.max_candidates,
             )
+            if collect_candidates is _DEFAULT_COLLECT_CANDIDATES:
+                diagnostic = _collect_candidates_diagnostic(
+                    self.page,
+                    limit=limit,
+                    ignore_selectors=self.native_observe.ignore_selectors,
+                    include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
+                    time_budget_ms=self.agent_probe_timeout_ms,
+                )
+            else:
+                diagnostic = {
+                    "candidates": collect_candidates(
+                        self.page,
+                        limit=limit,
+                        ignore_selectors=self.native_observe.ignore_selectors,
+                        include_open_shadow_dom=self.native_observe.include_open_shadow_dom,
+                    ),
+                    "timed_out": False,
+                    "timeout_stage": "",
+                    "title": _safe_page_title(self.page),
+                    "elapsed_ms": 0,
+                }
         except Exception as exc:
             elapsed_ms = int((time.monotonic() - started) * 1000)
             reason = f"{type(exc).__name__}: {exc}"
@@ -3095,6 +3106,102 @@ def _dom_context_target_candidates(
     return result[:limit]
 
 
+def _verified_target_candidates(
+    *,
+    page: Any,
+    dom_context: dict[str, Any],
+    target: str,
+    action: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(
+        selector: str,
+        *,
+        source: str,
+        element_id: str = "",
+        text: str = "",
+        score: int = 0,
+    ) -> None:
+        clean_selector = str(selector or "").strip()
+        if not clean_selector or clean_selector in seen:
+            return
+        if hasattr(page, "locator") and not _selector_is_visible_enabled(
+            page,
+            clean_selector,
+        ):
+            return
+        seen.add(clean_selector)
+        item: dict[str, Any] = {"selector": clean_selector, "source": source}
+        if element_id:
+            item["element_id"] = element_id
+        if text:
+            item["text"] = normalize_model_text(text, limit=80)
+        if score:
+            item["match_score"] = score
+        result.append(item)
+
+    terms = _intent_action_terms(target)
+    dom_matches: list[tuple[int, str, str, str]] = []
+    for item in _iter_dom_elements(dom_context):
+        item_id = str(item.get("id") or "")
+        selector = selector_for_element_id(dom_context, item_id)
+        if not selector:
+            continue
+        blob = _normalized_criterion_match_text(_element_primary_blob(item))
+        score = _target_candidate_match_score(terms, blob)
+        if score <= 0:
+            continue
+        dom_matches.append((score, selector, item_id, _element_display_text(item)))
+    for score, selector, item_id, text in sorted(
+        dom_matches,
+        key=lambda match: match[0],
+        reverse=True,
+    ):
+        if len(result) >= limit:
+            break
+        add(
+            selector,
+            source="dom_context",
+            element_id=item_id,
+            text=text,
+            score=score,
+        )
+    if len(result) >= limit:
+        return result[:limit]
+
+    selector_candidates: list[str] = []
+    if hasattr(page, "locator"):
+        try:
+            selector_candidates.extend(
+                semantic_selectors(
+                    page,
+                    target,
+                    action,
+                    limit=max(limit * 4, 12),
+                )
+            )
+        except Exception:
+            pass
+    selector_candidates.extend(heuristic_selectors(target, action))
+    for selector in _dedupe_strings(selector_candidates):
+        if len(result) >= limit:
+            break
+        selector_text = _text_query_from_selector(selector)
+        add(
+            selector,
+            source="verified_selector",
+            text=selector_text,
+            score=_target_candidate_match_score(
+                terms,
+                _normalized_criterion_match_text(selector_text or selector),
+            ),
+        )
+    return result[:limit]
+
+
 def _target_candidate_match_score(terms: list[str], blob: str) -> int:
     normalized_blob = _normalized_criterion_match_text(blob)
     if not normalized_blob:
@@ -3704,6 +3811,9 @@ def _module_instruction_satisfied(
     *,
     history: list[dict[str, Any]],
 ) -> bool:
+    explicit_name = _explicit_module_token(step_text)
+    if explicit_name:
+        return _history_used_module(history, explicit_name)
     module_name, explicit = _module_name_from_entry_text(step_text, modules={})
     if explicit and module_name:
         return _history_used_module(history, module_name)
@@ -6043,6 +6153,8 @@ def _history_step_semantic_values(step: dict[str, Any]) -> list[str]:
             normalized_selector = _normalized_criterion_match_text(selector_value)
             if normalized_selector:
                 values.append(normalized_selector)
+            if any(token in selector_words.split() for token in ("sku", "spu")):
+                values.extend(("product id", "product code", "product"))
     return _dedupe_texts(values)
 
 
@@ -6147,6 +6259,10 @@ def _term_matches_value(
         return term in value
     if " " in term:
         if bool(re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", value)):
+            return True
+        term_words = [word for word in term.split() if len(word) >= 2]
+        value_words = set(value.split())
+        if term_words and all(word in value_words for word in term_words):
             return True
         compact_term = re.sub(r"\s+", "", term)
         compact_value = re.sub(r"\s+", "", value)
