@@ -9,3 +9,82 @@ saucedemo_login:
     value: ${common_password}
   - action: click
     selector: sauce_login_btn
+
+saucedemo_cart_logout_flow:
+  - action: goto
+    value: https://www.saucedemo.com/
+  - action: fill
+    selector: sauce_username_input
+    value: ${standard_username}
+  - action: fill
+    selector: sauce_password_input
+    value: ${common_password}
+  - action: click
+    selector: sauce_login_btn
+  - action: assert_text
+    selector: sauce_page_title
+    value: Products
+  - action: click
+    selector: add_to_cart_backpack_btn
+  - action: assert_text
+    selector: shopping_cart_badge
+    value: "1"
+  - action: click
+    selector: shopping_cart_link
+  - action: assert_text
+    selector: sauce_page_title
+    value: Your Cart
+  - action: assert_text
+    selector: cart_item_backpack_name
+    value: Sauce Labs Backpack
+  - action: click
+    selector: menu_button
+  - action: assert_visible
+    selector: logout_sidebar_link
+  - action: click
+    selector: logout_sidebar_link
+  - action: assert_visible
+    selector: sauce_login_btn
+
+saucedemo_checkout_flow:
+  - action: goto
+    value: https://www.saucedemo.com/
+  - action: fill
+    selector: sauce_username_input
+    value: ${standard_username}
+  - action: fill
+    selector: sauce_password_input
+    value: ${common_password}
+  - action: click
+    selector: sauce_login_btn
+  - action: assert_text
+    selector: sauce_page_title
+    value: Products
+  - action: click
+    selector: add_to_cart_backpack_btn
+  - action: click
+    selector: shopping_cart_link
+  - action: assert_text
+    selector: cart_item_backpack_name
+    value: Sauce Labs Backpack
+  - action: click
+    selector: checkout_button
+  - action: fill
+    selector: checkout_first_name_input
+    value: Test
+  - action: fill
+    selector: checkout_last_name_input
+    value: User
+  - action: fill
+    selector: checkout_postal_code_input
+    value: "100000"
+  - action: click
+    selector: checkout_continue_button
+  - action: assert_text
+    selector: cart_item_backpack_name
+    value: Sauce Labs Backpack
+  - action: click
+    selector: checkout_finish_button
+  - action: assert_text
+    selector: checkout_complete_header
+    value: Thank you for your order!

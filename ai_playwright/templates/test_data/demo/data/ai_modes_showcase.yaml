@@ -55,7 +55,7 @@
         value: Products
       - action: click
         description: step级smart添加Backpack到购物车
-        target: Sauce Labs Backpack add to cart button
+        selector: add_to_cart_backpack_btn
         mode: smart
       - action: assert_text
         description: 断言购物车角标为1
@@ -63,7 +63,7 @@
         value: "1"
       - action: click
         description: step级smart打开购物车
-        target: shopping cart link in header
+        selector: shopping_cart_link
         mode: smart
       - action: assert_text
         description: 断言进入购物车页
@@ -75,14 +75,14 @@
         value: Sauce Labs Backpack
       - action: click
         description: step级smart打开侧边菜单
-        target: Open Menu
+        selector: menu_button
         mode: smart
       - action: assert_visible
         description: 断言退出登录入口可见
         selector: logout_sidebar_link
       - action: click
         description: step级smart退出登录
-        target: Logout link in opened left side menu
+        selector: logout_sidebar_link
         mode: smart
       - action: assert_visible
         description: 断言已回到登录页
@@ -91,16 +91,7 @@
     description: Agent运行时steps式：自然语言步骤作为有序计划，执行时边观察页面边决策
     type: agent_case
     steps:
-      - 打开 https://www.saucedemo.com/ 登录页
-      - 使用标准用户登录 Saucedemo
-      - 确认登录后进入商品列表页，页面标题为 Products
-      - 添加 Sauce Labs Backpack 到购物车
-      - 确认购物车角标数量为 1
-      - 打开购物车页面
-      - 确认购物车页标题为 Your Cart，且存在 Sauce Labs Backpack 商品
-      - 打开左侧菜单
-      - 确认 Logout 退出登录入口可见
-      - 点击 Logout 退出登录
+      - 使用项目模块 saucedemo_cart_logout_flow
       - 确认退出后回到登录页，登录按钮可见
     inputs:
       user_type: standard
@@ -118,7 +109,10 @@
   test_saucedemo_agent_case_explore_cart_checkout_flow:
     description: Agent完全探索：只给一句目标，执行时自行观察、规划并完成Saucedemo下单流程
     type: agent_case
-    intent: 标准用户登录 Saucedemo，添加指定商品到购物车，进入购物车确认商品和数量，并完成下单流程。
+    steps:
+      - 使用项目模块 saucedemo_checkout_flow
+      - 确认完成下单后进入 checkout-complete 页面，页面展示 Thank you for your order
+    intent: 访问 https://www.saucedemo.com/，标准用户登录 Saucedemo，添加指定商品到购物车，进入购物车确认商品和数量，并完成下单流程。
     inputs:
       user_type: standard
       username: ${standard_username}
@@ -136,3 +130,37 @@
     final:
       - 完成下单后进入 checkout-complete 页面
       - 页面展示 Thank you for your order
+
+  test_autohome_agent_case_steps_search:
+    description: Agent运行时steps式：自然语言步骤作为有序计划，执行时边观察页面边决策
+    type: agent_case
+    steps:
+      - 使用项目模块 autohome_open_search
+      - 确认搜索结果页标题包含 “宝马x3”
+    inputs:
+      keyword: 宝马x3
+      encoded_keyword: "%E5%AE%9D%E9%A9%ACx3"
+    checkpoints:
+      - 搜索成功之后，页面标题包含 “宝马x3”
+
+  test_autohome_agent_case_explore_search:
+    description: Agent完全探索：只给一句目标，执行时自行观察、规划并完成 Autohome 搜索流程
+    type: agent_case
+    steps:
+      - 使用项目模块 autohome_open_search_no_modal
+      - 确认搜索结果页标题包含 “宝马x3”
+    intent: 访问 https://www.autohome.com.cn/beijing/?from=m，如出现询价弹框先关闭弹框，搜索 “宝马x3”
+    inputs:
+      keyword: 宝马x3
+      encoded_keyword: "%E5%AE%9D%E9%A9%ACx3"
+    checkpoints:
+      - 搜索成功之后，页面标题包含 “宝马x3”
+
+  test_mall:
+    type: agent_case
+    steps:
+      - 打开商城首页 https://mall.m.autohome.com.cn/homechannel?pvareaid=6868261&__debugShowUsedCar=1
+      - 搜索框输入奥迪A6L
+      - 点击搜索按钮
+    checkpoints:
+      - 搜索成功之后，最终URL包含 "keyword=奥迪A6L"
