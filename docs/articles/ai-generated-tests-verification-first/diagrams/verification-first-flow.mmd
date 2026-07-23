@@ -1,0 +1,18 @@
+flowchart TD
+    A[自然语言生成规格] --> B[模型生成候选 Payload]
+    B --> C[规范化与 Schema 校验]
+    C --> D{是否有有效断言}
+    D -- 否 --> X[拒绝进入验证]
+    D -- 是 --> E[复制项目资产到候选目录]
+    E --> F[写入候选 YAML]
+    F --> G[候选 Schema 再校验]
+    G --> H[pytest + Playwright 真实页面执行]
+    H --> I{执行是否通过}
+    I -- 否 --> J[保存日志与失败产物]
+    J --> K[针对错误点修复候选]
+    K --> C
+    I -- 是 --> L[复用已验证 Selector 资产]
+    L --> M[写入正式 cases/data/elements]
+    M --> N[正式资产 Schema 校验]
+    N --> O[正式资产再次真实执行]
+    O --> P[进入代码评审与 CI]

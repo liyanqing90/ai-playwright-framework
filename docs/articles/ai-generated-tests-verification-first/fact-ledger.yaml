@@ -1,0 +1,49 @@
+article_id: "2026-07-ai-playwright-verification-first"
+updated_at: "2026-07-24"
+claims:
+  - claim_id: claim-001
+    text: "AI Playwright 的 gen 命令不再允许跳过真实页面验证。"
+    type: fact
+    source: "ai_playwright/cli/generate_case.py"
+    verified: true
+    publishable: true
+  - claim_id: claim-002
+    text: "生成结果先写入独立候选目录，Schema 校验和真实页面执行通过后才写入正式资产。"
+    type: fact
+    source: "ai_playwright/ai_generation/case_generator.py"
+    verified: true
+    publishable: true
+  - claim_id: claim-003
+    text: "候选用例必须包含有效断言，否则不能进入真实页面验证或缓存。"
+    type: fact
+    source: "ai_playwright/ai_generation/case_generator.py"
+    verified: true
+    publishable: true
+  - claim_id: claim-004
+    text: "真实页面验证使用 pytest 调用 Playwright，并把 UI_AI_MODE 设为 strict。"
+    type: fact
+    source: "ai_playwright/ai_generation/case_generator.py"
+    verified: true
+    publishable: true
+  - claim_id: claim-005
+    text: "正式资产写入后会再次执行验证。"
+    type: fact
+    source: "ai_playwright/ai_generation/case_generator.py"
+    verified: true
+    publishable: true
+  - claim_id: claim-006
+    text: "仓库 CI 同时执行编译、格式、契约测试、Schema、重复定义、用例收集和包安装检查。"
+    type: fact
+    source: ".github/workflows/ci.yml"
+    verified: true
+    publishable: true
+  - claim_id: claim-007
+    text: "真实浏览器通过是必要证据，但不能单独证明需求覆盖完整。"
+    type: interpretation
+    source: "作者判断，基于验证范围"
+    verified: true
+    publishable: true
+forbidden_expansion:
+  - "不得声称该链路已经在大规模团队中验证"
+  - "不得给出未经测量的效率提升数字"
+  - "不得把一次路径通过写成系统绝对可靠"
