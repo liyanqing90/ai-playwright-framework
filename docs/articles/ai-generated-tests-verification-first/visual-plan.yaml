@@ -1,0 +1,25 @@
+article_id: "2026-07-ai-playwright-verification-first"
+platform: wechat-official-account
+mobile_first: true
+assets:
+  - asset_id: diagram-01
+    order: 1
+    role: verification-first-flow
+    reader_question: "AI 生成结果从候选到正式资产，需要经过哪些门？"
+    claim_supported: "真实执行属于生成事务，而不是落盘后的补救"
+    source_of_truth: "ai_playwright/ai_generation/case_generator.py"
+    production_method: mermaid
+    source_file: "diagrams/verification-first-flow.mmd"
+    export_width_px: 1080
+    mobile_readable: pending
+    caption: "AI Playwright 的 verification-first 用例生成链路"
+code_blocks:
+  - code_id: code-01
+    purpose: "展示 gen 命令禁止跳过真实验证"
+    source_file: "ai_playwright/cli/generate_case.py"
+  - code_id: code-02
+    purpose: "展示候选验证通过后才写入正式资产"
+    source_file: "ai_playwright/ai_generation/case_generator.py"
+  - code_id: code-03
+    purpose: "展示真实执行期间使用 strict 模式"
+    source_file: "ai_playwright/ai_generation/case_generator.py"

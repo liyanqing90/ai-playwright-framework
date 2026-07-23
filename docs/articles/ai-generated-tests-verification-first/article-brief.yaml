@@ -1,0 +1,33 @@
+article_id: "2026-07-ai-playwright-verification-first"
+status: draft
+account: "青野构建志"
+classification:
+  primary_series: quality-engineering
+  secondary_series: building-in-public
+  format: technical-practice
+  project_tags: [ai-playwright]
+  technology_tags: [playwright, pytest, ai-generation, quality-gate]
+route_alignment:
+  career_goal: "建立 AI 质量工程与测试基础设施的专业身份"
+  capability_to_build: "把真实执行、资产权威和失败证据嵌入 AI 生成链路"
+  public_evidence_created: "公众号文章、Mermaid 图源、公开代码定位与复现命令"
+  why_now: "AI Playwright 已经实现 verification-first 用例生成，可用真实代码说明"
+reader_contract:
+  primary_reader: "正在把 AI 接入测试生成、自动化平台或 Coding Agent 的工程师"
+  current_situation: "模型可以快速生成 YAML 或脚本，但生成结果常被过早当成正式资产"
+  concrete_problem: "Schema 合法、代码能解析，并不能证明用例在真实页面可执行，也不能证明断言有效"
+  belief_before: "生成成功后先保存，失败再修"
+  belief_after: "验证应当属于生成事务；候选通过后才能晋升为正式资产"
+  minimum_action: "为生成链路增加候选目录、真实执行门和失败产物保留"
+editorial_core:
+  one_question: "一条 AI 生成的测试用例，凭什么进入代码库？"
+  thesis: "生成测试资产时，真实执行不能作为末尾补充，而要成为写入正式资产之前的准入条件"
+  not_about:
+    - "完整介绍 AI Playwright 所有功能"
+    - "讨论 AI 是否替代测试工程师"
+    - "宣称一次浏览器通过就能证明需求完整"
+repeat_check:
+  compared_articles:
+    - "AI 自动化测试平台最难的不是生成用例（Notion 想法稿）"
+  overlap: "共享候选与正式资产分离的总原则"
+  new_value: "聚焦 verification-first 的真实实现、代码路径、严格验证模式和复现命令"
